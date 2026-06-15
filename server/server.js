@@ -538,6 +538,12 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   // stamp Time when the Order# value actually changes
   if ("orderNumber" in b && String(b.orderNumber) !== String(p.order_number || "")) { sets.push("order_time=?"); vals.push(Date.now()); }
   if (sets.length) db.prepare(`UPDATE purchases SET ${sets.join(",")} WHERE id=?`).run(...vals, p.id);
+  // Notify the store's Lister(s) when an order gets a tracking (process status → "Có Tracking").
+  if ("processStatus" in b && b.processStatus === "Có Tracking" && p.process_status !== "Có Tracking") {
+    const listers = listersForStore(o.store);
+    if (listers.length)
+      notify(listers, "lister-tracking", `🚚 Đơn ${o.id} (${o.store}) đã có tracking — đã mua hàng.`);
+  }
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id)) });
 });
 
@@ -585,6 +591,12 @@ function notify(userIds, type, message, link = "", teams = []) {
 // Team(s) a user belongs to (for tagging notifications by team).
 const userTeams = (id) => { const r = db.prepare("SELECT team_ids FROM users WHERE id=?").get(id); return r ? JSON.parse(r.team_ids || "[]") : []; };
 const adminIds = () => db.prepare("SELECT id FROM users WHERE active=1 AND role='Admin'").all().map((r) => r.id);
+// Active Listers assigned to a given store (for store-scoped Lister notifications).
+const listersForStore = (store) => {
+  if (!store) return [];
+  return db.prepare("SELECT id, store_names FROM users WHERE active=1 AND role='Lister'").all()
+    .filter((u) => JSON.parse(u.store_names || "[]").includes(store)).map((u) => u.id);
+};
 
 // Set of user ids belonging to any of the given teams (for team-scoped card views).
 function teammateIds(teamIds) {

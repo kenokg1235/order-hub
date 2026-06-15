@@ -58,3 +58,14 @@ Gõ trực tiếp trên bảng, **rời ô là tự lưu**:
 - 📅 Ô chọn **tháng**: xem đơn tháng trước.
 - 🔔 Chuông thông báo ở góc dưới menu.
 - Cần thêm store hoặc đổi quyền store → **báo Admin** (Admin quản lý ở mục Stores).
+
+---
+
+## 6. Nhận thông báo qua Telegram 📲
+Liên kết Telegram để nhận thông báo trên điện thoại — **mỗi người làm 1 lần**:
+1. Bấm **🔔 Thông báo** (góc dưới menu) → **🔗 Liên kết Telegram để nhận thông báo**.
+2. App hiện **mã** dạng `LINK-XXXXXX` + tên bot.
+3. Bấm tên bot **@…bot** mở Telegram → bấm **Start** → **gửi mã** đó cho bot.
+4. Quay lại app bấm **Tôi đã gửi — Kiểm tra** → thấy **✓ Đã liên kết** là xong.
+
+⚠️ Nếu báo "Telegram chưa được Admin bật" → nhờ Admin bật trước. Mã hết hạn sau 10 phút thì bấm liên kết lại. (Hướng dẫn đầy đủ: xem file **HUONG-DAN-TELEGRAM**.)

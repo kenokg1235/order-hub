@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hướng dẫn cài đặt thông báo Telegram</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Segoe UI Emoji", Arial, sans-serif; color: #1f2937; font-size: 12.5px; line-height: 1.5; margin: 0; }
+  h1 { font-size: 22px; color: #2563eb; margin: 0 0 2px; }
+  .sub { color: #6b7280; font-style: italic; margin: 0 0 14px; font-size: 12px; }
+  h2 { font-size: 15px; color: #111827; margin: 18px 0 6px; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; }
+  h3 { font-size: 13px; color: #2563eb; margin: 12px 0 4px; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 5px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  b, strong { color: #111827; }
+  code { background: #eef1f4; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 5px; font-family: Consolas, monospace; font-size: 11.5px; }
+  blockquote { margin: 8px 0; padding: 7px 12px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; color: #1e3a8a; }
+  .warn { background:#fff7ed; border-left:4px solid #f59e0b; color:#92400e; padding:7px 12px; border-radius:4px; margin:8px 0; }
+  .step { background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding: 8px 12px; margin: 8px 0; }
+  .who { display:inline-block; background:#dbeafe; color:#1e40af; border-radius:5px; padding:1px 8px; font-weight:700; font-size:11px; }
+  .who.user { background:#d1fae5; color:#065f46; }
+  table.tb { border-collapse: collapse; width: 100%; margin: 6px 0; }
+  table.tb td, table.tb th { border: 1px solid #e5e7eb; padding: 5px 8px; text-align: left; font-size: 12px; }
+  table.tb th { background: #f3f4f6; }
+</style>
+</head>
+<body>
+  <h1>📲 Hướng dẫn cài đặt thông báo Telegram</h1>
+  <p class="sub">Order Hub có thể đẩy thông báo (yêu cầu thẻ, cấp thẻ, đơn quá hạn, Note…) thẳng về Telegram. Cài 2 phần: Admin tạo bot 1 lần, rồi mỗi người tự liên kết tài khoản.</p>
+
+  <h2><span class="who">PHẦN 1 · ADMIN</span> &nbsp;Tạo bot &amp; bật Telegram (chỉ làm 1 lần)</h2>
+
+  <div class="step">
+    <h3>Bước 1 — Tạo bot bằng BotFather</h3>
+    <ol>
+      <li>Mở Telegram, tìm <b>@BotFather</b> (tài khoản có dấu tích xanh) → bấm <b>Start</b>.</li>
+      <li>Gửi lệnh <code>/newbot</code>.</li>
+      <li>Nhập <b>tên hiển thị</b> của bot (vd <i>Order Hub Tín</i>).</li>
+      <li>Nhập <b>username</b> cho bot — phải kết thúc bằng <code>bot</code> (vd <code>orderhub_tin_bot</code>).</li>
+      <li>BotFather trả về <b>Bot Token</b> dạng <code>123456789:AAE...xyz</code> → <b>copy</b> chuỗi này.</li>
+    </ol>
+    <div class="warn">🔒 Bot Token là "chìa khóa" của bot — không chia sẻ công khai. Nếu lộ, vào BotFather gửi <code>/revoke</code> để cấp token mới.</div>
+  </div>
+
+  <div class="step">
+    <h3>Bước 2 — Dán token vào Order Hub</h3>
+    <ol>
+      <li>Đăng nhập <b>Admin</b> → vào <b>⚙️ Cấu hình</b>.</li>
+      <li>Tới ô <b>Thông báo Telegram</b>.</li>
+      <li>Tích <b>☑️ Bật gửi Telegram</b>.</li>
+      <li>Dán <b>Bot Token</b> vừa copy vào ô <b>Bot Token</b>.</li>
+      <li>Bấm <b>Lưu Telegram</b>.</li>
+    </ol>
+    <p>✅ Xong phần Admin. Giờ mỗi nhân viên (kể cả Admin) tự liên kết tài khoản ở Phần 2.</p>
+  </div>
+
+  <h2><span class="who user">PHẦN 2 · MỖI NGƯỜI</span> &nbsp;Liên kết Telegram của mình (mỗi người làm 1 lần)</h2>
+
+  <div class="step">
+    <ol>
+      <li>Trong Order Hub, bấm <b>🔔 Thông báo</b> (góc dưới menu trái).</li>
+      <li>Bấm <b>🔗 Liên kết Telegram để nhận thông báo</b>.</li>
+      <li>App hiện một <b>mã</b> dạng <code>LINK-XXXXXX</code> và <b>tên bot</b>.</li>
+      <li>Bấm vào tên bot (<b>@…bot</b>) để mở trong Telegram → bấm <b>Start</b>.</li>
+      <li><b>Gửi mã</b> <code>LINK-XXXXXX</code> cho bot (nhắn y nguyên đoạn mã đó).</li>
+      <li>Quay lại Order Hub → bấm <b>Tôi đã gửi — Kiểm tra</b>.</li>
+      <li>Thấy <b>✓ Đã liên kết Telegram</b> và bot nhắn "Liên kết thành công" là xong! 🎉</li>
+    </ol>
+    <p>🔄 <b>Hủy liên kết:</b> mở <b>🔔 Thông báo</b> → bấm <b>Hủy</b>. Muốn dùng máy/điện thoại khác thì liên kết lại như trên.</p>
+  </div>
+
+  <h2>Khi nào nhận được thông báo?</h2>
+  <table class="tb">
+    <tr><th>Loại thông báo</th><th>Gửi cho ai</th></tr>
+    <tr><td>🎴 Yêu cầu thẻ mới</td><td>Admin + người Mua thẻ cùng team</td></tr>
+    <tr><td>✅ Thẻ được cấp cho yêu cầu của bạn</td><td>Người gửi yêu cầu</td></tr>
+    <tr><td>🔄 Đổi trạng thái thẻ</td><td>Admin + người Mua thẻ cùng team</td></tr>
+    <tr><td>📝 Note ở Sheet Tổng</td><td>Người nhận đơn (hoặc cả team nếu chưa ai nhận)</td></tr>
+    <tr><td>⏰ Đơn quá hạn xử lý</td><td>Người nhận đơn + Admin</td></tr>
+  </table>
+  <p class="muted">Thông báo hiện đồng thời ở chuông 🔔 trong app và trên Telegram (nếu đã liên kết).</p>
+
+  <h2>Khắc phục sự cố</h2>
+  <ul>
+    <li><b>"Telegram chưa được Admin bật"</b> → Admin chưa làm Phần 1 (chưa tích Bật / chưa dán token).</li>
+    <li><b>Bấm Kiểm tra báo "chưa thấy tin nhắn"</b> → kiểm tra đã bấm <b>Start</b> cho bot và đã gửi <b>đúng mã</b>. Mã hết hạn sau <b>10 phút</b> — bấm Liên kết lại để lấy mã mới.</li>
+    <li><b>Đã liên kết nhưng không nhận được</b> → đừng chặn (block) bot; Admin kiểm tra ô <b>Bật gửi Telegram</b> còn được tích và token đúng.</li>
+    <li><b>Đổi điện thoại</b> → vẫn nhận bình thường vì thông báo gắn theo tài khoản Telegram, không theo thiết bị.</li>
+  </ul>
+</body>
+</html>
