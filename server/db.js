@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS expenses (
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
 `);
 
+// Blacklist of difficult buyers (eBay usernames) — for Listing staff + Admin.
+db.exec(`
+CREATE TABLE IF NOT EXISTS blacklist (
+  id         TEXT PRIMARY KEY,
+  username   TEXT NOT NULL,
+  reason     TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_blacklist_username ON blacklist(username);
+`);
+
 // ── Seed defaults ────────────────────────────────────────────────────────────
 function seedSetting(key, value) {
   if (!db.prepare("SELECT 1 FROM settings WHERE key=?").get(key))

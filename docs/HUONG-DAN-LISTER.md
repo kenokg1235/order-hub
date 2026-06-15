@@ -18,12 +18,18 @@ Menu bạn thấy chỉ có 2 mục:
 ## 2. Sheet Tổng — nhập đơn từ eBay
 
 ### Cách 1: Import file eBay (nhanh, khuyến nghị)
-1. Trên eBay Seller Hub, tải file **OrdersReport (.csv)**.
-2. Trong app bấm **⬆️ Import eBay**.
-3. **Chọn store** (file này thuộc store nào) — bạn chỉ chọn được trong các store được giao.
-4. Bấm chọn **file .csv** → app đọc và báo "Đọc được N đơn".
-5. Bấm **Import**.
-6. Kết quả hiện: **Thêm mới / Trùng đã bỏ qua / Dòng lỗi**. (Đơn trùng tự động bỏ qua, không lo nhập 2 lần.)
+
+**Trên eBay Seller Hub** (trang Orders) — chỉ tải đúng đơn cần, KHÔNG tải toàn bộ:
+1. **Tích chọn** các đơn cần tải ở cột **Actions** (ô vuông bên trái mỗi đơn).
+2. Bấm **More ▾** → chọn **Download selected** → lưu file **.csv**.
+
+> ⚠️ **Đừng bấm "Download report"** (góc trên phải) — nút đó tải **TẤT CẢ** đơn (cả đơn cũ/đã xử lý), dễ nhập dư. Luôn dùng **tích chọn → More → Download selected** để chỉ lấy đơn mới cần xử lý.
+
+**Trong app Order Hub:**
+3. Bấm **⬆️ Import eBay**.
+4. **Chọn store** (file này thuộc store nào) — bạn chỉ chọn được trong các store được giao.
+5. Chọn **file .csv** vừa tải → app báo "Đọc được N đơn" → bấm **Import**.
+6. Kết quả: **Thêm mới / Trùng đã bỏ qua / Dòng lỗi**. (Đơn trùng tự động bỏ qua, không lo nhập 2 lần.)
 
 ### Cách 2: Thêm 1 đơn thủ công
 - Bấm **＋ Thêm đơn** → điền ID Order, Store, Sản phẩm, SL, SĐT, Address, Link, Size, Màu, Profit, Thời hạn → **Lưu**.

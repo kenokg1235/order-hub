@@ -957,6 +957,51 @@ app.delete("/api/expenses/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Blacklist (difficult buyers, eBay usernames) — Admin + Lister ─────────────
+function adminOrLister(req, res, next) {
+  if (req.user.role !== "Admin" && req.user.role !== "Lister")
+    return res.status(403).json({ error: "Không có quyền truy cập danh sách đen" });
+  next();
+}
+app.get("/api/blacklist", requireAuth, adminOrLister, (req, res) => {
+  const names = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
+  const rows = db.prepare("SELECT * FROM blacklist ORDER BY created_at DESC").all();
+  res.json({ blacklist: rows.map((b) => ({
+    id: b.id, username: b.username, reason: b.reason,
+    createdBy: b.created_by, createdByName: names[b.created_by] || "—", createdAt: b.created_at,
+  })) });
+});
+app.post("/api/blacklist", requireAuth, adminOrLister, (req, res) => {
+  const username = String(req.body.username || "").trim();
+  if (!username) return res.status(400).json({ error: "Thiếu username khách hàng" });
+  if (db.prepare("SELECT id FROM blacklist WHERE LOWER(username)=LOWER(?)").get(username))
+    return res.status(409).json({ error: "Username đã có trong danh sách đen" });
+  const id = newId("bl");
+  db.prepare("INSERT INTO blacklist (id,username,reason,created_by,created_at) VALUES (?,?,?,?,?)")
+    .run(id, username, String(req.body.reason || ""), req.user.id, Date.now());
+  res.json({ ok: true, id });
+});
+app.put("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
+  const b = db.prepare("SELECT * FROM blacklist WHERE id=?").get(req.params.id);
+  if (!b) return res.status(404).json({ error: "Không tìm thấy" });
+  const body = req.body || {};
+  const sets = [], vals = [];
+  if ("username" in body) {
+    const un = String(body.username || "").trim();
+    if (!un) return res.status(400).json({ error: "Username trống" });
+    const dup = db.prepare("SELECT id FROM blacklist WHERE LOWER(username)=LOWER(?) AND id!=?").get(un, b.id);
+    if (dup) return res.status(409).json({ error: "Username đã tồn tại" });
+    sets.push("username=?"); vals.push(un);
+  }
+  if ("reason" in body) { sets.push("reason=?"); vals.push(String(body.reason || "")); }
+  if (sets.length) db.prepare(`UPDATE blacklist SET ${sets.join(",")} WHERE id=?`).run(...vals, b.id);
+  res.json({ ok: true });
+});
+app.delete("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
+  db.prepare("DELETE FROM blacklist WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
 // profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.
