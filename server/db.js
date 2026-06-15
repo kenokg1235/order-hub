@@ -110,6 +110,7 @@ ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
 ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
 ensureColumn("orders", "overdue_notified", "INTEGER DEFAULT 0");
 ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM"
+ensureColumn("orders", "cancel_reason", "TEXT DEFAULT ''");   // lý do khi master_status = Đã Cancel
 ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# last changed
 ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterShip key registered it
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID
@@ -175,6 +176,9 @@ function seedSetting(key, value) {
 seedSetting("masterStatuses",  ["Đã Up", "Đã Cancel"]);
 seedSetting("processStatuses", ["Đã xử lý", "Ped", "Có Tracking"]);
 seedSetting("cardStatuses",    ["Chờ cấp", "Đã cấp", "Đã nhận", "Đã dùng", "Lỗi thẻ"]);
+// Lý do khi đơn bị Cancel; failCancelReasons = các lý do tính vào "Fail rate" (lỗi NV).
+seedSetting("cancelReasons",     ["Lỗi xử lý (NV)", "Khách hủy", "Hết hàng / hết size", "Lý do khác"]);
+seedSetting("failCancelReasons", ["Lỗi xử lý (NV)"]);
 // Card statuses that count toward Leaderboard "số thẻ".
 seedSetting("cardCountStatuses", ["Live Bill", "Sai bill"]);
 seedSetting("aftership", { enabled: false, keys: [] });   // keys: [apiKey, ...] (mỗi key ~50/tháng)

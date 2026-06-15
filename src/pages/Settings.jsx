@@ -38,6 +38,11 @@ export default function Settings() {
       <StatusEditor title="Trạng thái thẻ (Sheet Mua thẻ)" list={s.cardStatuses}
         onSave={(l) => saveList("cardStatuses", l)} />
 
+      <StatusEditor title="Lý do Cancel đơn (chọn khi đơn 'Đã Cancel')" list={s.cancelReasons || []}
+        onSave={(l) => saveList("cancelReasons", l)} />
+      <StatusEditor title="Lý do tính Fail (đơn cancel do lỗi NV — dùng cho Fail rate ở Leaderboard)" list={s.failCancelReasons || []}
+        onSave={(l) => saveList("failCancelReasons", l)} />
+
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
         colors={s.statusColors || {}} onSave={(m) => saveList("statusColors", m)} />
 

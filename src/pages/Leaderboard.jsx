@@ -29,6 +29,8 @@ export default function Leaderboard({ currentUser }) {
     { k: "ordersPerCard", label: "Đơn / Thẻ" },
     { k: "profit", label: "Profit", money: true },
     { k: "profitPerCard", label: "Profit / Thẻ", money: true },
+    { k: "failCancels", label: "Đơn lỗi (NV)" },
+    { k: "failRate", label: "Fail rate", pct: true },
   ];
   const sorted = useMemo(() => [...rows].sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0)), [rows, sortKey]);
   const medal = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1);
@@ -44,7 +46,7 @@ export default function Leaderboard({ currentUser }) {
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Theo <b>từng tháng</b>: Số đơn & Profit tính đơn <b>Đã Up</b> trong tháng; Số thẻ chỉ tính thẻ <b>Live Bill / Sai bill</b> dùng <b>lần đầu trong tháng đó</b> (dùng lại thẻ tháng cũ không cộng). Bấm tiêu đề cột để đổi tiêu chí.
+        Theo <b>từng tháng</b>: Số đơn & Profit tính đơn <b>Đã Up</b> trong tháng; Số thẻ chỉ tính thẻ <b>Live Bill / Sai bill</b> dùng <b>lần đầu trong tháng đó</b> (dùng lại thẻ tháng cũ không cộng). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt (Đã Up + Đã Cancel). Bấm tiêu đề cột để đổi tiêu chí.
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
@@ -68,14 +70,15 @@ export default function Leaderboard({ currentUser }) {
                   {r.name} {r.id === currentUser.id && <Badge color="blue">bạn</Badge>}
                 </td>
                 {cols.map((c) => (
-                  <td key={c.k} style={{ fontWeight: c.k === sortKey ? 700 : 400 }}>
-                    {c.money ? money(r[c.k]) : r[c.k]}
+                  <td key={c.k} style={{ fontWeight: c.k === sortKey ? 700 : 400,
+                    color: c.k === "failRate" && r.failRate > 0 ? "var(--red)" : undefined }}>
+                    {c.money ? money(r[c.k]) : c.pct ? `${r[c.k] || 0}%` : r[c.k]}
                   </td>
                 ))}
               </tr>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <tr><td colSpan={2 + cols.length} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 Chưa có dữ liệu — thành viên cần nhận & xử lý đơn trước.
               </td></tr>
             )}

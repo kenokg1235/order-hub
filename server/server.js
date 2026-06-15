@@ -166,7 +166,7 @@ function orderOut(o) {
     id: o.id, team: o.team, store: o.store, address: o.address, custPhone: o.cust_phone,
     qty: o.qty, product: o.product, image: o.image, link: o.link, size: o.size, color: o.color,
     profit: o.profit, deadline: o.deadline, masterStatus: o.master_status,
-    masterNote: o.master_note,
+    masterNote: o.master_note, cancelReason: o.cancel_reason,
     claimedBy: o.claimed_by, claimedName: o.claimed_name, claimedAt: o.claimed_at,
     note1: o.note1, note2: o.note2, note3: o.note3, note4: o.note4,
     listedBy: o.listed_by, period: o.period, createdAt: o.created_at, updatedAt: o.updated_at,
@@ -303,7 +303,7 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
   const map = {
     address: "address", custPhone: "cust_phone", qty: "qty", product: "product", image: "image",
     link: "link", size: "size", color: "color", profit: "profit", deadline: "deadline",
-    masterStatus: "master_status", masterNote: "master_note",
+    masterStatus: "master_status", masterNote: "master_note", cancelReason: "cancel_reason",
     note1: "note1", note2: "note2", note3: "note3", note4: "note4",
   };
   const sets = [], vals = [];
@@ -976,11 +976,16 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   for (const p of db.prepare("SELECT order_id, card FROM purchases WHERE card!=''").all())
     (cardsByOrder[p.order_id] || (cardsByOrder[p.order_id] = new Set())).add(p.card);
 
+  // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
+  const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
+  const cancels = (month && month !== "all")
+    ? db.prepare("SELECT claimed_by, claimed_name, cancel_reason FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel' AND period=?").all(month)
+    : db.prepare("SELECT claimed_by, claimed_name, cancel_reason FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all();
+
+  const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0 });
   const byUser = {};
   for (const o of orders) {
-    const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = {
-      id: o.claimed_by, name: nameById[o.claimed_by] || o.claimed_name || "—", orders: 0, profit: 0, cardSet: new Set(),
-    });
+    const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
     u.orders++; u.profit += o.profit || 0;
     const cs = cardsByOrder[o.id];
     if (cs) for (const c of cs) {
@@ -989,13 +994,21 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
       if (st && countSet.has(String(st).toLowerCase()) && (month === "all" || firstM[c] === month)) u.cardSet.add(c);
     }
   }
+  for (const o of cancels) {
+    const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
+    u.cancels++;
+    if (o.cancel_reason && failSet.has(String(o.cancel_reason).toLowerCase())) u.failCancels++;
+  }
   const round = (n) => Math.round(n * 100) / 100;
   const rows = Object.values(byUser).map((u) => {
     const cards = u.cardSet.size;
+    const handled = u.orders + u.cancels;   // tổng đơn đã chốt (Đã Up + Đã Cancel)
     return {
       id: u.id, name: u.name, orders: u.orders, cards, profit: round(u.profit),
       ordersPerCard: cards ? round(u.orders / cards) : 0,
       profitPerCard: cards ? round(u.profit / cards) : 0,
+      failCancels: u.failCancels, handled,
+      failRate: handled ? round((100 * u.failCancels) / handled) : 0,
     };
   });
   rows.sort((a, b) => b.orders - a.orders);

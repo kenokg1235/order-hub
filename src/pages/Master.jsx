@@ -14,6 +14,7 @@ export default function Master({ currentUser, teams }) {
   const [statuses, setStatuses] = useState([]);
   const [statusColors, setStatusColors] = useState({});
   const [procStatuses, setProcStatuses] = useState([]);
+  const [cancelReasons, setCancelReasons] = useState([]);
   const [cf, setCf] = useState({});                // per-column filters (combine like Google Sheets)
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -38,6 +39,7 @@ export default function Master({ currentUser, teams }) {
       setStatuses(s.masterStatuses || []);
       setProcStatuses(s.processStatuses || []);
       setStatusColors(s.statusColors || {});
+      setCancelReasons(s.cancelReasons || []);
       const mo = await api.get("/api/months");
       setMonths(mo.months); setActiveMonth(mo.activeMonth); setLastClose(mo.lastClose);
       setMonth((cur) => cur || mo.activeMonth);
@@ -357,6 +359,13 @@ export default function Master({ currentUser, teams }) {
                     <option value="">— trống —</option>
                     {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
+                  {o.masterStatus === "Đã Cancel" && (
+                    <select className="input" style={{ padding: "3px 6px", minWidth: 110, marginTop: 4, fontSize: 12 }}
+                      value={o.cancelReason || ""} onChange={(e) => patch(o.id, { cancelReason: e.target.value })} title="Lý do Cancel">
+                      <option value="">— lý do cancel —</option>
+                      {cancelReasons.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  )}
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "tracking")}</td>
