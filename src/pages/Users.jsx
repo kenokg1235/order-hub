@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Button, Input, Select, Badge, Modal } from "../ui.jsx";
 
-const ROLES = ["Admin", "Leader", "Lister", "Member"];
-const roleColor = { Admin: "blue", Leader: "amber", Lister: "green", Member: "" };
-const roleLabel = { Admin: "Admin", Leader: "Leader", Lister: "Listing", Member: "Member" };
+const ROLES = ["Admin", "Leader", "Lister", "Member", "Buyer"];
+const roleColor = { Admin: "blue", Leader: "amber", Lister: "green", Member: "", Buyer: "blue" };
+const roleLabel = { Admin: "Admin", Leader: "Leader", Lister: "Listing", Member: "Member", Buyer: "Mua thẻ" };
 
 export default function Users({ teams }) {
   const [users, setUsers] = useState([]);
@@ -68,6 +68,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
   const [f, setF] = useState({
     name: user.name || "", email: user.email || "", password: "",
     role: user.role || "Member", teamIds: user.teamIds || [], storeNames: user.storeNames || [],
+    mutedTeams: user.mutedTeams || [],
     canBuyCard: !!user.canBuyCard, active: user.active !== false,
   });
   const [newStore, setNewStore] = useState("");
@@ -77,6 +78,8 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
     up("teamIds", f.teamIds.includes(id) ? f.teamIds.filter((x) => x !== id) : [...f.teamIds, id]);
   const toggleStore = (s) =>
     up("storeNames", f.storeNames.includes(s) ? f.storeNames.filter((x) => x !== s) : [...f.storeNames, s]);
+  const toggleMute = (id) =>
+    up("mutedTeams", f.mutedTeams.includes(id) ? f.mutedTeams.filter((x) => x !== id) : [...f.mutedTeams, id]);
   const addStore = () => {
     const s = newStore.trim();
     if (s && !f.storeNames.includes(s)) up("storeNames", [...f.storeNames, s]);
@@ -145,16 +148,40 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
         </div>
       )}
 
+      {f.role === "Buyer" && (
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          🎴 Chức vụ <b>Mua thẻ</b> chỉ thấy 2 mục: <b>Yêu cầu thẻ</b> + <b>Mua thẻ</b> (đã có sẵn quyền cấp thẻ). Nhớ gán <b>team</b> để thấy yêu cầu của team đó.
+        </div>
+      )}
       <div className="row" style={{ gap: 18, marginTop: 6 }}>
-        <label className="row" style={{ gap: 6, cursor: "pointer" }}>
-          <input type="checkbox" checked={f.canBuyCard} onChange={(e) => up("canBuyCard", e.target.checked)} />
-          🎴 Quyền Mua thẻ
-        </label>
+        {f.role !== "Buyer" && (
+          <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.canBuyCard} onChange={(e) => up("canBuyCard", e.target.checked)} />
+            🎴 Quyền Mua thẻ
+          </label>
+        )}
         <label className="row" style={{ gap: 6, cursor: "pointer" }}>
           <input type="checkbox" checked={f.active} onChange={(e) => up("active", e.target.checked)} />
           Hoạt động
         </label>
       </div>
+
+      {/* Admin: mute card/overdue notifications from chosen teams */}
+      {f.role === "Admin" && teams.length > 0 && (
+        <div className="field" style={{ marginTop: 12 }}>
+          <label className="label">🔕 Tắt thông báo từ team</label>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+            Tích team nào thì Admin này sẽ KHÔNG nhận thông báo (yêu cầu thẻ, đổi trạng thái thẻ, quá hạn) của team đó.
+          </div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            {teams.map((t) => (
+              <label key={t.id} className="row" style={{ gap: 5, cursor: "pointer" }}>
+                <input type="checkbox" checked={f.mutedTeams.includes(t.id)} onChange={() => toggleMute(t.id)} /> {t.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
       {err && <div style={{ color: "var(--red)", marginTop: 10 }}>{err}</div>}
     </Modal>
   );

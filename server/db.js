@@ -107,6 +107,7 @@ ensureColumn("users", "store_names", "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn("orders", "listed_by", "TEXT DEFAULT ''");
 ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note on Sheet Tổng
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
+ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
 ensureColumn("orders", "overdue_notified", "INTEGER DEFAULT 0");
 ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM"
 ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# last changed
@@ -149,6 +150,21 @@ CREATE TABLE IF NOT EXISTS payouts (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_payouts_store ON payouts(store);
+`);
+
+// Manually-entered business expenses. Two currencies tracked separately: VND | USDT.
+db.exec(`
+CREATE TABLE IF NOT EXISTS expenses (
+  id         TEXT PRIMARY KEY,
+  date       TEXT DEFAULT '',
+  category   TEXT DEFAULT '',
+  currency   TEXT DEFAULT 'VND',   -- VND | USDT
+  amount     REAL DEFAULT 0,
+  note       TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
 `);
 
 // ── Seed defaults ────────────────────────────────────────────────────────────

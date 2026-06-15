@@ -13,6 +13,7 @@ import Cards from "./pages/Cards.jsx";
 import CardStats from "./pages/CardStats.jsx";
 import Stores from "./pages/Stores.jsx";
 import Payout from "./pages/Payout.jsx";
+import Expenses from "./pages/Expenses.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import Tracking from "./pages/Tracking.jsx";
 import Placeholder from "./pages/Placeholder.jsx";
@@ -22,15 +23,18 @@ import Placeholder from "./pages/Placeholder.jsx";
 const NAV = [
   { group: "ĐƠN HÀNG", items: [
     { id: "master",  icon: "📊", label: "Sheet Tổng",   access: (u) => u.role === "Admin" || u.role === "Lister" },
-    { id: "payout",  icon: "💰", label: "Payout",       access: (u) => u.role === "Admin" || u.role === "Lister" },
     { id: "team",    icon: "📄", label: "Sheet Con",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "tracking",    icon: "🚚", label: "Tracking",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "leaderboard", icon: "🏆", label: "Leaderboard", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
+  { group: "FINANCE", items: [
+    { id: "payout",  icon: "💰", label: "Payout",       access: (u) => u.role === "Admin" || u.role === "Lister" },
+    { id: "expenses", icon: "💸", label: "Thống kê chi phí", access: (u) => u.role === "Admin" },
+  ]},
   { group: "THẺ", items: [
     // Lister is restricted to Sheet Tổng only — no card section.
     { id: "requests", icon: "✍️", label: "Yêu cầu thẻ",  access: (u) => u.role !== "Lister" },
-    { id: "cards",    icon: "🎴", label: "Mua thẻ",      access: (u) => u.role !== "Lister" && (u.role === "Admin" || u.canBuyCard) },
+    { id: "cards",    icon: "🎴", label: "Mua thẻ",      access: (u) => u.role !== "Lister" && (u.role === "Admin" || u.role === "Buyer" || u.canBuyCard) },
     { id: "card-stats", icon: "📊", label: "Thống kê thẻ", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "HỆ THỐNG", items: [
@@ -65,7 +69,7 @@ export default function App() {
 
   // Pick a sensible default landing page per role once logged in.
   useEffect(() => {
-    if (user) setPage(["Admin", "Lister"].includes(user.role) ? "master" : "team");
+    if (user) setPage(["Admin", "Lister"].includes(user.role) ? "master" : user.role === "Buyer" ? "requests" : "team");
   }, [user]);
 
   async function logout() {
@@ -121,6 +125,7 @@ export default function App() {
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}
         {page === "payout"   && <Payout currentUser={user} />}
+        {page === "expenses" && <Expenses teams={teams} />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}

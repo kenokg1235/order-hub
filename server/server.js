@@ -52,29 +52,30 @@ app.get("/api/users", requireAdmin, (req, res) => {
 });
 
 app.post("/api/users", requireAdmin, (req, res) => {
-  const { name, email, password, role, teamIds, storeNames, canBuyCard } = req.body || {};
+  const { name, email, password, role, teamIds, storeNames, canBuyCard, mutedTeams } = req.body || {};
   const mail = String(email || "").trim().toLowerCase();
   if (!name || !mail || !password) return res.status(400).json({ error: "Thiếu tên / email / mật khẩu" });
   const dup = db.prepare("SELECT 1 FROM users WHERE email=?").get(mail);
   if (dup) return res.status(409).json({ error: "Email đã tồn tại" });
   const id = newId("u");
-  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,can_buy_card,active,created_at)
-              VALUES (?,?,?,?,?,?,?,?,1,?)`)
+  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,active,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,1,?)`)
     .run(id, name, mail, bcrypt.hashSync(String(password), 10),
          role || "Member", JSON.stringify(teamIds || []), JSON.stringify(storeNames || []),
-         canBuyCard ? 1 : 0, Date.now());
+         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, Date.now());
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(id)) });
 });
 
 app.put("/api/users/:id", requireAdmin, (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
   if (!u) return res.status(404).json({ error: "Không tìm thấy user" });
-  const { name, role, teamIds, storeNames, canBuyCard, active, password } = req.body || {};
-  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, can_buy_card=?, active=?,
+  const { name, role, teamIds, storeNames, canBuyCard, active, password, mutedTeams } = req.body || {};
+  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, active=?,
               password=COALESCE(?, password) WHERE id=?`)
     .run(name ?? u.name, role ?? u.role, JSON.stringify(teamIds ?? JSON.parse(u.team_ids)),
          JSON.stringify(storeNames ?? JSON.parse(u.store_names || "[]")),
-         canBuyCard != null ? (canBuyCard ? 1 : 0) : u.can_buy_card,
+         JSON.stringify(mutedTeams ?? JSON.parse(u.muted_teams || "[]")),
+         (role ?? u.role) === "Buyer" ? 1 : (canBuyCard != null ? (canBuyCard ? 1 : 0) : u.can_buy_card),
          active != null ? (active ? 1 : 0) : u.active,
          password ? bcrypt.hashSync(String(password), 10) : null, u.id);
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(u.id)) });
@@ -316,6 +317,17 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
   }
   if ("deadline" in b) db.prepare("UPDATE orders SET overdue_notified=0 WHERE id=?").run(o.id);
+  // Admin/Lister added or changed the master note → ping the order processor(s) to read it.
+  if ("masterNote" in b && String(b.masterNote || "").trim() && String(b.masterNote) !== String(o.master_note || "")) {
+    let targets = [];
+    if (o.claimed_by) targets = [o.claimed_by];                       // claimed → just that person
+    else if (o.team) {                                                // unclaimed → whole team's processors
+      for (const usr of db.prepare("SELECT id, team_ids FROM users WHERE active=1 AND role IN ('Leader','Member')").all())
+        if (JSON.parse(usr.team_ids || "[]").includes(o.team)) targets.push(usr.id);
+    }
+    if (targets.length)
+      notify(targets, "master-note", `📝 Note đơn ${o.id} (${o.store}): ${String(b.masterNote).slice(0, 90)}`, "", o.team ? [o.team] : []);
+  }
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
 });
 
@@ -438,7 +450,8 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
 app.get("/api/assignable-users", requireAuth, (req, res) => {
   const u = req.user;
   if (u.role !== "Admin" && u.role !== "Leader") return res.json({ users: [] });
-  const all = db.prepare("SELECT id,name,role,team_ids FROM users WHERE active=1").all()
+  // Only order-processing roles can be assigned orders (exclude Lister / card Buyer).
+  const all = db.prepare("SELECT id,name,role,team_ids FROM users WHERE active=1 AND role IN ('Admin','Leader','Member')").all()
     .map((x) => ({ id: x.id, name: x.name, role: x.role, teamIds: JSON.parse(x.team_ids || "[]") }));
   if (u.role === "Admin") return res.json({ users: all });
   const myTeams = new Set(u.teamIds || []);
@@ -553,17 +566,49 @@ async function sendTelegram(chatId, text) {
   } catch {}
 }
 // Insert in-app notifications + push to Telegram for each target user.
-function notify(userIds, type, message, link = "") {
+// `teams` (id or array): the team(s) this notification concerns. A user who has
+// muted ALL of those teams is skipped (both in-app + Telegram).
+function notify(userIds, type, message, link = "", teams = []) {
   const now = Date.now();
+  const teamList = (Array.isArray(teams) ? teams : [teams]).filter(Boolean);
   const ins = db.prepare("INSERT INTO notifications (id,user_id,type,message,link,read,created_at) VALUES (?,?,?,?,?,0,?)");
   for (const uid of [...new Set(userIds.filter(Boolean))]) {
+    const u = db.prepare("SELECT telegram_chat_id, muted_teams FROM users WHERE id=?").get(uid);
+    if (teamList.length && u) {
+      const muted = JSON.parse(u.muted_teams || "[]");
+      if (muted.length && teamList.every((t) => muted.includes(t))) continue;   // user muted this team
+    }
     ins.run(newId("ntf"), uid, type, message, link, now);
-    const u = db.prepare("SELECT telegram_chat_id FROM users WHERE id=?").get(uid);
     if (u && u.telegram_chat_id) sendTelegram(u.telegram_chat_id, message);
   }
 }
-const cardManagerIds = () => db.prepare("SELECT id FROM users WHERE active=1 AND (role='Admin' OR can_buy_card=1)").all().map((r) => r.id);
+// Team(s) a user belongs to (for tagging notifications by team).
+const userTeams = (id) => { const r = db.prepare("SELECT team_ids FROM users WHERE id=?").get(id); return r ? JSON.parse(r.team_ids || "[]") : []; };
 const adminIds = () => db.prepare("SELECT id FROM users WHERE active=1 AND role='Admin'").all().map((r) => r.id);
+
+// Set of user ids belonging to any of the given teams (for team-scoped card views).
+function teammateIds(teamIds) {
+  const set = new Set();
+  if (!teamIds || !teamIds.length) return set;
+  for (const u of db.prepare("SELECT id, team_ids FROM users").all()) {
+    const t = JSON.parse(u.team_ids || "[]");
+    if (teamIds.some((x) => t.includes(x))) set.add(u.id);
+  }
+  return set;
+}
+// Who to notify about a card request: all Admins + card-buyers sharing a team with
+// the requester. (V3's buyer won't get Tín's requests; Admin always sees everything.)
+function cardManagersForRequester(requesterId) {
+  const r = db.prepare("SELECT team_ids FROM users WHERE id=?").get(requesterId);
+  const reqTeams = r ? JSON.parse(r.team_ids || "[]") : [];
+  const ids = [];
+  for (const u of db.prepare("SELECT id, role, team_ids FROM users WHERE active=1 AND (role='Admin' OR can_buy_card=1)").all()) {
+    if (u.role === "Admin") { ids.push(u.id); continue; }
+    const t = JSON.parse(u.team_ids || "[]");
+    if (reqTeams.some((x) => t.includes(x))) ids.push(u.id);
+  }
+  return ids;
+}
 
 app.get("/api/notifications", requireAuth, (req, res) => {
   const rows = db.prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50").all(req.user.id);
@@ -634,7 +679,7 @@ function checkOverdue() {
     if (!day || !mon || mon > 12 || day > 31) continue;
     const dl = new Date(today.getFullYear(), mon - 1, day);
     if (dl < today) {
-      notify([o.claimed_by, ...adminIds()], "overdue", `⏰ Đơn ${o.id} (${o.store}) đã QUÁ HẠN xử lý: ${o.deadline}`);
+      notify([o.claimed_by, ...adminIds()], "overdue", `⏰ Đơn ${o.id} (${o.store}) đã QUÁ HẠN xử lý: ${o.deadline}`, "", o.team ? [o.team] : []);
       db.prepare("UPDATE orders SET overdue_notified=1 WHERE id=?").run(o.id);
     }
   }
@@ -696,11 +741,19 @@ function cardFirstMonths() {
 // List: managers (Admin / canBuyCard) see all + stats; employees see only their own.
 app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const u = req.user;
-  const isManager = u.role === "Admin" || u.canBuyCard;
-  if (isManager) {
+  // Admin sees every team's requests.
+  if (u.role === "Admin") {
     const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all();
     return res.json({ requests: rows.map(cardOutFull), manager: true });
   }
+  // Card-buyer: manager view but scoped to own team(s) — teammates' requests + own.
+  if (u.canBuyCard) {
+    const mates = teammateIds(u.teamIds);
+    const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all()
+      .filter((r) => r.requester_id === u.id || mates.has(r.requester_id));
+    return res.json({ requests: rows.map(cardOutFull), manager: true });
+  }
+  // Plain employee: only their own requests.
   const rows = db.prepare("SELECT * FROM card_requests WHERE requester_id=? ORDER BY created_at DESC").all(u.id);
   res.json({ requests: rows.map(cardOut), manager: false });
 });
@@ -720,7 +773,7 @@ app.post("/api/card-requests", requireAuth, blockLister, (req, res) => {
   db.prepare(`INSERT INTO card_requests (id,requester_id,requester_name,content,card_value,status,seq,created_at,updated_at)
               VALUES (?,?,?,?,?,?,?,?,?)`)
     .run(id, req.user.id, req.user.name, String(req.body.content || ""), "", "", seq, now, now);
-  notify(cardManagerIds(), "card-request", `🎴 Yêu cầu thẻ mới từ ${req.user.name}: ${String(req.body.content || "").slice(0, 80)}`);
+  notify(cardManagersForRequester(req.user.id), "card-request", `🎴 Yêu cầu thẻ mới từ ${req.user.name}: ${String(req.body.content || "").slice(0, 80)}`, "", userTeams(req.user.id));
   res.json({ request: cardOut(db.prepare("SELECT * FROM card_requests WHERE id=?").get(id)) });
 });
 
@@ -742,7 +795,7 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   if ("card" in b && b.card && !r.card_value)
     notify([r.requester_id], "card-issued", `✅ Thẻ đã được cấp cho yêu cầu của bạn: ${b.card}`);
   if ("status" in b && b.status && b.status !== r.status)
-    notify(cardManagerIds(), "card-status", `🔄 Trạng thái thẻ "${r.card_value || r.content || r.requester_name}" → ${b.status} (NV ${r.requester_name})`);
+    notify(cardManagersForRequester(r.requester_id), "card-status", `🔄 Trạng thái thẻ "${r.card_value || r.content || r.requester_name}" → ${b.status} (NV ${r.requester_name})`, "", userTeams(r.requester_id));
   const updated = db.prepare("SELECT * FROM card_requests WHERE id=?").get(r.id);
   res.json({ request: isManager ? cardOutFull(updated) : cardOut(updated) });
 });
@@ -831,6 +884,51 @@ app.delete("/api/payouts/:id", requireAuth, (req, res) => {
   if (!p) return res.json({ ok: true });
   if (!canTouchStore(req.user, p.store)) return res.status(403).json({ error: "Không có quyền" });
   db.prepare("DELETE FROM payouts WHERE id=?").run(p.id);
+  res.json({ ok: true });
+});
+
+// ── Expenses (manual cost entries, Admin only) ────────────────────────────────
+// Two currencies kept separate: VND | USDT. Categories are free text (suggested
+// from teams + a few defaults on the client).
+function expenseOut(e) {
+  return {
+    id: e.id, date: e.date, category: e.category, currency: e.currency,
+    amount: e.amount, note: e.note, createdBy: e.created_by, createdAt: e.created_at,
+  };
+}
+const EXP_CURRENCIES = ["VND", "USDT"];
+app.get("/api/expenses", requireAdmin, (req, res) => {
+  const rows = db.prepare("SELECT * FROM expenses ORDER BY date DESC, created_at DESC").all();
+  res.json({ expenses: rows.map(expenseOut) });
+});
+app.post("/api/expenses", requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const currency = EXP_CURRENCIES.includes(b.currency) ? b.currency : "VND";
+  const amount = Number(b.amount) || 0;
+  if (amount <= 0) return res.status(400).json({ error: "Nhập số tiền hợp lệ" });
+  const id = newId("exp");
+  db.prepare(`INSERT INTO expenses (id,date,category,currency,amount,note,created_by,created_at)
+              VALUES (?,?,?,?,?,?,?,?)`)
+    .run(id, b.date || "", String(b.category || "").trim(), currency, amount, b.note || "", req.user.id, Date.now());
+  res.json({ expense: expenseOut(db.prepare("SELECT * FROM expenses WHERE id=?").get(id)) });
+});
+app.put("/api/expenses/:id", requireAdmin, (req, res) => {
+  const e = db.prepare("SELECT * FROM expenses WHERE id=?").get(req.params.id);
+  if (!e) return res.status(404).json({ error: "Không tìm thấy khoản chi" });
+  const b = req.body || {};
+  const map = { date: "date", category: "category", currency: "currency", amount: "amount", note: "note" };
+  const sets = [], vals = [];
+  for (const [k, col] of Object.entries(map)) if (k in b) {
+    let v = b[k];
+    if (col === "amount") v = Number(v) || 0;
+    if (col === "currency") v = EXP_CURRENCIES.includes(v) ? v : "VND";
+    sets.push(`${col}=?`); vals.push(v);
+  }
+  if (sets.length) db.prepare(`UPDATE expenses SET ${sets.join(",")} WHERE id=?`).run(...vals, e.id);
+  res.json({ expense: expenseOut(db.prepare("SELECT * FROM expenses WHERE id=?").get(e.id)) });
+});
+app.delete("/api/expenses/:id", requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM expenses WHERE id=?").run(req.params.id);
   res.json({ ok: true });
 });
 

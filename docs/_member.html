@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hướng dẫn Member</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Segoe UI Emoji", Arial, sans-serif;
+    color: #1f2937; font-size: 12.5px; line-height: 1.5; margin: 0;
+  }
+  h1 { font-size: 22px; color: #1d4ed8; margin: 0 0 2px; }
+  .sub { color: #6b7280; font-style: italic; margin: 0 0 14px; font-size: 12px; }
+  h2 {
+    font-size: 15px; color: #111827; margin: 18px 0 6px;
+    border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;
+  }
+  h3 { font-size: 13px; color: #1d4ed8; margin: 12px 0 4px; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 5px 0 5px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  b, strong { color: #111827; }
+  code {
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
+    padding: 0 4px; font-family: Consolas, monospace; font-size: 11.5px;
+  }
+  blockquote {
+    margin: 8px 0; padding: 7px 12px; background: #eff6ff;
+    border-left: 4px solid #3b82f6; border-radius: 4px; color: #1e3a8a;
+  }
+  .warn { background:#fff7ed; border-left-color:#f59e0b; color:#92400e; }
+  .step {
+    background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;
+    padding: 8px 12px; margin: 8px 0;
+  }
+  .tag { display:inline-block; background:#dbeafe; color:#1e40af;
+    border-radius:5px; padding:1px 7px; font-weight:600; font-size:11px; }
+  hr { border:0; border-top:1px solid #e5e7eb; margin:16px 0; }
+</style>
+</head>
+<body>
+  <h1>📄 Hướng dẫn — Nhân viên xử lý đơn</h1>
+  <p class="sub">Vai trò: Member / Leader · Nhận đơn → mua hàng → điền tracking &amp; thẻ · Làm việc trong team của mình</p>
+
+  <h2>1. Đăng nhập</h2>
+  <ol>
+    <li>Mở đường link app (người quản lý đưa, vd <code>http://...:4000</code>).</li>
+    <li>Nhập <b>email + mật khẩu</b> được cấp → bấm <b>Đăng nhập</b>.</li>
+    <li>Menu bên trái hiển thị: <span class="tag">Sheet Con</span> <span class="tag">Tracking</span> <span class="tag">Leaderboard</span> <span class="tag">Yêu cầu thẻ</span> <span class="tag">Thống kê thẻ</span></li>
+  </ol>
+
+  <h2>2. Sheet Con — quy trình xử lý 1 đơn</h2>
+  <p>Màn hình làm việc chính. Mỗi dòng là 1 đơn đã được chia về team bạn.</p>
+
+  <div class="step">
+    <h3>Bước 1 — Nhận đơn</h3>
+    <ul>
+      <li>Tìm đơn chưa có người nhận (cột <b>Nhận đơn</b> còn nút xanh) → bấm <b>Nhận đơn</b>. Tên bạn được gắn và <b>khóa</b> đơn lại.</li>
+      <li>Lọc nhanh bằng nút <b>Chưa nhận</b> / <b>Của tôi</b> ở góc trên phải.</li>
+      <li>⚠️ Muốn đổi / gỡ người nhận phải nhờ <b>Admin / Leader</b>.</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <h3>Bước 2 — Xem thông tin đơn (chỉ đọc)</h3>
+    <ul>
+      <li>Store, ID Order, Ảnh, Sản phẩm, Link (🔗 mở sản phẩm), Size, Màu, Địa chỉ, SL, Profit, Thời hạn, Note tổng.</li>
+      <li>📌 Đọc kỹ <b>Size / Màu / Thời hạn / Note tổng</b> trước khi mua.</li>
+    </ul>
+  </div>
+
+  <div class="step">
+    <h3>Bước 3 — Mua hàng &amp; nhập thẻ</h3>
+    <ol>
+      <li>Bấm <b>＋ Thẻ</b> để thêm dòng thẻ cho đơn.</li>
+      <li>Điền (gõ xong bấm ra ngoài là tự lưu): <b>Thẻ</b>, <b>Số tiền</b>, <b>Tracking</b>, <b>Order#</b>, <b>Email</b>, <b>Phone</b>, <b>Zip</b>, <b>TT xử lý</b>.</li>
+      <li>Đơn lớn cần 2–3 thẻ → bấm <b>＋ Thẻ</b> nhiều dòng; mỗi thẻ điền tracking/order/email riêng. Profit tự chia theo số tiền từng thẻ.</li>
+      <li>Xóa nhầm 1 dòng thẻ → bấm nút <b>✕</b> đỏ cuối dòng.</li>
+    </ol>
+    <p>⚠️ Ô <b>Thẻ</b> viền <b style="color:#dc2626">đỏ</b> kèm chữ "✗ chưa cấp" = thẻ chưa có trong hệ thống Mua thẻ → kiểm tra lại.</p>
+  </div>
+
+  <div class="step">
+    <h3>Bước 4 — Ghi chú</h3>
+    <p>4 cột <b>Note 1–4</b> ở cuối để ghi chú riêng cho đơn.</p>
+  </div>
+
+  <blockquote>💾 <b>Lưu tự động:</b> mọi ô gõ đều lưu ngay khi rời ô — không có nút "Save".</blockquote>
+
+  <h2>3. Yêu cầu thẻ ✍️</h2>
+  <ol>
+    <li>Vào <b>Yêu cầu thẻ</b> → ô <b>Tạo yêu cầu mới</b> → mô tả thẻ cần → <b>＋ Gửi yêu cầu</b>.</li>
+    <li>Người mua thẻ sẽ cấp thẻ về đúng yêu cầu → xem ở mục <b>Thẻ được cấp</b>.</li>
+    <li>Cập nhật <b>Trạng thái</b> thẻ (Live Bill / Sai bill) khi dùng xong.</li>
+  </ol>
+  <blockquote>🔒 Bạn chỉ thấy yêu cầu của <b>chính mình</b>. Yêu cầu đã cấp thẻ sẽ khóa để đối chiếu.</blockquote>
+
+  <h2>4. Tracking 🚚 · Thống kê thẻ 📊 · Leaderboard 🏆</h2>
+  <ul>
+    <li><b>Tracking:</b> xem trạng thái vận chuyển các đơn đã có mã; hệ thống tự cập nhật.</li>
+    <li><b>Thống kê thẻ:</b> xem thẻ của cả team — 🔒 giá trị thẻ được ẩn, chỉ thấy số lượng / trạng thái / đơn đã xử lý / profit.</li>
+    <li><b>Leaderboard:</b> xếp hạng tháng — số đơn "Đã Up", số thẻ Live Bill/Sai bill, tổng profit.</li>
+  </ul>
+
+  <h2>5. Mẹo nhanh</h2>
+  <ul>
+    <li>🔍 Ô <b>Tìm</b> + hàng <b>lọc</b> dưới tiêu đề: lọc nhiều cột cùng lúc. Bấm <b>✕ Xóa lọc</b> để bỏ.</li>
+    <li>🔔 Chuông thông báo (góc dưới menu): báo việc liên quan đến bạn.</li>
+    <li>📅 Ô chọn <b>tháng</b>: xem đơn tháng trước.</li>
+    <li>Quên mật khẩu / đổi tên người nhận / thêm quyền → <b>báo Admin</b>.</li>
+  </ul>
+</body>
+</html>

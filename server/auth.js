@@ -34,6 +34,7 @@ export function publicUser(u) {
     id: u.id, name: u.name, email: u.email, role: u.role,
     teamIds: JSON.parse(u.team_ids || "[]"),
     storeNames: JSON.parse(u.store_names || "[]"),
+    mutedTeams: JSON.parse(u.muted_teams || "[]"),
     canBuyCard: !!u.can_buy_card, active: !!u.active,
   };
 }

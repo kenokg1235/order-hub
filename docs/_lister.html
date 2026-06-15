@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hướng dẫn Lister</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Segoe UI Emoji", Arial, sans-serif;
+    color: #1f2937; font-size: 12.5px; line-height: 1.5; margin: 0;
+  }
+  h1 { font-size: 22px; color: #047857; margin: 0 0 2px; }
+  .sub { color: #6b7280; font-style: italic; margin: 0 0 14px; font-size: 12px; }
+  h2 {
+    font-size: 15px; color: #111827; margin: 18px 0 6px;
+    border-bottom: 2px solid #e5e7eb; padding-bottom: 4px;
+  }
+  h3 { font-size: 13px; color: #047857; margin: 12px 0 4px; }
+  p { margin: 5px 0; }
+  ul, ol { margin: 5px 0 5px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  b, strong { color: #111827; }
+  code {
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
+    padding: 0 4px; font-family: Consolas, monospace; font-size: 11.5px;
+  }
+  blockquote {
+    margin: 8px 0; padding: 7px 12px; background: #ecfdf5;
+    border-left: 4px solid #10b981; border-radius: 4px; color: #065f46;
+  }
+  .warn { background:#fff7ed; border-left:4px solid #f59e0b; color:#92400e;
+    padding:7px 12px; border-radius:4px; margin:8px 0; }
+  .step {
+    background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;
+    padding: 8px 12px; margin: 8px 0;
+  }
+  .tag { display:inline-block; background:#d1fae5; color:#065f46;
+    border-radius:5px; padding:1px 7px; font-weight:600; font-size:11px; }
+</style>
+</head>
+<body>
+  <h1>📊 Hướng dẫn — Nhân viên Listing (Lister)</h1>
+  <p class="sub">Người list hàng lên eBay · Làm việc theo store được phân quyền · Không thấy Sheet Con &amp; mục Thẻ</p>
+
+  <h2>1. Đăng nhập</h2>
+  <ol>
+    <li>Mở link app (người quản lý đưa).</li>
+    <li>Nhập <b>email + mật khẩu</b> được cấp → <b>Đăng nhập</b>.</li>
+    <li>Menu chỉ có 2 mục: <span class="tag">Sheet Tổng</span> <span class="tag">Payout</span></li>
+  </ol>
+
+  <h2>2. Sheet Tổng — nhập đơn từ eBay</h2>
+
+  <div class="step">
+    <h3>Cách 1: Import file eBay (nhanh, khuyến nghị)</h3>
+    <ol>
+      <li>Trên eBay Seller Hub, tải file <b>OrdersReport (.csv)</b>.</li>
+      <li>Trong app bấm <b>⬆️ Import eBay</b>.</li>
+      <li><b>Chọn store</b> (file thuộc store nào) — chỉ chọn được trong store được giao.</li>
+      <li>Chọn <b>file .csv</b> → app báo "Đọc được N đơn" → bấm <b>Import</b>.</li>
+      <li>Kết quả: <b>Thêm mới / Trùng đã bỏ qua / Dòng lỗi</b>. Đơn trùng tự bỏ qua, không lo nhập 2 lần.</li>
+    </ol>
+  </div>
+
+  <div class="step">
+    <h3>Cách 2: Thêm 1 đơn thủ công</h3>
+    <p>Bấm <b>＋ Thêm đơn</b> → điền ID Order, Store, Sản phẩm, SL, SĐT, Address, Link, Size, Màu, Profit, Thời hạn → <b>Lưu</b>.</p>
+  </div>
+
+  <div class="step">
+    <h3>Lấy ảnh sản phẩm</h3>
+    <p>Đơn thiếu ảnh: bấm <b>🖼️ Lấy ảnh (N)</b> ở thanh trên (hàng loạt), hoặc bấm ô 🖼️ trên từng đơn. App tự lấy ảnh bìa từ eBay.</p>
+  </div>
+
+  <h2>3. Điền thông tin đơn</h2>
+  <p>Gõ trực tiếp trên bảng, <b>rời ô là tự lưu</b>:</p>
+  <ul>
+    <li><b>Size, Màu, Profit, Note</b> — gõ vào ô tương ứng.</li>
+    <li><b>Thời hạn</b> — gõ tay dạng <code>DD/MM</code>, hoặc bấm nút <b>📅</b> chọn từ lịch.</li>
+    <li>📌 Cột <b>Address</b> tự tô vàng + cảnh báo khi 2+ đơn trùng địa chỉ → kiểm tra kỹ.</li>
+  </ul>
+  <div class="warn">❗ Một số cột bạn <b>chỉ xem</b> (do bộ phận xử lý điền xuống): Người nhận, Tracking, Order#, Email, Phone, Zip, TT xử lý, Trạng thái tổng. Việc chia đơn cho team là của Admin.</div>
+
+  <h2>4. Payout 💰 — tiền về theo store</h2>
+  <ol>
+    <li>Vào <b>Payout</b>.</li>
+    <li>Dùng <b>thanh thêm nhanh</b>: chọn <b>Store</b>, nhập <b>Username / Bank / Tên bank / Số tiền / Ngày / Ghi chú</b> → thêm. Chỉ chọn được store mình phụ trách.</li>
+    <li>Các khoản nhóm theo <b>store</b>, có <b>tổng từng store</b> + <b>tổng chung</b>.</li>
+    <li>Lọc theo <b>khoảng ngày</b> (Từ … Đến …) để xem tổng theo giai đoạn.</li>
+    <li>Xóa khoản nhập sai: bấm nút xóa trên dòng đó.</li>
+  </ol>
+
+  <h2>5. Mẹo nhanh</h2>
+  <ul>
+    <li>🔍 Ô <b>Tìm</b> + hàng <b>lọc</b> dưới tiêu đề: lọc Store, trạng thái, ID… nhiều cột cùng lúc. <b>✕ Xóa lọc</b> để bỏ.</li>
+    <li>📅 Ô chọn <b>tháng</b>: xem đơn tháng trước.</li>
+    <li>🔔 Chuông thông báo ở góc dưới menu.</li>
+    <li>Cần thêm store / đổi quyền store → <b>báo Admin</b>.</li>
+  </ul>
+</body>
+</html>
