@@ -180,6 +180,25 @@ export default function Master({ currentUser, teams }) {
   function toggleSel(id) {
     setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
+  const allSelected = filtered.length > 0 && filtered.every((o) => sel.has(o.id));
+  function toggleAll() {
+    setSel((p) => {
+      const n = new Set(p);
+      if (filtered.length > 0 && filtered.every((o) => n.has(o.id))) filtered.forEach((o) => n.delete(o.id));
+      else filtered.forEach((o) => n.add(o.id));
+      return n;
+    });
+  }
+  async function bulkDelete() {
+    const ids = [...sel];
+    if (!ids.length) return;
+    if (!confirm(`Xóa ${ids.length} đơn đã chọn?\n\n⚠️ KHÔNG thể hoàn tác — các thẻ/đơn con liên quan cũng bị xóa.`)) return;
+    try {
+      const r = await api.post("/api/orders/bulk-delete", { ids });
+      setSel(new Set()); load();
+      alert(`Đã xóa ${r.deleted} đơn.`);
+    } catch (e) { setErr(e.message); }
+  }
 
   // Read-back of team processing (purchases) into the master sheet. Multi-card
   // orders stack their values vertically (one line per card).
@@ -222,6 +241,7 @@ export default function Master({ currentUser, teams }) {
           ))}
           <Button sm onClick={() => divide("")}>Bỏ chia</Button>
           <div className="spacer" />
+          <Button sm variant="danger" onClick={bulkDelete}>🗑 Xóa đã chọn ({sel.size})</Button>
           <Button sm onClick={() => setSel(new Set())}>Bỏ chọn</Button>
         </div>
       )}
@@ -231,7 +251,7 @@ export default function Master({ currentUser, teams }) {
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 1850, whiteSpace: "nowrap" }}>
           <thead><tr>
-            {isAdmin && <th></th>}
+            {isAdmin && <th><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Chọn tất cả (đang lọc)" /></th>}
             <th>Team</th><th>Store</th><th>ID Order</th><th>Address</th><th>SĐT</th><th>SL</th>
             <th>Sản phẩm</th><th>Ảnh</th><th>Link</th><th>Size</th><th>Màu</th><th>Profit</th><th>Thời hạn</th><th>Note</th>
             <th>Trạng thái tổng</th>

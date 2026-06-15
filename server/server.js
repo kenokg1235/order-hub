@@ -349,6 +349,16 @@ app.delete("/api/orders/:id", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Bulk-delete selected orders (Admin only). Purchases cascade via FK.
+app.post("/api/orders/bulk-delete", requireAdmin, (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
+  if (!ids.length) return res.json({ ok: true, deleted: 0 });
+  const stmt = db.prepare("DELETE FROM orders WHERE id=?");
+  let deleted = 0;
+  db.transaction((list) => { for (const id of list) deleted += stmt.run(id).changes; })(ids);
+  res.json({ ok: true, deleted });
+});
+
 // ── Monthly periods: list + close month ───────────────────────────────────────
 app.get("/api/months", requireAuth, (req, res) => {
   const months = db.prepare("SELECT DISTINCT period FROM orders WHERE period!='' ORDER BY period DESC").all().map((r) => r.period);
@@ -691,7 +701,10 @@ function checkOverdue() {
     if (!day || !mon || mon > 12 || day > 31) continue;
     const dl = new Date(today.getFullYear(), mon - 1, day);
     if (dl < today) {
-      notify([o.claimed_by, ...adminIds()], "overdue", `⏰ Đơn ${o.id} (${o.store}) đã QUÁ HẠN xử lý: ${o.deadline}`, "", o.team ? [o.team] : []);
+      // Oversight goes to the store's Lister(s); if the store has none, fall back to Admins.
+      const listers = listersForStore(o.store);
+      const oversight = listers.length ? listers : adminIds();
+      notify([o.claimed_by, ...oversight], "overdue", `⏰ Đơn ${o.id} (${o.store}) đã QUÁ HẠN xử lý: ${o.deadline}`, "", o.team ? [o.team] : []);
       db.prepare("UPDATE orders SET overdue_notified=1 WHERE id=?").run(o.id);
     }
   }
