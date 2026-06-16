@@ -213,7 +213,8 @@ app.get("/api/orders", requireAuth, (req, res) => {
   if (stores !== null) { conds.push(`store IN (${stores.map(() => "?").join(",")})`); params.push(...stores); }
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  res.json({ orders: rows.map(orderFull) });   // include purchases (team processing pushed back)
+  // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: purchasesOf(o.id, false) })) });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
