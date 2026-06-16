@@ -7,6 +7,10 @@ export default function Requests({ currentUser }) {
   const isAdmin = currentUser.role === "Admin";
   const [reqs, setReqs] = useState([]);
   const [cardStatuses, setCardStatuses] = useState([]);
+  const [lockStatuses, setLockStatuses] = useState([]);   // thẻ hợp lệ
+  const [errorStatuses, setErrorStatuses] = useState([]); // thẻ lỗi
+  const isLocked = (st) => !isAdmin && lockStatuses.map((s) => s.toLowerCase()).includes(String(st || "").toLowerCase());
+  const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
   const [newContent, setNewContent] = useState("");
   const [copied, setCopied] = useState("");
   const [err, setErr] = useState("");
@@ -28,7 +32,10 @@ export default function Requests({ currentUser }) {
   async function load() {
     try {
       setReqs((await api.get("/api/card-requests")).requests);
-      setCardStatuses((await api.get("/api/settings")).settings.cardStatuses || []);
+      const s = (await api.get("/api/settings")).settings;
+      setCardStatuses(s.cardStatuses || []);
+      setLockStatuses(s.cardCountStatuses || []);
+      setErrorStatuses(s.cardErrorStatuses || []);
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -87,10 +94,18 @@ export default function Requests({ currentUser }) {
             <div className="row" style={{ gap: 6 }}>
               <span className="muted">Trạng thái:</span>
               <select className="input" style={{ padding: "5px 8px", maxWidth: 170 }} value={r.status}
+                title={isLocked(r.status) ? "Đã chốt bill — chỉ đổi giữa Live/Sai bill (Admin mới đổi khác)" : ""}
                 onChange={(e) => update(r.id, { status: e.target.value })}>
-                <option value="">— trống —</option>
-                {cardStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                {isLocked(r.status) ? (
+                  lockStatuses.map((s) => <option key={s} value={s}>{s}</option>)
+                ) : (<>
+                  <option value="">— trống —</option>
+                  {lockStatuses.length > 0 && <optgroup label="🟢 Thẻ hợp lệ">{lockStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                  {errorStatuses.length > 0 && <optgroup label="🔴 Thẻ lỗi">{errorStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                  {otherStatuses.length > 0 && <optgroup label="Khác">{otherStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                </>)}
               </select>
+              {isLocked(r.status) && <span title="Đã chốt bill">🔒</span>}
             </div>
           </div>
         </div>

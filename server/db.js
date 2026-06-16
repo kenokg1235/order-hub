@@ -225,7 +225,8 @@ seedSetting("failCancelReasons", ["Lỗi xử lý (NV)"]);
 // Số tháng giữ lại (ngoài tháng hiện tại) khi "Dọn dữ liệu cũ" — vd 2 = giữ tháng này + 2 tháng trước.
 seedSetting("retentionMonths", 2);
 // Card statuses that count toward Leaderboard "số thẻ".
-seedSetting("cardCountStatuses", ["Live Bill", "Sai bill"]);
+seedSetting("cardCountStatuses", ["Live Bill", "Sai bill"]);   // nhóm "thẻ hợp lệ": tính số thẻ + khóa khi chọn
+seedSetting("cardErrorStatuses", ["Lỗi thẻ"]);                  // nhóm "thẻ lỗi": không tính số thẻ
 seedSetting("aftership", { enabled: false, keys: [] });   // keys: [apiKey, ...] (mỗi key ~50/tháng)
 seedSetting("telegram",        { botToken: "", enabled: false });
 // Active working month (new imports land here; "Chốt tháng" advances it).

@@ -4,16 +4,26 @@ import { api } from "../api.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 
 // Sheet Mua thẻ — Admin + card-buyers issue cards against requests and see stats.
-export default function Cards() {
+export default function Cards({ currentUser }) {
+  const isAdmin = currentUser?.role === "Admin";
   const [reqs, setReqs] = useState([]);
   const [cardStatuses, setCardStatuses] = useState([]);
+  const [lockStatuses, setLockStatuses] = useState([]);   // thẻ hợp lệ
+  const [errorStatuses, setErrorStatuses] = useState([]); // thẻ lỗi
+  const isCount = (st) => lockStatuses.map((s) => s.toLowerCase()).includes(String(st || "").toLowerCase());
+  // Chỉ khóa khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" → chỉ đổi qua lại trong nhóm hợp lệ.
+  const restrictedFor = (r) => !isAdmin && isCount(r.status);
+  const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
 
   async function load() {
     try {
       setReqs((await api.get("/api/card-requests")).requests);
-      setCardStatuses((await api.get("/api/settings")).settings.cardStatuses || []);
+      const s = (await api.get("/api/settings")).settings;
+      setCardStatuses(s.cardStatuses || []);
+      setLockStatuses(s.cardCountStatuses || []);
+      setErrorStatuses(s.cardErrorStatuses || []);
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -55,10 +65,18 @@ export default function Cards() {
                 <td>{r.requesterName}</td>
                 <td>
                   <select className="input" style={{ padding: "5px 8px", minWidth: 120 }} value={r.status}
+                    title={restrictedFor(r) ? "Thẻ đã làm đơn/chốt bill — chỉ đổi giữa Live/Sai bill (Admin mới đổi khác)" : ""}
                     onChange={(e) => update(r.id, { status: e.target.value })}>
-                    <option value="">— trống —</option>
-                    {cardStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {restrictedFor(r) ? (
+                      lockStatuses.map((s) => <option key={s} value={s}>{s}</option>)
+                    ) : (<>
+                      <option value="">— trống —</option>
+                      {lockStatuses.length > 0 && <optgroup label="🟢 Thẻ hợp lệ">{lockStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                      {errorStatuses.length > 0 && <optgroup label="🔴 Thẻ lỗi">{errorStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                      {otherStatuses.length > 0 && <optgroup label="Khác">{otherStatuses.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>}
+                    </>)}
                   </select>
+                  {restrictedFor(r) && <span title="Đã chốt bill"> 🔒</span>}
                 </td>
                 <td style={{ maxWidth: 240, whiteSpace: "normal", fontSize: 12 }}>
                   {r.stats?.orders?.length ? r.stats.orders.join(", ") : <span className="muted">—</span>}

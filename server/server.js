@@ -908,6 +908,16 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   const isOwner = r.requester_id === u.id;
   if (!isManager && !isOwner) return res.status(403).json({ error: "Không có quyền" });
   const b = req.body || {};
+  // Chống gian lận: khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" (vd Live/Sai bill) thì đã KHÓA —
+  // nhân viên chỉ được đổi qua lại TRONG nhóm hợp lệ, không được chuyển sang nhóm khác (vd thẻ lỗi)
+  // để né chỉ số đơn/thẻ. Nhóm thẻ lỗi/khác KHÔNG khóa (đổi sang hợp lệ thoải mái). Admin toàn quyền.
+  if ("status" in b && u.role !== "Admin" && String(b.status) !== String(r.status || "")) {
+    const validSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
+    const curIsValid = validSet.has(String(r.status || "").toLowerCase());
+    const newIsValid = validSet.has(String(b.status || "").toLowerCase());
+    if (curIsValid && !newIsValid)
+      return res.status(403).json({ error: "Thẻ hợp lệ đã khóa — chỉ đổi trong nhóm hợp lệ (Admin mới đổi khác)." });
+  }
   const sets = [], vals = [];
   if ("content" in b && (isOwner || u.role === "Admin")) { sets.push("content=?"); vals.push(b.content); }
   if ("status" in b && (isOwner || isManager)) { sets.push("status=?"); vals.push(b.status); }

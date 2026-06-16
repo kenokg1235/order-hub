@@ -37,6 +37,10 @@ export default function Settings() {
         onSave={(l) => saveList("processStatuses", l)} />
       <StatusEditor title="Trạng thái thẻ (Sheet Mua thẻ)" list={s.cardStatuses}
         onSave={(l) => saveList("cardStatuses", l)} />
+      <StatusEditor title="🟢 Trạng thái thẻ HỢP LỆ (vd Live bill / Sai bill — tính số thẻ; chọn 1 sẽ KHÓA, chỉ đổi qua lại trong nhóm này)"
+        list={s.cardCountStatuses || []} onSave={(l) => saveList("cardCountStatuses", l)} />
+      <StatusEditor title="🔴 Trạng thái thẻ LỖI (không tính số thẻ; không đổi sang được sau khi đã khóa)"
+        list={s.cardErrorStatuses || []} onSave={(l) => saveList("cardErrorStatuses", l)} />
 
       <StatusEditor title="Lý do Cancel đơn (chọn khi đơn 'Đã Cancel')" list={s.cancelReasons || []}
         onSave={(l) => saveList("cancelReasons", l)} />

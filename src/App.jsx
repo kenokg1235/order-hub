@@ -135,7 +135,7 @@ export default function App() {
         {page === "master"   && <Master currentUser={user} teams={teams} />}
         {page === "team"     && <TeamSheet currentUser={user} teams={teams} />}
         {page === "requests" && <Requests currentUser={user} />}
-        {page === "cards"    && <Cards />}
+        {page === "cards"    && <Cards currentUser={user} />}
         {page === "card-stats" && <CardStats />}
       </main>
     </div>
