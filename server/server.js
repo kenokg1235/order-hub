@@ -426,17 +426,21 @@ function canTouchOrderTeam(user, order) {
 function cardExists(card) {
   return !!card && !!db.prepare("SELECT 1 FROM card_requests WHERE card_value=? LIMIT 1").get(card);
 }
-function purchaseOut(p) {
+function purchaseOut(p, masked = false) {
+  // Card/purchase details are private to the order's claimer — other teammates get a masked stub.
+  if (masked) return { id: p.id, orderId: p.order_id, hidden: true };
   return {
     id: p.id, orderId: p.order_id, card: p.card, amount: p.amount,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
-    cardValid: !p.card || cardExists(p.card), orderTime: p.order_time,
+    cardValid: !p.card || cardExists(p.card), orderTime: p.order_time, hidden: false,
   };
 }
-const purchasesOf = (orderId) =>
-  db.prepare("SELECT * FROM purchases WHERE order_id=? ORDER BY created_at").all(orderId).map(purchaseOut);
-const orderFull = (o) => ({ ...orderOut(o), purchases: purchasesOf(o.id) });
+const purchasesOf = (orderId, masked = false) =>
+  db.prepare("SELECT * FROM purchases WHERE order_id=? ORDER BY created_at").all(orderId).map((p) => purchaseOut(p, masked));
+// Who may see/own a purchase's card info: Admin or the person who claimed the order.
+const canSeePurchases = (user, o) => !!user && (user.role === "Admin" || (!!o.claimed_by && o.claimed_by === user.id));
+const orderFull = (o, user) => ({ ...orderOut(o), purchases: purchasesOf(o.id, !canSeePurchases(user, o)) });
 
 // Team-scoped orders (Admin = all; Leader/Member = own teams' divided orders).
 app.get("/api/team-orders", requireAuth, (req, res) => {
@@ -453,7 +457,7 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   } else return res.json({ orders: [] });
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  res.json({ orders: rows.map(orderFull) });
+  res.json({ orders: rows.map((o) => orderFull(o, u)) });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
@@ -489,7 +493,7 @@ app.post("/api/orders/:id/claim", requireAuth, (req, res) => {
   const now = Date.now();
   db.prepare("UPDATE orders SET claimed_by=?, claimed_name=?, claimed_at=?, updated_at=? WHERE id=?")
     .run(uid, uname, now, now, o.id);
-  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
 
 // Remove the claim (Admin = any; Leader = own team's orders).
@@ -501,7 +505,7 @@ app.post("/api/orders/:id/unclaim", requireAuth, (req, res) => {
     return res.status(403).json({ error: "Chỉ Admin hoặc Leader của team" });
   db.prepare("UPDATE orders SET claimed_by='', claimed_name='', claimed_at=0, updated_at=? WHERE id=?")
     .run(Date.now(), o.id);
-  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
 
 // Order-level notes (team members).
@@ -516,14 +520,14 @@ app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
     sets.push("updated_at=?"); vals.push(Date.now());
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
   }
-  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
 
 // Purchases (one per card used on the order).
 app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
-  if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới thêm thẻ" });
   const b = req.body || {};
   const id = newId("pur");
   db.prepare(`INSERT INTO purchases (id,order_id,card,amount,order_number,email,tracking,phone,zip,process_status,created_at)
@@ -537,10 +541,15 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const p = db.prepare("SELECT * FROM purchases WHERE id=?").get(req.params.pid);
   if (!p) return res.status(404).json({ error: "Không tìm thấy thẻ" });
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
-  if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới sửa thẻ" });
   const b = req.body || {};
   const map = { card: "card", amount: "amount", orderNumber: "order_number", email: "email",
     tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status" };
+  // Must have a valid issued card before entering any other field.
+  const effCard = ("card" in b) ? String(b.card || "") : p.card;
+  const touchesOther = Object.keys(b).some((k) => k !== "card" && k in map);
+  if (touchesOther && !(effCard && cardExists(effCard)))
+    return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
     sets.push(`${col}=?`); vals.push(col === "amount" ? (Number(b[k]) || 0) : b[k]);
@@ -561,7 +570,7 @@ app.delete("/api/purchases/:pid", requireAuth, (req, res) => {
   const p = db.prepare("SELECT * FROM purchases WHERE id=?").get(req.params.pid);
   if (!p) return res.json({ ok: true });
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
-  if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới xóa thẻ" });
   db.prepare("DELETE FROM purchases WHERE id=?").run(p.id);
   res.json({ ok: true });
 });

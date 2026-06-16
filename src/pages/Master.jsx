@@ -15,6 +15,7 @@ export default function Master({ currentUser, teams }) {
   const [statusColors, setStatusColors] = useState({});
   const [procStatuses, setProcStatuses] = useState([]);
   const [cancelReasons, setCancelReasons] = useState([]);
+  const [deadlineSort, setDeadlineSort] = useState("");   // "" | "asc" | "desc"
   const [cf, setCf] = useState({});                // per-column filters (combine like Google Sheets)
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -130,7 +131,7 @@ export default function Master({ currentUser, teams }) {
       {opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
   );
-  const fMulti = (key, opts) => <MultiFilter options={opts} value={cf[key] || []} onChange={(v) => setF(key, v)} />;
+  const fMulti = (key, opts, searchable = false) => <MultiFilter options={opts} value={cf[key] || []} onChange={(v) => setF(key, v)} searchable={searchable} />;
 
   const filtered = useMemo(() => {
     const T = (v) => String(v ?? "").toLowerCase();
@@ -164,6 +165,19 @@ export default function Master({ currentUser, teams }) {
       return true;
     });
   }, [orders, q, cf]);
+
+  // Optional sort by deadline (DD/MM). Empty deadlines always go last.
+  const deadlineKey = (d) => { const m = String(d || "").match(/(\d{1,2})\s*\/\s*(\d{1,2})/); return m ? (+m[2]) * 100 + (+m[1]) : Infinity; };
+  const displayed = useMemo(() => {
+    if (!deadlineSort) return filtered;
+    return [...filtered].sort((a, b) => {
+      const va = deadlineKey(a.deadline), vb = deadlineKey(b.deadline);
+      if (va === Infinity && vb === Infinity) return 0;
+      if (va === Infinity) return 1;
+      if (vb === Infinity) return -1;
+      return deadlineSort === "asc" ? va - vb : vb - va;
+    });
+  }, [filtered, deadlineSort]);
 
   async function patch(id, body) {
     try {
@@ -255,7 +269,13 @@ export default function Master({ currentUser, teams }) {
           <thead><tr>
             {isAdmin && <th><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Chọn tất cả (đang lọc)" /></th>}
             <th>Team</th><th>Store</th><th>ID Order</th><th>Address</th><th>SĐT</th><th>SL</th>
-            <th>Sản phẩm</th><th>Ảnh</th><th>Link</th><th>Size</th><th>Màu</th><th>Profit</th><th>Thời hạn</th><th>Note</th>
+            <th>Sản phẩm</th><th>Ảnh</th><th>Link</th><th>Size</th><th>Màu</th><th>Profit</th>
+            <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
+              style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
+              title="Sắp xếp theo thời hạn (gần ↔ xa)">
+              Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
+            </th>
+            <th>Note</th>
             <th>Trạng thái tổng</th>
             <th>Người nhận</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th>
             <th></th>
@@ -263,7 +283,7 @@ export default function Master({ currentUser, teams }) {
           <tr style={{ background: "#fbfcfd" }}>
             {isAdmin && <td></td>}
             <td>{fMulti("team", [{ v: "__none", l: "Chưa chia" }, ...teams.map((t) => ({ v: t.id, l: t.name }))])}</td>
-            <td>{fMulti("store", stores.map((s) => ({ v: s, l: s })))}</td>
+            <td>{fMulti("store", stores.map((s) => ({ v: s, l: s })), true)}</td>
             <td>{fText("id", 110)}</td>
             <td>{fText("address", 120)}</td>
             <td>{fText("custPhone", 90)}</td>
@@ -287,7 +307,7 @@ export default function Master({ currentUser, teams }) {
             <td>{activeFilters > 0 && <button className="btn sm" onClick={clearFilters} title="Xóa lọc">✕</button>}</td>
           </tr></thead>
           <tbody>
-            {filtered.map((o) => (
+            {displayed.map((o) => (
               <tr key={o.id} style={{ background: rowBg(o.masterStatus, "", statusColors) }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
                 <td>{isAdmin

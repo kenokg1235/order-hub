@@ -2,16 +2,21 @@ import React, { useEffect, useRef, useState } from "react";
 
 // Multi-value column filter (Google-Sheets style): tick several values at once.
 // value = array of selected option values ([] = no filter / all). onChange(array).
-export default function MultiFilter({ options, value, onChange }) {
+export default function MultiFilter({ options, value, onChange, searchable = false }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const ref = useRef(null);
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+  useEffect(() => { if (!open) setQ(""); }, [open]);
   const sel = value || [];
   const toggle = (v) => onChange(sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v]);
+  const shown = searchable && q.trim()
+    ? options.filter((o) => String(o.l).toLowerCase().includes(q.trim().toLowerCase()))
+    : options;
   const label = sel.length === 0 ? "Tất cả"
     : sel.length === 1 ? (options.find((o) => o.v === sel[0])?.l || sel[0])
     : `${sel.length} mục`;
@@ -32,8 +37,12 @@ export default function MultiFilter({ options, value, onChange }) {
             <button className="btn sm" onClick={() => onChange(options.map((o) => o.v))}>Tất cả</button>
             <button className="btn sm" onClick={() => onChange([])}>Bỏ chọn</button>
           </div>
-          {options.length === 0 && <div className="muted" style={{ padding: 6, fontSize: 12 }}>—</div>}
-          {options.map((o) => (
+          {searchable && (
+            <input className="input" autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="🔍 Gõ để tìm…" style={{ padding: "3px 6px", fontSize: 12, width: "100%", marginBottom: 6 }} />
+          )}
+          {shown.length === 0 && <div className="muted" style={{ padding: 6, fontSize: 12 }}>{searchable && q ? "Không khớp" : "—"}</div>}
+          {shown.map((o) => (
             <label key={o.v} style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 4px", cursor: "pointer", fontSize: 13 }}>
               <input type="checkbox" checked={sel.includes(o.v)} onChange={() => toggle(o.v)} /> {o.l}
             </label>
