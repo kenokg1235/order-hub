@@ -108,6 +108,7 @@ ensureColumn("orders", "listed_by", "TEXT DEFAULT ''");
 ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note on Sheet Tổng
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
 ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
+ensureColumn("users", "can_master", "INTEGER NOT NULL DEFAULT 0");    // Leader có quyền xem/sửa Sheet Tổng
 ensureColumn("orders", "overdue_notified", "INTEGER DEFAULT 0");
 ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM"
 ensureColumn("orders", "cancel_reason", "TEXT DEFAULT ''");   // lý do khi master_status = Đã Cancel
@@ -221,6 +222,8 @@ seedSetting("cardStatuses",    ["Chờ cấp", "Đã cấp", "Đã nhận", "Đ�
 // Lý do khi đơn bị Cancel; failCancelReasons = các lý do tính vào "Fail rate" (lỗi NV).
 seedSetting("cancelReasons",     ["Lỗi xử lý (NV)", "Khách hủy", "Hết hàng / hết size", "Lý do khác"]);
 seedSetting("failCancelReasons", ["Lỗi xử lý (NV)"]);
+// Số tháng giữ lại (ngoài tháng hiện tại) khi "Dọn dữ liệu cũ" — vd 2 = giữ tháng này + 2 tháng trước.
+seedSetting("retentionMonths", 2);
 // Card statuses that count toward Leaderboard "số thẻ".
 seedSetting("cardCountStatuses", ["Live Bill", "Sai bill"]);
 seedSetting("aftership", { enabled: false, keys: [] });   // keys: [apiKey, ...] (mỗi key ~50/tháng)

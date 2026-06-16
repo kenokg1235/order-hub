@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import { Button, Input, Modal, Badge } from "../ui.jsx";
 import { parseEbayCsv } from "../ebayParser.js";
@@ -10,6 +10,7 @@ import HistoryModal from "../HistoryModal.jsx";
 // Sheet Tổng — Admin sees all + divides to teams; Lister sees only assigned stores.
 export default function Master({ currentUser, teams }) {
   const isAdmin = currentUser.role === "Admin";
+  const isLister = currentUser.role === "Lister";
   const [orders, setOrders] = useState([]);
   const [stores, setStores] = useState([]);
   const [statuses, setStatuses] = useState([]);
@@ -27,6 +28,10 @@ export default function Master({ currentUser, teams }) {
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
+  const [pinned, setPinned] = useState(true);
+  const [freezeCols, setFreezeCols] = useState(1);   // số cột ghim từ trái
+  const [colLefts, setColLefts] = useState([]);
+  const tableRef = useRef(null);
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(0);     // remaining auto-refreshes for images
   const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
@@ -181,6 +186,35 @@ export default function Master({ currentUser, teams }) {
     });
   }, [filtered, deadlineSort]);
 
+  // Đo độ rộng cột (từ hàng tiêu đề) để ghim N cột đầu đúng vị trí khi cuộn ngang.
+  useLayoutEffect(() => {
+    if (!pinned || freezeCols <= 0) { setColLefts([]); return; }
+    const measure = () => {
+      const row = tableRef.current?.querySelector("thead tr");
+      if (!row) return;
+      const lefts = []; let acc = 0;
+      for (const cell of row.children) { lefts.push(acc); acc += cell.offsetWidth; }
+      setColLefts(lefts);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [pinned, freezeCols, displayed, cf, q, month, orders, stores]);
+
+  const colStyle = useMemo(() => {
+    if (!pinned || freezeCols <= 0 || !colLefts.length) return "";
+    const n = Math.min(freezeCols, colLefts.length);
+    let css = "";
+    for (let i = 0; i < n; i++) {
+      const k = i + 1, L = colLefts[i];
+      css += `#mtbl>thead>tr>*:nth-child(${k}),#mtbl>tbody>tr>*:nth-child(${k}){position:sticky;left:${L}px;background:#fff;z-index:3;}`;
+      css += `#mtbl>thead>tr:first-child>th:nth-child(${k}){z-index:7;}`;
+      css += `#mtbl>thead>tr:nth-child(2)>td:nth-child(${k}){z-index:6;}`;
+    }
+    css += `#mtbl>thead>tr>*:nth-child(${n}),#mtbl>tbody>tr>*:nth-child(${n}){box-shadow:2px 0 4px rgba(0,0,0,.06);}`;
+    return css;
+  }, [pinned, freezeCols, colLefts]);
+
   async function patch(id, body) {
     try {
       const { order } = await api.put(`/api/orders/${id}`, body);
@@ -245,8 +279,17 @@ export default function Master({ currentUser, teams }) {
             🖼️ Lấy ảnh ({missingImages}){polling > 0 ? " …" : ""}
           </Button>
         )}
-        <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>
-        <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>
+        {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
+        {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
+        <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
+        {pinned && (
+          <span className="row" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: 12 }}>cột:</span>
+            <input className="input" type="number" min="0" max="12" style={{ width: 56, padding: "4px 6px" }}
+              value={freezeCols} title="Số cột ghim từ trái"
+              onChange={(e) => setFreezeCols(Math.max(0, Math.min(12, Number(e.target.value) || 0)))} />
+          </span>
+        )}
       </div>
 
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
@@ -266,8 +309,9 @@ export default function Master({ currentUser, teams }) {
 
       <Bar />
 
-      <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-        <table className="tbl" style={{ minWidth: 1850, whiteSpace: "nowrap" }}>
+      {colStyle && <style>{colStyle}</style>}
+      <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
+        <table id="mtbl" ref={tableRef} className="tbl" style={{ minWidth: 1850, whiteSpace: "nowrap" }}>
           <thead><tr>
             {isAdmin && <th><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Chọn tất cả (đang lọc)" /></th>}
             <th>Team</th><th>Store</th><th>ID Order</th><th>Address</th><th>SĐT</th><th>SL</th>
@@ -565,7 +609,7 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
   return (
     <Modal title={isNew ? "Thêm đơn" : `Sửa đơn ${order.id}`} onClose={onClose}
       footer={<>
-        {!isNew && <Button variant="danger" onClick={remove}>Xóa</Button>}
+        {!isNew && (isAdmin || currentUser.role === "Lister") && <Button variant="danger" onClick={remove}>Xóa</Button>}
         <div className="spacer" />
         <Button onClick={onClose}>Hủy</Button>
         <Button variant="primary" onClick={save}>Lưu</Button>

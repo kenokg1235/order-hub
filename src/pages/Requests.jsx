@@ -8,7 +8,22 @@ export default function Requests({ currentUser }) {
   const [reqs, setReqs] = useState([]);
   const [cardStatuses, setCardStatuses] = useState([]);
   const [newContent, setNewContent] = useState("");
+  const [copied, setCopied] = useState("");
   const [err, setErr] = useState("");
+
+  async function copyCard(card) {
+    const t = String(card || "").trim();
+    if (!t) return;
+    try { await navigator.clipboard.writeText(t); }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setCopied(t); setTimeout(() => setCopied(""), 1500);
+  }
 
   async function load() {
     try {
@@ -62,7 +77,12 @@ export default function Requests({ currentUser }) {
           <div className="row" style={{ gap: 18, flexWrap: "wrap" }}>
             <div className="row" style={{ gap: 6 }}>
               <span className="muted">Thẻ được cấp:</span>
-              {r.card ? <Badge color="green" >{r.card}</Badge> : <span className="muted">Chưa cấp</span>}
+              {r.card ? <>
+                <Badge color="green">{r.card}</Badge>
+                <button className="btn sm" onClick={() => copyCard(r.card)} title="Copy thẻ để dán vào Sheet Con">
+                  {copied === String(r.card).trim() ? "✓ Đã copy" : "📋 Copy"}
+                </button>
+              </> : <span className="muted">Chưa cấp</span>}
             </div>
             <div className="row" style={{ gap: 6 }}>
               <span className="muted">Trạng thái:</span>

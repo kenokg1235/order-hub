@@ -52,30 +52,31 @@ app.get("/api/users", requireAdmin, (req, res) => {
 });
 
 app.post("/api/users", requireAdmin, (req, res) => {
-  const { name, email, password, role, teamIds, storeNames, canBuyCard, mutedTeams } = req.body || {};
+  const { name, email, password, role, teamIds, storeNames, canBuyCard, canMaster, mutedTeams } = req.body || {};
   const mail = String(email || "").trim().toLowerCase();
   if (!name || !mail || !password) return res.status(400).json({ error: "Thiếu tên / email / mật khẩu" });
   const dup = db.prepare("SELECT 1 FROM users WHERE email=?").get(mail);
   if (dup) return res.status(409).json({ error: "Email đã tồn tại" });
   const id = newId("u");
-  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,active,created_at)
-              VALUES (?,?,?,?,?,?,?,?,?,1,?)`)
+  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,can_master,active,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,1,?)`)
     .run(id, name, mail, bcrypt.hashSync(String(password), 10),
          role || "Member", JSON.stringify(teamIds || []), JSON.stringify(storeNames || []),
-         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, Date.now());
+         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, canMaster ? 1 : 0, Date.now());
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(id)) });
 });
 
 app.put("/api/users/:id", requireAdmin, (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
   if (!u) return res.status(404).json({ error: "Không tìm thấy user" });
-  const { name, role, teamIds, storeNames, canBuyCard, active, password, mutedTeams } = req.body || {};
-  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, active=?,
+  const { name, role, teamIds, storeNames, canBuyCard, canMaster, active, password, mutedTeams } = req.body || {};
+  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, can_master=?, active=?,
               password=COALESCE(?, password) WHERE id=?`)
     .run(name ?? u.name, role ?? u.role, JSON.stringify(teamIds ?? JSON.parse(u.team_ids)),
          JSON.stringify(storeNames ?? JSON.parse(u.store_names || "[]")),
          JSON.stringify(mutedTeams ?? JSON.parse(u.muted_teams || "[]")),
          (role ?? u.role) === "Buyer" ? 1 : (canBuyCard != null ? (canBuyCard ? 1 : 0) : u.can_buy_card),
+         canMaster != null ? (canMaster ? 1 : 0) : u.can_master,
          active != null ? (active ? 1 : 0) : u.active,
          password ? bcrypt.hashSync(String(password), 10) : null, u.id);
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(u.id)) });
@@ -135,6 +136,8 @@ function canTouchStore(user, store) {
   if (user.role === "Lister") return (user.storeNames || []).includes(store);
   return false;
 }
+// Ai được sửa ô trên Sheet Tổng: Admin/Lister (store) + Leader được cấp quyền Sheet Tổng.
+const canEditMasterOrder = (user, o) => canTouchStore(user, o.store) || (user.role === "Leader" && user.canMaster);
 
 app.get("/api/stores", requireAuth, (req, res) => {
   res.json({ stores: db.prepare("SELECT name FROM stores ORDER BY name").all().map((s) => s.name) });
@@ -262,7 +265,7 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
 app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
-  if (!canTouchStore(req.user, o.store)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   const url = await fetchEbayImage(itemNoOf(o));
   if (url) db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
@@ -307,7 +310,7 @@ app.post("/api/orders", requireAuth, (req, res) => {
 app.put("/api/orders/:id", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
-  if (!canTouchStore(req.user, o.store)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   const b = req.body || {};
   const map = {
     address: "address", custPhone: "cust_phone", qty: "qty", product: "product", image: "image",
@@ -373,6 +376,47 @@ app.post("/api/orders/bulk-delete", requireAdmin, (req, res) => {
   let deleted = 0;
   db.transaction((list) => { for (const id of list) { deleted += stmt.run(id).changes; stmtAudit.run(id); } })(ids);
   res.json({ ok: true, deleted });
+});
+
+// ── Dọn dữ liệu cũ (Admin) — xóa đơn + thẻ xử lý + yêu cầu thẻ của tháng quá hạn giữ ──
+function subMonths(ym, n) {
+  let [y, m] = String(ym).split("-").map(Number);
+  if (!y || !m) return ym;
+  m -= n; while (m <= 0) { m += 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+const ymOf = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+// Tháng cũ hơn (period <) mốc này sẽ bị xóa. Giữ tháng hiện tại + retentionMonths tháng trước.
+function cleanupCutoff() {
+  const keep = Math.max(0, Number(getSetting("retentionMonths", 2)) || 0);
+  return subMonths(getActiveMonth(), keep);
+}
+function oldCardRequestIds(cutoff) {
+  return db.prepare("SELECT id, created_at FROM card_requests").all()
+    .filter((r) => ymOf(r.created_at) < cutoff).map((r) => r.id);
+}
+// Xem trước số lượng sẽ xóa.
+app.get("/api/cleanup-old", requireAdmin, (req, res) => {
+  const cutoff = cleanupCutoff();
+  const orders = db.prepare("SELECT COUNT(*) c FROM orders WHERE period!='' AND period < ?").get(cutoff).c;
+  const cardRequests = oldCardRequestIds(cutoff).length;
+  const months = db.prepare("SELECT DISTINCT period FROM orders WHERE period!='' AND period < ? ORDER BY period").all(cutoff).map((r) => r.period);
+  res.json({ activeMonth: getActiveMonth(), retentionMonths: getSetting("retentionMonths", 2), cutoff, orders, cardRequests, months });
+});
+// Thực hiện xóa.
+app.post("/api/cleanup-old", requireAdmin, (req, res) => {
+  const cutoff = cleanupCutoff();
+  const orderIds = db.prepare("SELECT id FROM orders WHERE period!='' AND period < ?").all(cutoff).map((o) => o.id);
+  const reqIds = oldCardRequestIds(cutoff);
+  const delAudit = db.prepare("DELETE FROM audit_log WHERE order_id=?");
+  const delOrder = db.prepare("DELETE FROM orders WHERE id=?");      // purchases cascade via FK
+  const delReq = db.prepare("DELETE FROM card_requests WHERE id=?");
+  let ordersDeleted = 0, cardRequestsDeleted = 0;
+  db.transaction(() => {
+    for (const id of orderIds) { delAudit.run(id); delOrder.run(id); ordersDeleted++; }
+    for (const id of reqIds) { delReq.run(id); cardRequestsDeleted++; }
+  })();
+  res.json({ ok: true, cutoff, ordersDeleted, cardRequestsDeleted });
 });
 
 // Edit history of an order's cells (+ its purchases). Anyone who can view the
@@ -574,7 +618,7 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   const id = newId("pur");
   db.prepare(`INSERT INTO purchases (id,order_id,card,amount,order_number,email,tracking,phone,zip,process_status,created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, o.id, b.card || "", Number(b.amount) || 0, b.orderNumber || "", b.email || "",
+    .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.orderNumber || "", b.email || "",
          b.tracking || "", b.phone || "", b.zip || "", b.processStatus || "", Date.now());
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(id)) });
 });
@@ -594,7 +638,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
-    const nv = col === "amount" ? (Number(b[k]) || 0) : b[k];
+    const nv = col === "amount" ? (Number(b[k]) || 0) : (k === "card" ? String(b[k] || "").trim() : b[k]);
     logChange(req.user, "purchase", p.id, p.order_id, k, p[col], nv);
     sets.push(`${col}=?`); vals.push(nv);
   }
@@ -867,7 +911,7 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   const sets = [], vals = [];
   if ("content" in b && (isOwner || u.role === "Admin")) { sets.push("content=?"); vals.push(b.content); }
   if ("status" in b && (isOwner || isManager)) { sets.push("status=?"); vals.push(b.status); }
-  if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(b.card); }
+  if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
   if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); }
   // notify: card issued → requester; status changed → card managers
   if ("card" in b && b.card && !r.card_value)

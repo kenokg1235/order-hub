@@ -61,6 +61,25 @@ table.tbl th, table.tbl td { text-align: left; padding: 10px 12px; border-bottom
 table.tbl th { font-size: 12px; color: var(--muted); font-weight: 600; background: #fafbfc; }
 table.tbl tr:hover td { background: rgba(0,0,0,.035); }   /* translucent → row highlight shows through */
 
+/* ── Ghim (freeze panes): tiêu đề + cột đầu giữ lại khi cuộn ─────────────── */
+.pinwrap { max-height: 72vh; overflow: auto; }
+/* hàng tiêu đề cột (row 1) ghim trên cùng */
+.pinwrap table.tbl thead tr:first-child th {
+  position: sticky; top: 0; z-index: 5; background: #fafbfc;
+  height: 34px; padding-top: 6px; padding-bottom: 6px; box-sizing: border-box;
+}
+/* hàng bộ lọc (row 2) ghim ngay dưới hàng tiêu đề */
+.pinwrap table.tbl thead tr:nth-child(2) td {
+  position: sticky; top: 34px; z-index: 5; background: #fbfcfd;
+}
+/* ghim cột đầu tiên khi cuộn ngang */
+.pincol table.tbl th:first-child, .pincol table.tbl td:first-child {
+  position: sticky; left: 0; z-index: 4; background: #fff;
+  box-shadow: 1px 0 0 var(--border);
+}
+.pincol table.tbl thead tr:first-child th:first-child { z-index: 7; }    /* góc trên-trái trên cùng */
+.pincol table.tbl thead tr:nth-child(2) td:first-child { z-index: 6; }
+
 .row { display: flex; gap: 10px; align-items: center; }
 .muted { color: var(--muted); }
 .spacer { flex: 1; }

@@ -21,6 +21,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [cf, setCf] = useState({});                // per-column filters
   const [deadlineSort, setDeadlineSort] = useState("");   // "" | "asc" | "desc"
   const [historyFor, setHistoryFor] = useState(null);
+  const [pinned, setPinned] = useState(true);
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -178,12 +179,13 @@ export default function TeamSheet({ currentUser, teams }) {
         {FILTERS.map(([k, label]) => (
           <Button key={k} sm variant={filter === k ? "primary" : ""} onClick={() => setFilter(k)}>{label}</Button>
         ))}
+        <Button sm onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột đầu khi cuộn">📌 Ghim</Button>
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <Bar />
 
-      <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+      <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
             <th>Tổng</th><th>Store</th><th>ID Order</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>Địa chỉ</th><th>SL</th><th>Profit</th>

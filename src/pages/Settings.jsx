@@ -43,6 +43,8 @@ export default function Settings() {
       <StatusEditor title="Lý do tính Fail (đơn cancel do lỗi NV — dùng cho Fail rate ở Leaderboard)" list={s.failCancelReasons || []}
         onSave={(l) => saveList("failCancelReasons", l)} />
 
+      <CleanupEditor months={s.retentionMonths ?? 2} onSaveMonths={(v) => saveList("retentionMonths", v)} />
+
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
         colors={s.statusColors || {}} onSave={(m) => saveList("statusColors", m)} />
 
@@ -79,6 +81,44 @@ function StatusEditor({ title, list, onSave }) {
         <div className="spacer" />
         <Button variant="primary" onClick={() => onSave(items)}>Lưu danh sách</Button>
       </div>
+    </div>
+  );
+}
+
+function CleanupEditor({ months, onSaveMonths }) {
+  const [n, setN] = useState(months);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => setN(months), [months]);
+  async function run() {
+    setMsg("");
+    try {
+      const p = await api.get("/api/cleanup-old");
+      if (!p.orders && !p.cardRequests) { setMsg(`Không có dữ liệu cũ để dọn (mốc xóa: trước ${p.cutoff}).`); return; }
+      if (!confirm(`Dọn dữ liệu cũ?\n\nSẽ XÓA VĨNH VIỄN dữ liệu các tháng TRƯỚC ${p.cutoff}` +
+        (p.months?.length ? ` (${p.months.join(", ")})` : "") + `:\n` +
+        `• ${p.orders} đơn hàng (+ thẻ xử lý + lịch sử)\n` +
+        `• ${p.cardRequests} yêu cầu thẻ\n\n` +
+        `Giữ lại: payout, chi phí.\nKHÔNG thể hoàn tác.`)) return;
+      setBusy(true);
+      const r = await api.post("/api/cleanup-old", {});
+      setMsg(`✅ Đã xóa ${r.ordersDeleted} đơn + ${r.cardRequestsDeleted} yêu cầu thẻ (trước ${r.cutoff}).`);
+    } catch (e) { setMsg(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <div className="card" style={{ marginBottom: 16, borderColor: "var(--red)" }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>🧹 Dọn dữ liệu cũ</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        Giữ <b>tháng hiện tại + {n} tháng trước</b>; xóa <b>đơn hàng, thẻ xử lý, yêu cầu thẻ</b> của các tháng cũ hơn.
+        <b> Payout &amp; chi phí KHÔNG bị xóa.</b> Vd giữ 2: ở tháng 9 sẽ xóa dữ liệu tháng 6 trở về trước.
+      </div>
+      <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+        <span className="muted">Giữ lại (số tháng trước):</span>
+        <input className="input" type="number" min="0" style={{ width: 80 }} value={n} onChange={(e) => setN(e.target.value)} />
+        <Button onClick={() => onSaveMonths(Math.max(0, Number(n) || 0))}>Lưu</Button>
+      </div>
+      <Button variant="danger" disabled={busy} onClick={run}>{busy ? "Đang dọn…" : "🧹 Dọn dữ liệu cũ ngay"}</Button>
+      {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
     </div>
   );
 }

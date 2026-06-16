@@ -69,7 +69,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
     name: user.name || "", email: user.email || "", password: "",
     role: user.role || "Member", teamIds: user.teamIds || [], storeNames: user.storeNames || [],
     mutedTeams: user.mutedTeams || [],
-    canBuyCard: !!user.canBuyCard, active: user.active !== false,
+    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, active: user.active !== false,
   });
   const [newStore, setNewStore] = useState("");
   const [err, setErr] = useState("");
@@ -158,6 +158,12 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
           <label className="row" style={{ gap: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={f.canBuyCard} onChange={(e) => up("canBuyCard", e.target.checked)} />
             🎴 Quyền Mua thẻ
+          </label>
+        )}
+        {f.role === "Leader" && (
+          <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.canMaster} onChange={(e) => up("canMaster", e.target.checked)} />
+            📊 Quyền Sheet Tổng (xem &amp; sửa)
           </label>
         )}
         <label className="row" style={{ gap: 6, cursor: "pointer" }}>

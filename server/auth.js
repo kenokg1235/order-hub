@@ -35,7 +35,7 @@ export function publicUser(u) {
     teamIds: JSON.parse(u.team_ids || "[]"),
     storeNames: JSON.parse(u.store_names || "[]"),
     mutedTeams: JSON.parse(u.muted_teams || "[]"),
-    canBuyCard: !!u.can_buy_card, active: !!u.active,
+    canBuyCard: !!u.can_buy_card, canMaster: !!u.can_master, active: !!u.active,
   };
 }
 
@@ -43,6 +43,7 @@ export function publicUser(u) {
 // Admin = all (null = no filter). Lister = assigned stores. Others = none.
 export function allowedStores(user) {
   if (user.role === "Admin") return null;          // null → all
+  if (user.role === "Leader" && user.canMaster) return null;   // Leader được cấp quyền Sheet Tổng → xem tất cả
   if (user.role === "Lister") return user.storeNames || [];
   return [];                                        // no master-sheet access
 }
