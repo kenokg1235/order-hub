@@ -1025,10 +1025,12 @@ app.delete("/api/payouts/:id", requireAuth, (req, res) => {
 function expenseOut(e) {
   return {
     id: e.id, date: e.date, category: e.category, currency: e.currency,
-    amount: e.amount, note: e.note, createdBy: e.created_by, createdAt: e.created_at,
+    amount: e.amount, note: e.note, kind: e.kind || "expense",
+    createdBy: e.created_by, createdAt: e.created_at,
   };
 }
-const EXP_CURRENCIES = ["VND", "USDT"];
+const EXP_CURRENCIES = ["VND", "USDT", "USD"];
+const EXP_KINDS = ["expense", "profit"];
 app.get("/api/expenses", requireAdmin, (req, res) => {
   const rows = db.prepare("SELECT * FROM expenses ORDER BY date DESC, created_at DESC").all();
   res.json({ expenses: rows.map(expenseOut) });
@@ -1036,24 +1038,26 @@ app.get("/api/expenses", requireAdmin, (req, res) => {
 app.post("/api/expenses", requireAdmin, (req, res) => {
   const b = req.body || {};
   const currency = EXP_CURRENCIES.includes(b.currency) ? b.currency : "VND";
+  const kind = EXP_KINDS.includes(b.kind) ? b.kind : "expense";
   const amount = Number(b.amount) || 0;
   if (amount <= 0) return res.status(400).json({ error: "Nhập số tiền hợp lệ" });
   const id = newId("exp");
-  db.prepare(`INSERT INTO expenses (id,date,category,currency,amount,note,created_by,created_at)
-              VALUES (?,?,?,?,?,?,?,?)`)
-    .run(id, b.date || "", String(b.category || "").trim(), currency, amount, b.note || "", req.user.id, Date.now());
+  db.prepare(`INSERT INTO expenses (id,date,category,currency,amount,note,kind,created_by,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(id, b.date || "", String(b.category || "").trim(), currency, amount, b.note || "", kind, req.user.id, Date.now());
   res.json({ expense: expenseOut(db.prepare("SELECT * FROM expenses WHERE id=?").get(id)) });
 });
 app.put("/api/expenses/:id", requireAdmin, (req, res) => {
   const e = db.prepare("SELECT * FROM expenses WHERE id=?").get(req.params.id);
   if (!e) return res.status(404).json({ error: "Không tìm thấy khoản chi" });
   const b = req.body || {};
-  const map = { date: "date", category: "category", currency: "currency", amount: "amount", note: "note" };
+  const map = { date: "date", category: "category", currency: "currency", amount: "amount", note: "note", kind: "kind" };
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
     let v = b[k];
     if (col === "amount") v = Number(v) || 0;
     if (col === "currency") v = EXP_CURRENCIES.includes(v) ? v : "VND";
+    if (col === "kind") v = EXP_KINDS.includes(v) ? v : "expense";
     sets.push(`${col}=?`); vals.push(v);
   }
   if (sets.length) db.prepare(`UPDATE expenses SET ${sets.join(",")} WHERE id=?`).run(...vals, e.id);

@@ -176,11 +176,13 @@ CREATE TABLE IF NOT EXISTS expenses (
   currency   TEXT DEFAULT 'VND',   -- VND | USDT
   amount     REAL DEFAULT 0,
   note       TEXT DEFAULT '',
+  kind       TEXT DEFAULT 'expense',   -- expense | profit
   created_by TEXT DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
 `);
+ensureColumn("expenses", "kind", "TEXT DEFAULT 'expense'");   // cho DB cũ
 
 // Blacklist of difficult buyers (eBay usernames) — for Listing staff + Admin.
 db.exec(`
