@@ -61,6 +61,8 @@ export function parseEbayCsv(text) {
     const itemNo = get(row, ci.itemNo);
     out.push({
       id,
+      orderNumber: id,          // eBay order number (nhiều dòng có thể chung)
+      itemNumber: itemNo,       // eBay item number (phân biệt sản phẩm trong cùng đơn)
       product: get(row, ci.title),
       qty: get(row, ci.qty),
       custPhone: get(row, ci.shipPhone),

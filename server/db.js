@@ -111,6 +111,19 @@ ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams w
 ensureColumn("orders", "overdue_notified", "INTEGER DEFAULT 0");
 ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM"
 ensureColumn("orders", "cancel_reason", "TEXT DEFAULT ''");   // lý do khi master_status = Đã Cancel
+ensureColumn("orders", "order_no", "TEXT DEFAULT ''");        // eBay order number (hiển thị; nhiều dòng có thể chung)
+ensureColumn("orders", "line_key", "TEXT DEFAULT ''");        // khóa chống trùng theo dòng: orderNo||itemNo||variation
+// Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).
+{
+  const rows = db.prepare("SELECT id, raw, size, order_no, line_key FROM orders").all();
+  const upd = db.prepare("UPDATE orders SET order_no=?, line_key=? WHERE id=?");
+  for (const o of rows) {
+    if (o.order_no && o.line_key) continue;
+    const orderNo = o.order_no || o.id;
+    let itemNo = ""; try { itemNo = JSON.parse(o.raw || "{}").itemNumber || ""; } catch {}
+    upd.run(orderNo, `${orderNo}||${itemNo}||${o.size || ""}`, o.id);
+  }
+}
 ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# last changed
 ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterShip key registered it
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID
@@ -178,6 +191,23 @@ CREATE TABLE IF NOT EXISTS blacklist (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_blacklist_username ON blacklist(username);
+`);
+
+// Audit log — every cell edit on orders & purchases (who, field, old→new, when).
+db.exec(`
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         TEXT PRIMARY KEY,
+  entity     TEXT NOT NULL,        -- order | purchase
+  entity_id  TEXT NOT NULL,
+  order_id   TEXT DEFAULT '',      -- the order this change belongs to (fast lookup)
+  field      TEXT NOT NULL,
+  old_value  TEXT DEFAULT '',
+  new_value  TEXT DEFAULT '',
+  user_id    TEXT DEFAULT '',
+  user_name  TEXT DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_order ON audit_log(order_id);
 `);
 
 // ── Seed defaults ────────────────────────────────────────────────────────────

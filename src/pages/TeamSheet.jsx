@@ -4,6 +4,7 @@ import { Button, Badge } from "../ui.jsx";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import MultiFilter from "../MultiFilter.jsx";
+import HistoryModal from "../HistoryModal.jsx";
 
 // Sheet Con — team members process their divided orders. One order groups 1+ card
 // rows (purchases); order-level cells use rowSpan. Master status drives row colour.
@@ -19,6 +20,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [q, setQ] = useState("");
   const [cf, setCf] = useState({});                // per-column filters
   const [deadlineSort, setDeadlineSort] = useState("");   // "" | "asc" | "desc"
+  const [historyFor, setHistoryFor] = useState(null);
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -77,11 +79,11 @@ export default function TeamSheet({ currentUser, teams }) {
     if (filter === "unclaimed") arr = arr.filter((o) => !o.claimedBy);
     else if (filter === "mine") arr = arr.filter((o) => o.claimedBy === currentUser.id);
     return arr.filter((o) => {
-      if (s && ![o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.note1, o.note2, o.note3, o.note4].some((v) => T(v).includes(s))
+      if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.note1, o.note2, o.note3, o.note4].some((v) => T(v).includes(s))
             && !(o.purchases || []).some((p) => [p.card, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
       if (cfa("masterStatus").length && !cfa("masterStatus").some((v) => v === "__empty" ? !o.masterStatus : o.masterStatus === v)) return false;
       if (cfa("store").length && !cfa("store").includes(o.store)) return false;
-      if (!txt(o.id, cf.id)) return false;
+      if (!txt(o.orderNo, cf.id)) return false;
       if (!txt(o.product, cf.product)) return false;
       if (!txt(o.size, cf.size)) return false;
       if (!txt(o.color, cf.color)) return false;
@@ -237,7 +239,7 @@ export default function TeamSheet({ currentUser, teams }) {
                   {idx === 0 && <>
                     <td rowSpan={span}>{o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
-                    <td rowSpan={span}>{o.id}</td>
+                    <td rowSpan={span} title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
                     <td rowSpan={span}>{o.image
                       ? <a href={o.image} target="_blank" rel="noreferrer"><img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)" }} /></a>
                       : <span className="muted">—</span>}</td>
@@ -266,7 +268,10 @@ export default function TeamSheet({ currentUser, teams }) {
                           </select>
                         </div>
                       )}
-                      {canEdit && <div style={{ marginTop: 6 }}><Button sm onClick={() => addPurchase(o)}>＋ Thẻ</Button></div>}
+                      <div style={{ marginTop: 6 }}>
+                        {canEdit && <Button sm onClick={() => addPurchase(o)}>＋ Thẻ</Button>}
+                        <Button sm onClick={() => setHistoryFor(o)} title="Lịch sử chỉnh sửa" style={{ marginLeft: canEdit ? 4 : 0 }}>🕘</Button>
+                      </div>
                     </td>
                   </>}
 
@@ -322,6 +327,9 @@ export default function TeamSheet({ currentUser, teams }) {
           </tbody>
         </table>
       </div>
+      {historyFor && (
+        <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
+      )}
     </div>
   );
 }

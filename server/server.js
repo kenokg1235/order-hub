@@ -163,7 +163,7 @@ function nextMonth(ym) {
 // ── Orders (master sheet) ─────────────────────────────────────────────────────
 function orderOut(o) {
   return {
-    id: o.id, team: o.team, store: o.store, address: o.address, custPhone: o.cust_phone,
+    id: o.id, orderNo: o.order_no || o.id, team: o.team, store: o.store, address: o.address, custPhone: o.cust_phone,
     qty: o.qty, product: o.product, image: o.image, link: o.link, size: o.size, color: o.color,
     profit: o.profit, deadline: o.deadline, masterStatus: o.master_status,
     masterNote: o.master_note, cancelReason: o.cancel_reason,
@@ -223,27 +223,34 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   const now = Date.now();
   const period = getActiveMonth();
   const stmt = db.prepare(`
-    INSERT INTO orders (id,store,address,cust_phone,qty,product,image,link,size,color,listed_by,raw,period,created_at,updated_at)
-    VALUES (@id,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@listedBy,@raw,@period,@now,@now)`);
+    INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,listed_by,raw,period,created_at,updated_at)
+    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@listedBy,@raw,@period,@now,@now)`);
+  const existsLineKey = db.prepare("SELECT 1 FROM orders WHERE line_key=?");
+  const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
   let inserted = 0, duplicates = 0, skipped = 0;
   const seenInFile = new Set();
   const newIds = [];
   const tx = db.transaction((list) => {
     for (const r of list) {
-      const id = String(r.id || "").trim();
-      if (!id) { skipped++; continue; }
-      if (seenInFile.has(id)) { duplicates++; continue; }   // duplicate within this file
-      seenInFile.add(id);
-      if (db.prepare("SELECT 1 FROM orders WHERE id=?").get(id)) { duplicates++; continue; } // already imported
+      const orderNo = String(r.orderNumber || r.id || "").trim();
+      if (!orderNo) { skipped++; continue; }
+      const itemNo = r.raw && r.raw.itemNumber ? String(r.raw.itemNumber) : String(r.itemNumber || "");
+      const variation = r.size || "";
+      const lineKey = `${orderNo}||${itemNo}||${variation}`;     // unique per product line of an order
+      if (seenInFile.has(lineKey)) { duplicates++; continue; }   // same line twice in this file
+      seenInFile.add(lineKey);
+      if (existsLineKey.get(lineKey)) { duplicates++; continue; } // this exact line already imported
+      // Unique internal id: orderNo for the first line, orderNo-2/-3… for extra products.
+      let id = orderNo, n = 2;
+      while (existsId.get(id)) id = `${orderNo}-${n++}`;
       stmt.run({
-        id, store, address: r.address || "", custPhone: r.custPhone || "", qty: String(r.qty || ""),
+        id, orderNo, lineKey, store, address: r.address || "", custPhone: r.custPhone || "", qty: String(r.qty || ""),
         product: r.product || "", image: "", link: r.link || "",
-        size: r.size || "", color: r.color || "", listedBy: req.user.id,
+        size: variation, color: r.color || "", listedBy: req.user.id,
         raw: JSON.stringify(r.raw || {}), period, now,
       });
       inserted++;
-      const it = r.raw && r.raw.itemNumber ? String(r.raw.itemNumber) : "";
-      if (it) newIds.push({ id, it });
+      if (itemNo) newIds.push({ id, it: itemNo });
     }
   });
   tx(rows);
@@ -286,9 +293,11 @@ app.post("/api/orders", requireAuth, (req, res) => {
   if (db.prepare("SELECT 1 FROM orders WHERE id=?").get(id)) return res.status(409).json({ error: "ID Order đã tồn tại" });
   ensureStore(store);
   const now = Date.now();
-  db.prepare(`INSERT INTO orders (id,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,listed_by,period,created_at,updated_at)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, store, b.address || "", b.custPhone || "", String(b.qty || ""), b.product || "",
+  const itemNo = (String(b.link || "").match(/itm\/(\d{6,})/) || [])[1] || "";
+  const lineKey = `${id}||${itemNo}||${b.size || ""}`;
+  db.prepare(`INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,listed_by,period,created_at,updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, id, lineKey, store, b.address || "", b.custPhone || "", String(b.qty || ""), b.product || "",
          b.image || "", b.link || "", b.size || "", b.color || "", Number(b.profit) || 0,
          b.deadline || "", req.user.id, getActiveMonth(), now, now);
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(id)) });
@@ -307,9 +316,13 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
     note1: "note1", note2: "note2", note3: "note3", note4: "note4",
   };
   const sets = [], vals = [];
-  for (const [k, col] of Object.entries(map)) if (k in b) { sets.push(`${col}=?`); vals.push(b[k]); }
+  for (const [k, col] of Object.entries(map)) if (k in b) {
+    logChange(req.user, "order", o.id, o.id, k, o[col], b[k]);
+    sets.push(`${col}=?`); vals.push(b[k]);
+  }
   if ("team" in b) {
     if (req.user.role !== "Admin") return res.status(403).json({ error: "Chỉ Admin chia team" });
+    logChange(req.user, "order", o.id, o.id, "team", o.team, b.team || "");
     sets.push("team=?"); vals.push(b.team || "");
   }
   if (sets.length) {
@@ -336,8 +349,9 @@ app.post("/api/orders/divide", requireAdmin, (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   const team = String(req.body.team || "");
   const now = Date.now();
+  const getTeam = db.prepare("SELECT team FROM orders WHERE id=?");
   const stmt = db.prepare("UPDATE orders SET team=?, updated_at=? WHERE id=?");
-  db.transaction((list) => { for (const id of list) stmt.run(team, now, id); })(ids);
+  db.transaction((list) => { for (const id of list) { const cur = getTeam.get(id); if (cur) logChange(req.user, "order", id, id, "team", cur.team, team); stmt.run(team, now, id); } })(ids);
   res.json({ ok: true, count: ids.length });
 });
 
@@ -346,6 +360,7 @@ app.delete("/api/orders/:id", requireAuth, (req, res) => {
   if (!o) return res.json({ ok: true });
   if (!canTouchStore(req.user, o.store)) return res.status(403).json({ error: "Không có quyền" });
   db.prepare("DELETE FROM orders WHERE id=?").run(o.id);
+  db.prepare("DELETE FROM audit_log WHERE order_id=?").run(o.id);
   res.json({ ok: true });
 });
 
@@ -354,9 +369,26 @@ app.post("/api/orders/bulk-delete", requireAdmin, (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.json({ ok: true, deleted: 0 });
   const stmt = db.prepare("DELETE FROM orders WHERE id=?");
+  const stmtAudit = db.prepare("DELETE FROM audit_log WHERE order_id=?");
   let deleted = 0;
-  db.transaction((list) => { for (const id of list) deleted += stmt.run(id).changes; })(ids);
+  db.transaction((list) => { for (const id of list) { deleted += stmt.run(id).changes; stmtAudit.run(id); } })(ids);
   res.json({ ok: true, deleted });
+});
+
+// Edit history of an order's cells (+ its purchases). Anyone who can view the
+// order sees order-field history; purchase (card) history only for claimer + Admin.
+app.get("/api/orders/:id/history", requireAuth, (req, res) => {
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
+  if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
+  const u = req.user;
+  const canView = u.role === "Admin" || canTouchOrderTeam(u, o) || (u.role === "Lister" && (u.storeNames || []).includes(o.store));
+  if (!canView) return res.status(403).json({ error: "Không có quyền" });
+  let rows = db.prepare("SELECT * FROM audit_log WHERE order_id=? ORDER BY created_at DESC").all(o.id);
+  if (!canSeePurchases(u, o)) rows = rows.filter((r) => r.entity !== "purchase");   // hide card history
+  res.json({ history: rows.map((r) => ({
+    entity: r.entity, field: r.field, oldValue: r.old_value, newValue: r.new_value,
+    userName: r.user_name, createdAt: r.created_at,
+  })) });
 });
 
 // ── Monthly periods: list + close month ───────────────────────────────────────
@@ -442,6 +474,14 @@ const purchasesOf = (orderId, masked = false) =>
 const canSeePurchases = (user, o) => !!user && (user.role === "Admin" || (!!o.claimed_by && o.claimed_by === user.id));
 const orderFull = (o, user) => ({ ...orderOut(o), purchases: purchasesOf(o.id, !canSeePurchases(user, o)) });
 
+// Record a single cell change (skips no-op edits). entity = order | purchase.
+function logChange(user, entity, entityId, orderId, field, oldVal, newVal) {
+  if (String(oldVal ?? "") === String(newVal ?? "")) return;
+  db.prepare(`INSERT INTO audit_log (id,entity,entity_id,order_id,field,old_value,new_value,user_id,user_name,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(newId("aud"), entity, entityId, orderId, field, String(oldVal ?? ""), String(newVal ?? ""), user.id, user.name, Date.now());
+}
+
 // Team-scoped orders (Admin = all; Leader/Member = own teams' divided orders).
 app.get("/api/team-orders", requireAuth, (req, res) => {
   const u = req.user;
@@ -491,6 +531,7 @@ app.post("/api/orders/:id/claim", requireAuth, (req, res) => {
     return res.status(409).json({ error: "Đơn đã có người nhận" });
   }
   const now = Date.now();
+  logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, uname);
   db.prepare("UPDATE orders SET claimed_by=?, claimed_name=?, claimed_at=?, updated_at=? WHERE id=?")
     .run(uid, uname, now, now, o.id);
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
@@ -503,6 +544,7 @@ app.post("/api/orders/:id/unclaim", requireAuth, (req, res) => {
   const isManager = req.user.role === "Admin" || req.user.role === "Leader";
   if (!isManager || !canTouchOrderTeam(req.user, o))
     return res.status(403).json({ error: "Chỉ Admin hoặc Leader của team" });
+  logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, "");
   db.prepare("UPDATE orders SET claimed_by='', claimed_name='', claimed_at=0, updated_at=? WHERE id=?")
     .run(Date.now(), o.id);
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
@@ -515,7 +557,7 @@ app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
   if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   const b = req.body || {};
   const sets = [], vals = [];
-  for (const k of ["note1", "note2", "note3", "note4"]) if (k in b) { sets.push(`${k}=?`); vals.push(b[k]); }
+  for (const k of ["note1", "note2", "note3", "note4"]) if (k in b) { logChange(req.user, "order", o.id, o.id, k, o[k], b[k]); sets.push(`${k}=?`); vals.push(b[k]); }
   if (sets.length) {
     sets.push("updated_at=?"); vals.push(Date.now());
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
@@ -552,7 +594,9 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
-    sets.push(`${col}=?`); vals.push(col === "amount" ? (Number(b[k]) || 0) : b[k]);
+    const nv = col === "amount" ? (Number(b[k]) || 0) : b[k];
+    logChange(req.user, "purchase", p.id, p.order_id, k, p[col], nv);
+    sets.push(`${col}=?`); vals.push(nv);
   }
   // stamp Time when the Order# value actually changes
   if ("orderNumber" in b && String(b.orderNumber) !== String(p.order_number || "")) { sets.push("order_time=?"); vals.push(Date.now()); }

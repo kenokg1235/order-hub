@@ -5,6 +5,7 @@ import { parseEbayCsv } from "../ebayParser.js";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import MultiFilter from "../MultiFilter.jsx";
+import HistoryModal from "../HistoryModal.jsx";
 
 // Sheet Tổng — Admin sees all + divides to teams; Lister sees only assigned stores.
 export default function Master({ currentUser, teams }) {
@@ -25,6 +26,7 @@ export default function Master({ currentUser, teams }) {
   const [q, setQ] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [historyFor, setHistoryFor] = useState(null);
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(0);     // remaining auto-refreshes for images
   const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
@@ -140,11 +142,11 @@ export default function Master({ currentUser, teams }) {
     const pTxt = (o, field, f) => !f || (o.purchases || []).some((p) => T(p[field]).includes(T(f)));
     const arr = (k) => Array.isArray(cf[k]) ? cf[k] : [];
     return orders.filter((o) => {
-      if (s && ![o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.masterNote].some((v) => T(v).includes(s))
+      if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.masterNote].some((v) => T(v).includes(s))
             && !(o.purchases || []).some((p) => [p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
       if (arr("team").length && !arr("team").some((v) => v === "__none" ? !o.team : o.team === v)) return false;
       if (arr("store").length && !arr("store").includes(o.store)) return false;
-      if (!txt(o.id, cf.id)) return false;
+      if (!txt(o.orderNo, cf.id)) return false;
       if (!txt(o.address, cf.address)) return false;
       if (!txt(o.custPhone, cf.custPhone)) return false;
       if (!txt(o.qty, cf.qty)) return false;
@@ -319,7 +321,7 @@ export default function Master({ currentUser, teams }) {
                   : (o.team ? <Badge color="amber">{teamName(o.team)}</Badge> : <span className="muted">—</span>)}
                 </td>
                 <td style={{ fontWeight: 600 }}>{o.store}</td>
-                <td>{o.id}</td>
+                <td title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
                 {(() => {
                   const cnt = addressCounts[addrNorm(o.address)] || 0;
                   const dup = cnt > 1;
@@ -396,7 +398,10 @@ export default function Master({ currentUser, teams }) {
                 <td style={{ fontSize: 12 }}>{o.purchases && o.purchases.length
                   ? o.purchases.map((p, i) => p.processStatus ? <div key={i}><Badge>{p.processStatus}</Badge></div> : <div key={i} className="muted">·</div>)
                   : <span className="muted">—</span>}</td>
-                <td><Button sm onClick={() => setEditing(o)}>Sửa</Button></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <Button sm onClick={() => setEditing(o)}>Sửa</Button>
+                  <Button sm onClick={() => setHistoryFor(o)} title="Lịch sử chỉnh sửa" style={{ marginLeft: 4 }}>🕘</Button>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -415,6 +420,9 @@ export default function Master({ currentUser, teams }) {
       {editing && (
         <OrderModal order={editing} currentUser={currentUser} stores={stores}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {historyFor && (
+        <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
       )}
 
       {preview && (
