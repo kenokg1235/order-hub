@@ -10,6 +10,7 @@ export default function Cards({ currentUser }) {
   const [cardStatuses, setCardStatuses] = useState([]);
   const [lockStatuses, setLockStatuses] = useState([]);   // thẻ hợp lệ
   const [errorStatuses, setErrorStatuses] = useState([]); // thẻ lỗi
+  const [statusColors, setStatusColors] = useState({});   // màu nền theo trạng thái
   const isCount = (st) => lockStatuses.map((s) => s.toLowerCase()).includes(String(st || "").toLowerCase());
   // Chỉ khóa khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" → chỉ đổi qua lại trong nhóm hợp lệ.
   const restrictedFor = (r) => !isAdmin && isCount(r.status);
@@ -24,6 +25,7 @@ export default function Cards({ currentUser }) {
       setCardStatuses(s.cardStatuses || []);
       setLockStatuses(s.cardCountStatuses || []);
       setErrorStatuses(s.cardErrorStatuses || []);
+      setStatusColors(s.statusColors || {});
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -55,7 +57,7 @@ export default function Cards({ currentUser }) {
           </tr></thead>
           <tbody>
             {reqs.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} style={{ background: statusColors[r.status] || undefined }}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
                   <input className="input" style={{ padding: "5px 8px", width: 160 }} defaultValue={r.card}

@@ -50,6 +50,7 @@ export default function Settings() {
       <CleanupEditor months={s.retentionMonths ?? 2} onSaveMonths={(v) => saveList("retentionMonths", v)} />
 
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
+        card={[...new Set([...(s.cardStatuses || []), ...(s.cardCountStatuses || []), ...(s.cardErrorStatuses || [])])]}
         colors={s.statusColors || {}} onSave={(m) => saveList("statusColors", m)} />
 
       <TelegramEditor tg={s.telegram} onSave={saveTelegram} />
@@ -130,11 +131,11 @@ function CleanupEditor({ months, onSaveMonths }) {
 const PALETTE = ["#e6f7ec", "#fdeaea", "#e8f0fe", "#fef3e2", "#e6f7f4", "#f1e9fb",
   "#fde8f0", "#fef9e0", "#eef1f4", "#e3f6fb", "#eef7e0", "#fff3cd"];
 
-function StatusColorEditor({ master, process, colors, onSave }) {
+function StatusColorEditor({ master, process, card, colors, onSave }) {
   const [map, setMap] = useState(colors);
   const [pickerFor, setPickerFor] = useState(null);   // which status' inline picker is open
   useEffect(() => setMap(colors), [colors]);
-  const masterList = master || [], processList = process || [];
+  const masterList = master || [], processList = process || [], cardList = card || [];
   const set = (name, color) => setMap((m) => ({ ...m, [name]: color }));
   const clear = (name) => setMap((m) => { const n = { ...m }; delete n[name]; return n; });
 
@@ -173,10 +174,11 @@ function StatusColorEditor({ master, process, colors, onSave }) {
       <div style={{ fontWeight: 700, marginBottom: 6 }}>Màu nền dòng theo trạng thái</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
         Ưu tiên màu của <b>trạng thái tổng</b>; nếu đơn chưa có trạng thái tổng thì dùng màu <b>trạng thái xử lý</b>.
-        Áp dụng cho cả Sheet Tổng và Sheet Con. Bấm <b>🎨 Tùy chỉnh</b> để mở bảng màu ghim sẵn.
+        Áp dụng cho Sheet Tổng và Sheet Con. Nhóm <b>thẻ</b> dùng để tô màu hàng ở <b>Mua thẻ</b>. Bấm <b>🎨 Tùy chỉnh</b> để mở bảng màu ghim sẵn.
       </div>
       {masterList.map((n) => renderRow(n, "tổng"))}
       {processList.map((n) => renderRow(n, "xử lý"))}
+      {cardList.map((n) => renderRow(n, "thẻ"))}
       <div style={{ marginTop: 10 }}><Button variant="primary" onClick={() => onSave(map)}>Lưu màu</Button></div>
     </div>
   );

@@ -10,6 +10,8 @@ export default function Expenses({ teams = [] }) {
   const [to, setTo] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [kindFilter, setKindFilter] = useState("");   // "" | expense | profit
+  const [curFilter, setCurFilter] = useState("");     // "" | VND | USDT | USD
+  const [q, setQ] = useState("");                     // tìm trong chi tiết
   const [err, setErr] = useState("");
   const today = () => {
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -44,24 +46,35 @@ export default function Expenses({ teams = [] }) {
     if (catFilter && e.category !== catFilter) return false;
     return true;
   }), [items, from, to, catFilter]);
-  // Lọc thêm theo Loại (cho bảng chi tiết + theo danh mục).
-  const shown = useMemo(() => filtered.filter((e) => !kindFilter || kindOf(e) === kindFilter), [filtered, kindFilter]);
+  // Lọc thêm cho bảng chi tiết + theo danh mục: theo Loại, Loại tiền, và tìm theo chữ.
+  const shown = useMemo(() => filtered.filter((e) => {
+    if (kindFilter && kindOf(e) !== kindFilter) return false;
+    if (curFilter && e.currency !== curFilter) return false;
+    const s = q.trim().toLowerCase();
+    if (s && ![e.category, e.note, String(e.amount), e.currency].some((v) => String(v || "").toLowerCase().includes(s))) return false;
+    return true;
+  }), [filtered, kindFilter, curFilter, q]);
 
+  // Tổng theo nhóm: dùng `filtered` (mọi loại) để 3 ô tổng + lợi nhuận ròng luôn đầy đủ.
   const sum = (kind, cur) => filtered.filter((e) => kindOf(e) === kind && e.currency === cur).reduce((s, e) => s + (e.amount || 0), 0);
-  const sumShown = (cur) => shown.filter((e) => e.currency === cur).reduce((s, e) => s + (e.amount || 0), 0);
+  const net = (cur) => sum("profit", cur) - sum("expense", cur);   // Lợi nhuận ròng = Profit − Chi phí
+  // Net trong phạm vi bảng "theo danh mục" đang hiển thị (shown).
+  const sumShownKind = (kind, cur) => shown.filter((e) => kindOf(e) === kind && e.currency === cur).reduce((s, e) => s + (e.amount || 0), 0);
+  const netShown = (cur) => sumShownKind("profit", cur) - sumShownKind("expense", cur);
 
-  // Theo danh mục (theo bộ lọc Loại hiện tại).
+  // Theo (loại + danh mục) — mỗi dòng rõ là Chi phí hay Profit.
   const byCategory = useMemo(() => {
     const m = {};
     for (const e of shown) {
-      const k = e.category || "(không danh mục)";
-      const g = m[k] || (m[k] = { vnd: 0, usdt: 0, usd: 0, count: 0 });
+      const kind = kindOf(e), cat = e.category || "(không danh mục)";
+      const key = kind + "|" + cat;
+      const g = m[key] || (m[key] = { kind, cat, vnd: 0, usdt: 0, usd: 0, count: 0 });
       if (e.currency === "USDT") g.usdt += e.amount || 0;
       else if (e.currency === "USD") g.usd += e.amount || 0;
       else g.vnd += e.amount || 0;
       g.count++;
     }
-    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0], "vi"));
+    return Object.values(m).sort((a, b) => a.kind === b.kind ? a.cat.localeCompare(b.cat, "vi") : (a.kind === "expense" ? -1 : 1));
   }, [shown]);
 
   const upQa = (k, v) => setQa((p) => ({ ...p, [k]: v }));
@@ -116,19 +129,36 @@ export default function Expenses({ teams = [] }) {
         <input className="input" type="date" style={{ maxWidth: 150 }} value={from} onChange={(e) => setFrom(e.target.value)} />
         <span className="muted">đến</span>
         <input className="input" type="date" style={{ maxWidth: 150 }} value={to} onChange={(e) => setTo(e.target.value)} />
+        <select className="input" style={{ maxWidth: 120 }} value={curFilter} onChange={(e) => setCurFilter(e.target.value)}>
+          <option value="">💱 Tất cả tiền</option>
+          <option value="VND">VND</option>
+          <option value="USDT">USDT</option>
+          <option value="USD">USD</option>
+        </select>
         <select className="input" style={{ maxWidth: 150 }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
           <option value="">🗂 Tất cả danh mục</option>
           {catSuggestions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        {(from || to || catFilter || kindFilter) && <Button sm onClick={() => { setFrom(""); setTo(""); setCatFilter(""); setKindFilter(""); }}>✕ Xóa lọc</Button>}
+        <input className="input" style={{ maxWidth: 200 }} placeholder="🔍 Tìm danh mục / ghi chú / số tiền…"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        {(from || to || catFilter || kindFilter || curFilter || q) && <Button sm onClick={() => { setFrom(""); setTo(""); setCatFilter(""); setKindFilter(""); setCurFilter(""); setQ(""); }}>✕ Xóa lọc</Button>}
       </div>
 
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
-      {/* Tổng Chi phí & Profit tách riêng */}
+      {/* Tổng Chi phí, Profit, và Lợi nhuận ròng = Profit − Chi phí */}
       <div className="row" style={{ gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
         <TotalCard title="💸 TỔNG CHI PHÍ" kind="expense" color="var(--red)" />
         <TotalCard title="💰 TỔNG PROFIT" kind="profit" color="#16a34a" />
+        <div className="card" style={{ padding: "12px 18px", minWidth: 240, borderColor: "#16a34a" }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>📊 LỢI NHUẬN RÒNG (Profit − Chi phí)</div>
+          {(() => {
+            const lines = [["VND", net("VND"), fmtVND], ["USDT", net("USDT"), fmtUSDT], ["USD", net("USD"), fmtUSD]]
+              .filter(([cur]) => sum("profit", cur) || sum("expense", cur));
+            return lines.length === 0 ? <div style={{ fontSize: 20, fontWeight: 800 }}>0</div>
+              : lines.map(([cur, v, f]) => <div key={cur} style={{ fontSize: 20, fontWeight: 800, color: v >= 0 ? "#16a34a" : "var(--red)" }}>{f(v)}</div>);
+          })()}
+        </div>
       </div>
 
       {/* Thanh thêm nhanh */}
@@ -179,25 +209,26 @@ export default function Expenses({ teams = [] }) {
           <div style={{ padding: "10px 14px", fontWeight: 700, borderBottom: "1px solid var(--border)" }}>
             Theo danh mục {kindFilter ? `· ${kindFilter === "profit" ? "Profit" : "Chi phí"}` : ""}
           </div>
-          <table className="tbl" style={{ width: "100%", minWidth: 360 }}>
-            <thead><tr><th>Danh mục</th><th style={{ textAlign: "right" }}>VND</th><th style={{ textAlign: "right" }}>USDT</th><th style={{ textAlign: "right" }}>USD</th></tr></thead>
+          <table className="tbl" style={{ width: "100%", minWidth: 420 }}>
+            <thead><tr><th>Loại</th><th>Danh mục</th><th style={{ textAlign: "right" }}>VND</th><th style={{ textAlign: "right" }}>USDT</th><th style={{ textAlign: "right" }}>USD</th></tr></thead>
             <tbody>
-              {byCategory.map(([cat, g]) => (
-                <tr key={cat}>
-                  <td>{cat} <span className="muted" style={{ fontSize: 11 }}>({g.count})</span></td>
+              {byCategory.map((g) => (
+                <tr key={g.kind + "|" + g.cat}>
+                  <td><Badge color={g.kind === "profit" ? "green" : "red"}>{g.kind === "profit" ? "Profit" : "Chi phí"}</Badge></td>
+                  <td>{g.cat} <span className="muted" style={{ fontSize: 11 }}>({g.count})</span></td>
                   <td style={{ textAlign: "right" }}>{g.vnd ? fmtVND(g.vnd) : <span className="muted">—</span>}</td>
                   <td style={{ textAlign: "right" }}>{g.usdt ? fmtUSDT(g.usdt) : <span className="muted">—</span>}</td>
                   <td style={{ textAlign: "right" }}>{g.usd ? fmtUSD(g.usd) : <span className="muted">—</span>}</td>
                 </tr>
               ))}
-              {byCategory.length === 0 && <tr><td colSpan={4} className="muted" style={{ textAlign: "center", padding: 18 }}>Chưa có dữ liệu.</td></tr>}
+              {byCategory.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: "center", padding: 18 }}>Chưa có dữ liệu.</td></tr>}
             </tbody>
             {byCategory.length > 0 && (
-              <tfoot><tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
-                <td>Tổng</td>
-                <td style={{ textAlign: "right" }}>{fmtVND(sumShown("VND"))}</td>
-                <td style={{ textAlign: "right" }}>{fmtUSDT(sumShown("USDT"))}</td>
-                <td style={{ textAlign: "right" }}>{fmtUSD(sumShown("USD"))}</td>
+              <tfoot><tr style={{ fontWeight: 800, borderTop: "2px solid var(--border)" }}>
+                <td colSpan={2}>Ròng (Profit − Chi phí)</td>
+                <td style={{ textAlign: "right", color: netShown("VND") >= 0 ? "#16a34a" : "var(--red)" }}>{fmtVND(netShown("VND"))}</td>
+                <td style={{ textAlign: "right", color: netShown("USDT") >= 0 ? "#16a34a" : "var(--red)" }}>{fmtUSDT(netShown("USDT"))}</td>
+                <td style={{ textAlign: "right", color: netShown("USD") >= 0 ? "#16a34a" : "var(--red)" }}>{fmtUSD(netShown("USD"))}</td>
               </tr></tfoot>
             )}
           </table>
