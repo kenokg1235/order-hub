@@ -255,8 +255,8 @@ export default function Master({ currentUser, teams }) {
 
   // Read-back of team processing (purchases) into the master sheet. Multi-card
   // orders stack their values vertically (one line per card).
-  const stack = (o, field) => o.purchases && o.purchases.length
-    ? o.purchases.map((p, i) => <div key={i}>{p[field] !== "" && p[field] != null ? p[field] : <span className="muted">·</span>}</div>)
+  const stack = (o, field, w = 120) => o.purchases && o.purchases.length
+    ? o.purchases.map((p, i) => <TruncCell key={i} text={p[field] != null && p[field] !== "" ? String(p[field]) : ""} w={w} />)
     : <span className="muted">—</span>;
 
   return (
@@ -439,11 +439,11 @@ export default function Master({ currentUser, teams }) {
                   )}
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "tracking")}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "orderNumber")}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "email")}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "phone")}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "zip")}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "tracking", 150)}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "orderNumber", 110)}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "email", 160)}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "phone", 110)}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "zip", 70)}</td>
                 <td style={{ fontSize: 12 }}>{o.purchases && o.purchases.length
                   ? o.purchases.map((p, i) => p.processStatus ? <div key={i}><Badge>{p.processStatus}</Badge></div> : <div key={i} className="muted">·</div>)
                   : <span className="muted">—</span>}</td>
@@ -485,6 +485,23 @@ export default function Master({ currentUser, teams }) {
           <img src={preview.url} alt="" style={{ width: 340, height: 340, objectFit: "contain", display: "block" }} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Ô cố định bề rộng, cắt gọn bằng "…"; bấm để hiện đầy đủ (xuống dòng), bấm lại để thu gọn.
+function TruncCell({ text, w = 120 }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return <div className="muted">·</div>;
+  return (
+    <div onClick={() => setOpen((o) => !o)} title={open ? "Bấm để thu gọn" : text}
+      style={{
+        maxWidth: w, cursor: "pointer",
+        whiteSpace: open ? "normal" : "nowrap",
+        overflow: "hidden", textOverflow: "ellipsis",
+        wordBreak: open ? "break-all" : "normal",
+      }}>
+      {text}
     </div>
   );
 }
