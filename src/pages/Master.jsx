@@ -207,7 +207,8 @@ export default function Master({ currentUser, teams }) {
     let css = "";
     for (let i = 0; i < n; i++) {
       const k = i + 1, L = colLefts[i];
-      css += `#mtbl>thead>tr>*:nth-child(${k}),#mtbl>tbody>tr>*:nth-child(${k}){position:sticky;left:${L}px;background:#fff;z-index:3;}`;
+      css += `#mtbl>thead>tr>*:nth-child(${k}){position:sticky;left:${L}px;background:#fafbfc;z-index:3;}`;
+      css += `#mtbl>tbody>tr>*:nth-child(${k}){position:sticky;left:${L}px;background:var(--rowbg,#fff);z-index:3;}`;
       css += `#mtbl>thead>tr:first-child>th:nth-child(${k}){z-index:7;}`;
       css += `#mtbl>thead>tr:nth-child(2)>td:nth-child(${k}){z-index:6;}`;
     }
@@ -353,8 +354,11 @@ export default function Master({ currentUser, teams }) {
             <td>{activeFilters > 0 && <button className="btn sm" onClick={clearFilters} title="Xóa lọc">✕</button>}</td>
           </tr></thead>
           <tbody>
-            {displayed.map((o) => (
-              <tr key={o.id} style={{ background: rowBg(o.masterStatus, "", statusColors) }}>
+            {displayed.map((o) => {
+              const procSt = (o.purchases || []).map((p) => p.processStatus).find(Boolean) || "";
+              const rowColor = rowBg(o.masterStatus, procSt, statusColors);
+              return (
+              <tr key={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
                 <td>{isAdmin
                   ? <select className="input" style={{ padding: "4px 6px", minWidth: 90 }} value={o.team}
@@ -448,7 +452,8 @@ export default function Master({ currentUser, teams }) {
                   <Button sm onClick={() => setHistoryFor(o)} title="Lịch sử chỉnh sửa" style={{ marginLeft: 4 }}>🕘</Button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {filtered.length === 0 && (
               <tr><td colSpan={isAdmin ? 24 : 23} style={{ textAlign: "center", padding: 30 }} className="muted">
                 Chưa có đơn nào. Bấm <b>Import eBay</b> để đổ đơn vào.
