@@ -371,11 +371,12 @@ export default function Master({ currentUser, teams }) {
                   const dup = cnt > 1;
                   const lines = String(o.address || "").split("\n").filter(Boolean);
                   return (
-                    <td style={{ minWidth: 180, maxWidth: 260, whiteSpace: "normal", fontSize: 12.5, lineHeight: 1.5,
+                    <td style={{ minWidth: 180, maxWidth: 260, whiteSpace: "normal", fontSize: 13, lineHeight: 1.5,
+                      fontWeight: 600, color: "var(--text)",
                       background: dup ? "#fff3cd" : undefined, outline: dup ? "1px solid #e0a800" : undefined }}>
                       {lines.length ? (<>
-                        <div style={{ fontWeight: 600 }}>{lines[0]}</div>
-                        {lines.slice(1).map((l, i) => <div key={i} className="muted">{l}</div>)}
+                        <div style={{ fontWeight: 800 }}>{lines[0]}</div>
+                        {lines.slice(1).map((l, i) => <div key={i} style={{ fontWeight: 600, color: "var(--text)" }}>{l}</div>)}
                       </>) : <span className="muted">—</span>}
                       {dup && <div style={{ marginTop: 4 }}><span className="badge amber" style={{ fontSize: 10 }}>⚠ {cnt} đơn chung địa chỉ</span></div>}
                     </td>

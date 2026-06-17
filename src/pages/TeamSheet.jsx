@@ -249,9 +249,9 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.size || <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.color || <span className="muted">—</span>}</td>
-                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 12 }}>
+                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
                       {String(o.address || "").split("\n").filter(Boolean).map((l, i) =>
-                        <div key={i} style={i === 0 ? { fontWeight: 600 } : { color: "var(--muted)" }}>{l}</div>)}
+                        <div key={i} style={{ fontWeight: i === 0 ? 800 : 600, color: "var(--text)" }}>{l}</div>)}
                     </td>
                     <td rowSpan={span}>{o.qty}</td>
                     <td rowSpan={span}>{o.profit ? `$${o.profit}` : ""}</td>
