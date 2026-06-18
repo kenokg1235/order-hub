@@ -26,6 +26,8 @@ export function userFromReq(req) {
   if (!sess) return null;
   const u = db.prepare("SELECT * FROM users WHERE id=? AND active=1").get(sess.user_id);
   if (!u) return null;
+  const now = Date.now();
+  if (now - (u.last_seen || 0) > 20000) db.prepare("UPDATE users SET last_seen=? WHERE id=?").run(now, u.id);   // heartbeat (throttle 20s)
   return publicUser(u);
 }
 

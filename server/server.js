@@ -227,8 +227,8 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   const now = Date.now();
   const period = getActiveMonth();
   const stmt = db.prepare(`
-    INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,listed_by,raw,period,created_at,updated_at)
-    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@listedBy,@raw,@period,@now,@now)`);
+    INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,deadline,listed_by,raw,period,created_at,updated_at)
+    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@deadline,@listedBy,@raw,@period,@now,@now)`);
   const existsLineKey = db.prepare("SELECT 1 FROM orders WHERE line_key=?");
   const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
   let inserted = 0, duplicates = 0, skipped = 0;
@@ -250,7 +250,7 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
       stmt.run({
         id, orderNo, lineKey, store, address: r.address || "", custPhone: r.custPhone || "", qty: String(r.qty || ""),
         product: r.product || "", image: "", link: r.link || "",
-        size: variation, color: r.color || "", listedBy: req.user.id,
+        size: variation, color: r.color || "", deadline: r.deadline || "", listedBy: req.user.id,
         raw: JSON.stringify(r.raw || {}), period, now,
       });
       inserted++;
@@ -434,6 +434,34 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
     entity: r.entity, field: r.field, oldValue: r.old_value, newValue: r.new_value,
     userName: r.user_name, createdAt: r.created_at,
   })) });
+});
+
+// Hoàn tác thao tác sửa ô gần nhất CỦA CHÍNH MÌNH (đi lùi dần qua audit log).
+const UNDO_ORDER_FIELDS = { size: ["size", "t"], color: ["color", "t"], profit: ["profit", "n"], deadline: ["deadline", "t"], masterStatus: ["master_status", "t"], masterNote: ["master_note", "t"], cancelReason: ["cancel_reason", "t"], team: ["team", "t"], note1: ["note1", "t"], note2: ["note2", "t"], note3: ["note3", "t"], note4: ["note4", "t"] };
+const UNDO_PUR_FIELDS = { card: ["card", "t"], amount: ["amount", "n"], orderNumber: ["order_number", "t"], email: ["email", "t"], tracking: ["tracking", "t"], phone: ["phone", "t"], zip: ["zip", "t"], processStatus: ["process_status", "t"] };
+app.post("/api/undo", requireAuth, (req, res) => {
+  const fields = [...Object.keys(UNDO_ORDER_FIELDS), ...Object.keys(UNDO_PUR_FIELDS)];
+  const ph = fields.map(() => "?").join(",");
+  const e = db.prepare(`SELECT * FROM audit_log WHERE user_id=? AND undone=0 AND entity IN ('order','purchase') AND field IN (${ph}) ORDER BY created_at DESC LIMIT 1`).get(req.user.id, ...fields);
+  if (!e) return res.json({ ok: false, message: "Không có thao tác nào để hoàn tác." });
+  const map = e.entity === "order" ? UNDO_ORDER_FIELDS : UNDO_PUR_FIELDS;
+  const def = map[e.field];
+  if (!def) return res.json({ ok: false, message: "Không hoàn tác được thao tác này." });
+  const [col, type] = def;
+  const val = type === "n" ? (Number(e.old_value) || 0) : e.old_value;
+  if (e.entity === "order") {
+    if (!db.prepare("SELECT 1 FROM orders WHERE id=?").get(e.entity_id)) return res.json({ ok: false, message: "Đơn không còn tồn tại." });
+    db.prepare(`UPDATE orders SET ${col}=?, updated_at=? WHERE id=?`).run(val, Date.now(), e.entity_id);
+  } else {
+    if (!db.prepare("SELECT 1 FROM purchases WHERE id=?").get(e.entity_id)) return res.json({ ok: false, message: "Thẻ không còn tồn tại." });
+    db.prepare(`UPDATE purchases SET ${col}=? WHERE id=?`).run(val, e.entity_id);
+  }
+  // Ghi lại bản hoàn tác (đánh dấu undone=1 để không bị undo tiếp), và đánh dấu thao tác gốc đã hoàn tác.
+  db.prepare(`INSERT INTO audit_log (id,entity,entity_id,order_id,field,old_value,new_value,user_id,user_name,created_at,undone)
+              VALUES (?,?,?,?,?,?,?,?,?,?,1)`)
+    .run(newId("aud"), e.entity, e.entity_id, e.order_id, e.field, e.new_value, e.old_value, req.user.id, req.user.name, Date.now());
+  db.prepare("UPDATE audit_log SET undone=1 WHERE id=?").run(e.id);
+  res.json({ ok: true, field: e.field, oldValue: e.old_value, newValue: e.new_value, orderId: e.order_id });
 });
 
 // ── Monthly periods: list + close month ───────────────────────────────────────
@@ -729,6 +757,13 @@ function cardManagersForRequester(requesterId) {
   }
   return ids;
 }
+
+// Thành viên đang online: hoạt động trong 2 phút gần đây.
+app.get("/api/presence", requireAuth, (req, res) => {
+  const cutoff = Date.now() - 120000;
+  const rows = db.prepare("SELECT id,name,role,last_seen FROM users WHERE active=1 AND last_seen>=? ORDER BY name").all(cutoff);
+  res.json({ count: rows.length, online: rows.map((u) => ({ id: u.id, name: u.name, role: u.role, lastSeen: u.last_seen })) });
+});
 
 app.get("/api/notifications", requireAuth, (req, res) => {
   const rows = db.prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50").all(req.user.id);
@@ -1120,8 +1155,6 @@ app.delete("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
 app.get("/api/leaderboard", requireAuth, (req, res) => {
   const month = req.query.month || getActiveMonth();
   const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
-  const cardStatusMap = {};
-  for (const c of db.prepare("SELECT card_value, status FROM card_requests WHERE card_value!=''").all()) cardStatusMap[c.card_value] = c.status;
   const firstM = cardFirstMonths();
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
 
@@ -1129,9 +1162,6 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const orders = (month && month !== "all")
     ? db.prepare("SELECT id, claimed_by, claimed_name, profit FROM orders WHERE claimed_by!='' AND master_status='Đã Up' AND period=?").all(month)
     : db.prepare("SELECT id, claimed_by, claimed_name, profit FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all();
-  const cardsByOrder = {};
-  for (const p of db.prepare("SELECT order_id, card FROM purchases WHERE card!=''").all())
-    (cardsByOrder[p.order_id] || (cardsByOrder[p.order_id] = new Set())).add(p.card);
 
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
   const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
@@ -1144,17 +1174,21 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   for (const o of orders) {
     const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
     u.orders++; u.profit += o.profit || 0;
-    const cs = cardsByOrder[o.id];
-    if (cs) for (const c of cs) {
-      const st = cardStatusMap[c];
-      // count Live Bill/Sai bill cards only in the month they were FIRST used (no reuse credit)
-      if (st && countSet.has(String(st).toLowerCase()) && (month === "all" || firstM[c] === month)) u.cardSet.add(c);
-    }
   }
   for (const o of cancels) {
     const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
     u.cancels++;
     if (o.cancel_reason && failSet.has(String(o.cancel_reason).toLowerCase())) u.failCancels++;
+  }
+  // Số thẻ = TẤT CẢ thẻ NV được cấp ở Mua thẻ (theo người yêu cầu) có trạng thái HỢP LỆ
+  // (Live Bill / Sai bill). Gắn vào tháng dùng-lần-đầu (hoặc tháng tạo yêu cầu nếu chưa dùng).
+  // KHÔNG phụ thuộc việc gán thẻ vào Sheet Con.
+  for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status, created_at FROM card_requests WHERE card_value!=''").all()) {
+    if (!countSet.has(String(c.status || "").toLowerCase())) continue;
+    const cm = firstM[c.card_value] || ymOf(c.created_at);
+    if (month !== "all" && cm !== month) continue;
+    const u = byUser[c.requester_id] || (byUser[c.requester_id] = mkUser(c.requester_id, c.requester_name));
+    u.cardSet.add(c.card_value);
   }
   const round = (n) => Math.round(n * 100) / 100;
   const rows = Object.values(byUser).map((u) => {

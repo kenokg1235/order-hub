@@ -109,6 +109,7 @@ ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
 ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
 ensureColumn("users", "can_master", "INTEGER NOT NULL DEFAULT 0");    // Leader có quyền xem/sửa Sheet Tổng
+ensureColumn("users", "last_seen", "INTEGER DEFAULT 0");              // mốc hoạt động gần nhất (online)
 ensureColumn("orders", "overdue_notified", "INTEGER DEFAULT 0");
 ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM"
 ensureColumn("orders", "cancel_reason", "TEXT DEFAULT ''");   // lý do khi master_status = Đã Cancel
@@ -208,10 +209,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
   new_value  TEXT DEFAULT '',
   user_id    TEXT DEFAULT '',
   user_name  TEXT DEFAULT '',
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  undone     INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_audit_order ON audit_log(order_id);
 `);
+ensureColumn("audit_log", "undone", "INTEGER DEFAULT 0");   // cho DB cũ
 
 // ── Seed defaults ────────────────────────────────────────────────────────────
 function seedSetting(key, value) {

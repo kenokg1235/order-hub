@@ -35,7 +35,7 @@ export default function Master({ currentUser, teams }) {
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(0);     // remaining auto-refreshes for images
   const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
-  const { cellProps, Bar } = useFormulaBar();
+  const { cellProps, Bar, viewCell } = useFormulaBar();
 
   async function loadOrders(m) {
     try { setOrders((await api.get(`/api/orders?month=${encodeURIComponent(m || month)}`)).orders); } catch (e) { setErr(e.message); }
@@ -216,6 +216,13 @@ export default function Master({ currentUser, teams }) {
     return css;
   }, [pinned, freezeCols, colLefts]);
 
+  async function undoLast() {
+    try {
+      const r = await api.post("/api/undo", {});
+      if (!r.ok) { alert(r.message || "Không có gì để hoàn tác."); return; }
+      loadOrders(month);
+    } catch (e) { setErr(e.message); }
+  }
   async function patch(id, body) {
     try {
       const { order } = await api.put(`/api/orders/${id}`, body);
@@ -255,8 +262,11 @@ export default function Master({ currentUser, teams }) {
 
   // Read-back of team processing (purchases) into the master sheet. Multi-card
   // orders stack their values vertically (one line per card).
-  const stack = (o, field, w = 120) => o.purchases && o.purchases.length
-    ? o.purchases.map((p, i) => <TruncCell key={i} text={p[field] != null && p[field] !== "" ? String(p[field]) : ""} w={w} />)
+  const stack = (o, field, w = 120, label = field) => o.purchases && o.purchases.length
+    ? o.purchases.map((p, i) => {
+        const v = p[field] != null && p[field] !== "" ? String(p[field]) : "";
+        return <TruncCell key={i} text={v} w={w} onShow={(t) => viewCell(label, t)} />;
+      })
     : <span className="muted">—</span>;
 
   return (
@@ -282,6 +292,7 @@ export default function Master({ currentUser, teams }) {
         )}
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
         {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
+        <Button onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
         {pinned && (
           <span className="row" style={{ gap: 4 }}>
@@ -439,11 +450,11 @@ export default function Master({ currentUser, teams }) {
                   )}
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "tracking", 150)}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "orderNumber", 110)}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "email", 160)}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "phone", 110)}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "zip", 70)}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "tracking", 150, "Tracking")}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "orderNumber", 110, "Order#")}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "email", 160, "Email")}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "phone", 110, "Phone")}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "zip", 70, "Zip")}</td>
                 <td style={{ fontSize: 12 }}>{o.purchases && o.purchases.length
                   ? o.purchases.map((p, i) => p.processStatus ? <div key={i}><Badge>{p.processStatus}</Badge></div> : <div key={i} className="muted">·</div>)
                   : <span className="muted">—</span>}</td>
@@ -489,18 +500,12 @@ export default function Master({ currentUser, teams }) {
   );
 }
 
-// Ô cố định bề rộng, cắt gọn bằng "…"; bấm để hiện đầy đủ (xuống dòng), bấm lại để thu gọn.
-function TruncCell({ text, w = 120 }) {
-  const [open, setOpen] = useState(false);
+// Ô cố định bề rộng, cắt gọn bằng "…"; bấm → hiện đầy đủ trên thanh formula bar (để xem + copy).
+function TruncCell({ text, w = 120, onShow }) {
   if (!text) return <div className="muted">·</div>;
   return (
-    <div onClick={() => setOpen((o) => !o)} title={open ? "Bấm để thu gọn" : text}
-      style={{
-        maxWidth: w, cursor: "pointer",
-        whiteSpace: open ? "normal" : "nowrap",
-        overflow: "hidden", textOverflow: "ellipsis",
-        wordBreak: open ? "break-all" : "normal",
-      }}>
+    <div onClick={() => onShow && onShow(text)} title={text}
+      style={{ maxWidth: w, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
       {text}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, getToken, setToken } from "./api.js";
 import { Button } from "./ui.jsx";
 import Notifications from "./Notifications.jsx";
+import Presence from "./Presence.jsx";
 import Login from "./pages/Login.jsx";
 import Users from "./pages/Users.jsx";
 import Teams from "./pages/Teams.jsx";
@@ -116,6 +117,7 @@ export default function App() {
         <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
           <div style={{ fontWeight: 600 }}>{user.name}</div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{user.role}</div>
+          <Presence currentUser={user} />
           <div style={{ marginBottom: 8 }}><Notifications /></div>
           <Button sm onClick={logout} style={{ width: "100%" }}>⏻ Đăng xuất</Button>
         </div>

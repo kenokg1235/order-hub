@@ -120,6 +120,13 @@ export default function TeamSheet({ currentUser, teams }) {
   const addPur = (oid, pur) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: [...o.purchases, pur] } : o));
   const delPur = (oid, pid) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: o.purchases.filter((x) => x.id !== pid) } : o));
 
+  async function undoLast() {
+    try {
+      const r = await api.post("/api/undo", {});
+      if (!r.ok) { alert(r.message || "Không có gì để hoàn tác."); return; }
+      loadOrders(month);
+    } catch (e) { setErr(e.message); }
+  }
   async function claim(o) { try { replaceOrder((await api.post(`/api/orders/${o.id}/claim`, {})).order); } catch (e) { setErr(e.message); } }
   async function assign(o, userId) { try { replaceOrder((await api.post(`/api/orders/${o.id}/claim`, { userId })).order); } catch (e) { setErr(e.message); } }
   async function unclaim(o) { try { replaceOrder((await api.post(`/api/orders/${o.id}/unclaim`, {})).order); } catch (e) { setErr(e.message); } }
@@ -179,6 +186,7 @@ export default function TeamSheet({ currentUser, teams }) {
         {FILTERS.map(([k, label]) => (
           <Button key={k} sm variant={filter === k ? "primary" : ""} onClick={() => setFilter(k)}>{label}</Button>
         ))}
+        <Button sm onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button sm onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột đầu khi cuộn">📌 Ghim</Button>
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}

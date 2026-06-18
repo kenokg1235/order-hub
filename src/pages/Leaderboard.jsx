@@ -46,7 +46,7 @@ export default function Leaderboard({ currentUser }) {
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Theo <b>từng tháng</b>: Số đơn & Profit tính đơn <b>Đã Up</b> trong tháng; Số thẻ chỉ tính thẻ <b>Live Bill / Sai bill</b> dùng <b>lần đầu trong tháng đó</b> (dùng lại thẻ tháng cũ không cộng). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt (Đã Up + Đã Cancel). Bấm tiêu đề cột để đổi tiêu chí.
+        Theo <b>từng tháng</b>: Số đơn & Profit tính đơn <b>Đã Up</b> trong tháng; <b>Số thẻ</b> = thẻ NV được cấp ở <b>Mua thẻ</b> có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, tính theo người yêu cầu (không phụ thuộc gán vào Sheet Con). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt (Đã Up + Đã Cancel). Bấm tiêu đề cột để đổi tiêu chí.
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 

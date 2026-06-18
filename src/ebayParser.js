@@ -23,6 +23,19 @@ function parseCSV(text) {
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 
+// Chuyển ngày eBay (vd "Jun-24-2026", "06/24/2026", "2026-06-24") → "DD/MM".
+function toDDMM(s) {
+  s = String(s || "").trim();
+  if (!s) return "";
+  const d = new Date(s.replace(/-/g, " ").replace(/,/g, " "));   // tên tháng hoặc MM/DD/YYYY (US)
+  if (!isNaN(d.getTime())) return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/\d{2,4}$/);            // MM/DD/YYYY
+  if (m) return `${m[2].padStart(2, "0")}/${m[1].padStart(2, "0")}`;
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);                   // YYYY-MM-DD
+  if (m) return `${m[3].padStart(2, "0")}/${m[2].padStart(2, "0")}`;
+  return "";
+}
+
 export function parseEbayCsv(text) {
   const rows = parseCSV(text);
   // Find the header row (contains "Order Number").
@@ -41,6 +54,9 @@ export function parseEbayCsv(text) {
     qty: col("Quantity"), variation: col("Variation Details"),
     email: col("Buyer Email"), total: col("Total Price"), saleDate: col("Sale Date"),
   };
+  // Cột "Ship By Date" — tên có thể khác nhau giữa các bản eBay, dò linh hoạt.
+  let shipByIdx = [col("Ship By Date"), col("Ship By"), col("Shipping Date"), col("Date To Ship By")].find((i) => i >= 0);
+  if (shipByIdx == null) shipByIdx = header.findIndex((h) => h.includes("ship by"));
   const get = (row, idx) => (idx >= 0 ? (row[idx] || "").trim() : "");
 
   const out = [];
@@ -70,6 +86,7 @@ export function parseEbayCsv(text) {
       link: itemNo ? `https://www.ebay.com/itm/${itemNo}` : "",
       size: get(row, ci.variation),           // eBay variation → Size/Variation cell
       color: "",
+      deadline: toDDMM(get(row, shipByIdx)),   // ngày ship-by của eBay → Thời hạn (DD/MM)
       raw: {
         itemNumber: itemNo, buyerEmail: get(row, ci.email),
         total: get(row, ci.total), saleDate: get(row, ci.saleDate),
