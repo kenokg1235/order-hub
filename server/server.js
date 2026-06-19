@@ -227,8 +227,8 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   const now = Date.now();
   const period = getActiveMonth();
   const stmt = db.prepare(`
-    INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,deadline,listed_by,raw,period,created_at,updated_at)
-    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@deadline,@listedBy,@raw,@period,@now,@now)`);
+    INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,master_note,listed_by,raw,period,created_at,updated_at)
+    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@profit,@deadline,@masterNote,@listedBy,@raw,@period,@now,@now)`);
   const existsLineKey = db.prepare("SELECT 1 FROM orders WHERE line_key=?");
   const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
   let inserted = 0, duplicates = 0, skipped = 0;
@@ -250,7 +250,8 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
       stmt.run({
         id, orderNo, lineKey, store, address: r.address || "", custPhone: r.custPhone || "", qty: String(r.qty || ""),
         product: r.product || "", image: "", link: r.link || "",
-        size: variation, color: r.color || "", deadline: r.deadline || "", listedBy: req.user.id,
+        size: variation, color: r.color || "", profit: Number(r.profit) || 0, deadline: r.deadline || "",
+        masterNote: r.masterNote || "", listedBy: req.user.id,
         raw: JSON.stringify(r.raw || {}), period, now,
       });
       inserted++;
@@ -997,7 +998,9 @@ app.get("/api/team-card-stats", requireAuth, (req, res) => {
   let rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all();
   if (filter) rows = rows.filter((r) => filter.has(r.requester_id));
   rows = rows.filter((r) => countSet.has(String(r.status || "").toLowerCase()));   // chỉ Live Bill / Sai bill
-  if (month && month !== "all") { const firstM = cardFirstMonths(); rows = rows.filter((r) => firstM[r.card_value] === month); }  // thẻ dùng lần đầu trong tháng
+  // Hiển thị mọi thẻ Live/Sai bill, không phụ thuộc đã add vào Sheet Con: gắn theo tháng dùng-lần-đầu,
+  // nếu chưa dùng thì theo tháng tạo yêu cầu.
+  if (month && month !== "all") { const firstM = cardFirstMonths(); rows = rows.filter((r) => (firstM[r.card_value] || ymOf(r.created_at)) === month); }
   const items = rows.map((r) => ({
     id: r.id, code: cardCode(r.seq), content: r.content, requesterName: r.requester_name, status: r.status,
     hasCard: !!r.card_value, stats: cardStats(r.card_value),   // stats computed server-side; card value NOT sent

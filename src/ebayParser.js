@@ -4,6 +4,7 @@
 // We locate the header by the "Order Number" column and map only what we need.
 
 function parseCSV(text) {
+  text = String(text || "").replace(/^﻿/, "");   // bỏ BOM (Excel UTF-8)
   const rows = []; let row = [], field = "", inQ = false, i = 0;
   while (i < text.length) {
     const c = text[i];
@@ -91,6 +92,60 @@ export function parseEbayCsv(text) {
         itemNumber: itemNo, buyerEmail: get(row, ci.email),
         total: get(row, ci.total), saleDate: get(row, ci.saleDate),
       },
+    });
+  }
+  return { rows: out, count: out.length };
+}
+
+// Parse mẫu nhập CHUẨN của OrderHub (người dùng tự điền). Cột tiếng Việt thân thiện.
+// Bắt buộc có cột "ID Order". Địa chỉ gộp từ: Người nhận + Địa chỉ + (Thành phố, Bang Zip) + Quốc gia.
+export function parseOrderHubCsv(text) {
+  const rows = parseCSV(text);
+  const hIdx = rows.findIndex((r) => r.some((c) => ["id order", "order number", "mã đơn", "ma don"].includes(norm(c))));
+  if (hIdx < 0) throw new Error("Mẫu OrderHub: thiếu cột 'ID Order'.");
+  const header = rows[hIdx].map(norm);
+  const find = (...names) => { for (const n of names) { const i = header.indexOf(norm(n)); if (i >= 0) return i; } return -1; };
+  const ci = {
+    id: find("ID Order", "Order Number", "Mã đơn"),
+    name: find("Người nhận", "Tên người nhận", "Ship To Name", "Ten"),
+    addr: find("Địa chỉ", "Address", "Dia chi"),
+    city: find("Thành phố", "City", "Thanh pho"),
+    state: find("Bang", "State", "Tỉnh"),
+    zip: find("Zip", "Zip code", "Mã zip"),
+    country: find("Quốc gia", "Country", "Quoc gia"),
+    phone: find("SĐT", "Điện thoại", "Phone", "SDT"),
+    qty: find("SL", "Số lượng", "Quantity", "So luong"),
+    product: find("Sản phẩm", "Product", "Item Title", "San pham"),
+    link: find("Link", "Link sản phẩm", "URL"),
+    size: find("Size", "Variation", "Size/Variation"),
+    color: find("Màu", "Color", "Mau"),
+    profit: find("Profit", "Lợi nhuận", "Loi nhuan"),
+    deadline: find("Thời hạn", "Deadline", "Ship By", "Han"),
+    note: find("Ghi chú", "Note", "Note tổng", "Ghi chu"),
+    itemNo: find("Item Number", "eBay Item Number", "Item No"),
+  };
+  const get = (row, idx) => (idx >= 0 ? (row[idx] || "").trim() : "");
+  const dl = (v) => (/^\d{1,2}\s*\/\s*\d{1,2}$/.test(v) ? v.replace(/\s/g, "") : (toDDMM(v) || v));
+  const out = [];
+  for (let r = hIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    const id = get(row, ci.id);
+    if (!id || !/\d/.test(id) || /record\(s\)|downloaded|seller id/i.test(id)) continue;
+    const addressParts = [
+      get(row, ci.name), get(row, ci.addr),
+      [get(row, ci.city), [get(row, ci.state), get(row, ci.zip)].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+      get(row, ci.country),
+    ].filter(Boolean);
+    const itemNo = get(row, ci.itemNo);
+    out.push({
+      id, orderNumber: id, itemNumber: itemNo,
+      product: get(row, ci.product), qty: get(row, ci.qty), custPhone: get(row, ci.phone),
+      address: addressParts.join("\n"),
+      link: get(row, ci.link) || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : ""),
+      size: get(row, ci.size), color: get(row, ci.color),
+      profit: get(row, ci.profit), deadline: dl(get(row, ci.deadline)),
+      masterNote: get(row, ci.note),
+      raw: { itemNumber: itemNo },
     });
   }
   return { rows: out, count: out.length };

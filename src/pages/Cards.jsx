@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Badge } from "../ui.jsx";
+import React, { useEffect, useMemo, useState } from "react";
+import { Badge, Button } from "../ui.jsx";
 import { api } from "../api.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 
@@ -15,8 +15,19 @@ export default function Cards({ currentUser }) {
   // Chỉ khóa khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" → chỉ đổi qua lại trong nhóm hợp lệ.
   const restrictedFor = (r) => !isAdmin && isCount(r.status);
   const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");   // "" tất cả | "__empty" | tên trạng thái
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
+
+  const statusOptions = [...new Set([...lockStatuses, ...errorStatuses, ...cardStatuses])];
+  const filtered = useMemo(() => reqs.filter((r) => {
+    if (statusFilter === "__empty") { if (r.status) return false; }
+    else if (statusFilter && r.status !== statusFilter) return false;
+    const s = q.trim().toLowerCase();
+    if (s && ![r.card, r.requesterName, r.content, r.code].some((v) => String(v || "").toLowerCase().includes(s))) return false;
+    return true;
+  }), [reqs, q, statusFilter]);
 
   async function load() {
     try {
@@ -35,15 +46,23 @@ export default function Cards({ currentUser }) {
     catch (e) { setErr(e.message); }
   }
 
-  const totalProfit = reqs.reduce((s, r) => s + (r.stats?.profit || 0), 0);
+  const totalProfit = filtered.reduce((s, r) => s + (r.stats?.profit || 0), 0);
 
   return (
     <div>
-      <div className="row" style={{ marginBottom: 14 }}>
+      <div className="row" style={{ marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <h2 style={{ margin: 0 }}>Mua thẻ</h2>
-        <Badge color="blue">{reqs.length} thẻ/yêu cầu</Badge>
-        <div className="spacer" />
+        <Badge color="blue">{filtered.length} thẻ/yêu cầu</Badge>
         <Badge color="green">Tổng profit: ${Math.round(totalProfit * 100) / 100}</Badge>
+        <div className="spacer" />
+        <select className="input" style={{ maxWidth: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">Tất cả trạng thái</option>
+          <option value="__empty">— chưa có trạng thái —</option>
+          {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input className="input" style={{ maxWidth: 220 }} placeholder="🔍 Tìm thẻ / NV / yêu cầu / ID lệnh…"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        {(q || statusFilter) && <Button sm onClick={() => { setQ(""); setStatusFilter(""); }}>✕ Xóa lọc</Button>}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
@@ -56,7 +75,7 @@ export default function Cards({ currentUser }) {
             <th>Đơn đã xử lý (ID Order)</th><th>Thống kê</th>
           </tr></thead>
           <tbody>
-            {reqs.map((r) => (
+            {filtered.map((r) => (
               <tr key={r.id} style={{ background: statusColors[r.status] || undefined }}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
@@ -89,9 +108,9 @@ export default function Cards({ currentUser }) {
                 </td>
               </tr>
             ))}
-            {reqs.length === 0 && (
+            {filtered.length === 0 && (
               <tr><td colSpan={7} style={{ textAlign: "center", padding: 30 }} className="muted">
-                Chưa có yêu cầu thẻ nào. Nhân viên tạo yêu cầu ở trang “Yêu cầu thẻ”.
+                {reqs.length ? "Không khớp bộ lọc." : "Chưa có yêu cầu thẻ nào. Nhân viên tạo yêu cầu ở trang “Yêu cầu thẻ”."}
               </td></tr>
             )}
           </tbody>

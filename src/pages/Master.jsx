@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import { Button, Input, Modal, Badge } from "../ui.jsx";
-import { parseEbayCsv } from "../ebayParser.js";
+import { parseEbayCsv, parseOrderHubCsv } from "../ebayParser.js";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import MultiFilter from "../MultiFilter.jsx";
@@ -550,8 +550,13 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try { setParsed(parseEbayCsv(String(reader.result))); setErr(""); }
-      catch (e) { setErr(e.message); setParsed(null); }
+      const txt = String(reader.result);
+      // Tự nhận: file eBay OrdersReport hoặc mẫu chuẩn OrderHub (cột "ID Order").
+      try { setParsed(parseEbayCsv(txt)); setErr(""); }
+      catch {
+        try { setParsed(parseOrderHubCsv(txt)); setErr(""); }
+        catch (e2) { setErr(e2.message); setParsed(null); }
+      }
     };
     reader.readAsText(file, "utf-8");
   }
