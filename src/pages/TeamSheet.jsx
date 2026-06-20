@@ -77,7 +77,7 @@ export default function TeamSheet({ currentUser, teams }) {
     const cfa = (k) => Array.isArray(cf[k]) ? cf[k] : [];
     let arr = orders;
     if (teamFilter) arr = arr.filter((o) => o.team === teamFilter);
-    if (filter === "unclaimed") arr = arr.filter((o) => !o.claimedBy);
+    if (filter === "unclaimed") arr = arr.filter((o) => !o.claimedBy && o.masterStatus !== "Đã Up" && o.masterStatus !== "Đã Cancel");
     else if (filter === "mine") arr = arr.filter((o) => o.claimedBy === currentUser.id);
     return arr.filter((o) => {
       if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.note1, o.note2, o.note3, o.note4].some((v) => T(v).includes(s))
