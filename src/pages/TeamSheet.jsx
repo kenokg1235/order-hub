@@ -54,13 +54,18 @@ export default function TeamSheet({ currentUser, teams }) {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);
 
-  // Tự cập nhật mỗi 15s: thêm đơn mới + bỏ đơn đã xóa, GIỮ NGUYÊN object đơn cũ (không clobber ô đang sửa).
+  // Tự cập nhật mỗi 15s: đơn mới / trạng thái / chỉnh sửa đều hiện ngay,
+  // chỉ CHỪA đúng dòng đang được focus (đang gõ) để không mất chữ.
   useEffect(() => {
     if (!month) return;
     const t = setInterval(async () => {
       try {
         const fresh = (await api.get(`/api/team-orders?month=${encodeURIComponent(month)}`)).orders;
-        setOrders((prev) => { const byId = new Map(prev.map((o) => [o.id, o])); return fresh.map((f) => byId.get(f.id) || f); });
+        const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
+        setOrders((prev) => {
+          const byId = new Map(prev.map((o) => [o.id, o]));
+          return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
+        });
       } catch {}
     }, 15000);
     return () => clearInterval(t);
@@ -263,7 +268,7 @@ export default function TeamSheet({ currentUser, teams }) {
                 const canEdit = isAdmin || o.claimedBy === currentUser.id;       // owner of the order
                 const locked = p && !p.hidden && !(p.card && p.cardValid);        // need valid card first
                 return (
-                <tr key={o.id + "_" + (p ? p.id : "none")}
+                <tr key={o.id + "_" + (p ? p.id : "none")} data-oid={o.id}
                   style={{ background: rowBg(o.masterStatus, p?.processStatus, colors) }}>
                   {idx === 0 && <>
                     <td rowSpan={span}>{o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}</td>

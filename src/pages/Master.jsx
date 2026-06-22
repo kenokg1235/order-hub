@@ -56,13 +56,18 @@ export default function Master({ currentUser, teams }) {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);   // refetch when switching month
 
-  // Tự cập nhật mỗi 15s: thêm đơn mới + bỏ đơn đã xóa, GIỮ NGUYÊN object đơn cũ (không clobber ô đang sửa).
+  // Tự cập nhật mỗi 15s: đơn mới / trạng thái / chỉnh sửa đều hiện ngay,
+  // chỉ CHỪA đúng dòng đang được focus (đang gõ) để không mất chữ.
   useEffect(() => {
     if (!month) return;
     const t = setInterval(async () => {
       try {
         const fresh = (await api.get(`/api/orders?month=${encodeURIComponent(month)}`)).orders;
-        setOrders((prev) => { const byId = new Map(prev.map((o) => [o.id, o])); return fresh.map((f) => byId.get(f.id) || f); });
+        const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
+        setOrders((prev) => {
+          const byId = new Map(prev.map((o) => [o.id, o]));
+          return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
+        });
       } catch {}
     }, 15000);
     return () => clearInterval(t);
@@ -381,7 +386,7 @@ export default function Master({ currentUser, teams }) {
               const procSt = (o.purchases || []).map((p) => p.processStatus).find(Boolean) || "";
               const rowColor = rowBg(o.masterStatus, procSt, statusColors);
               return (
-              <tr key={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
+              <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
                 <td>{isAdmin
                   ? <select className="input" style={{ padding: "4px 6px", minWidth: 90 }} value={o.team}
