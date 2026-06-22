@@ -41,6 +41,17 @@ export default function Cards({ currentUser }) {
   }
   useEffect(() => { load(); }, []);
 
+  // Tự cập nhật mỗi 15s: thêm yêu cầu mới + bỏ yêu cầu đã xóa, giữ nguyên dòng đang sửa.
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try {
+        const fresh = (await api.get("/api/card-requests")).requests;
+        setReqs((prev) => { const byId = new Map(prev.map((r) => [r.id, r])); return fresh.map((f) => byId.get(f.id) || f); });
+      } catch {}
+    }, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   async function update(id, body) {
     try { const { request } = await api.put(`/api/card-requests/${id}`, body); setReqs((p) => p.map((r) => r.id === id ? request : r)); }
     catch (e) { setErr(e.message); }

@@ -56,6 +56,18 @@ export default function Master({ currentUser, teams }) {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);   // refetch when switching month
 
+  // Tự cập nhật mỗi 15s: thêm đơn mới + bỏ đơn đã xóa, GIỮ NGUYÊN object đơn cũ (không clobber ô đang sửa).
+  useEffect(() => {
+    if (!month) return;
+    const t = setInterval(async () => {
+      try {
+        const fresh = (await api.get(`/api/orders?month=${encodeURIComponent(month)}`)).orders;
+        setOrders((prev) => { const byId = new Map(prev.map((o) => [o.id, o])); return fresh.map((f) => byId.get(f.id) || f); });
+      } catch {}
+    }, 15000);
+    return () => clearInterval(t);
+  }, [month]);
+
   async function closeMonth() {
     if (!confirm(`Chốt tháng ${activeMonth}?\nĐơn chưa "Đã Up"/"Đã Cancel" sẽ chuyển sang tháng kế tiếp.`)) return;
     try {

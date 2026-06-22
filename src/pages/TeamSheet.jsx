@@ -54,6 +54,18 @@ export default function TeamSheet({ currentUser, teams }) {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);
 
+  // Tự cập nhật mỗi 15s: thêm đơn mới + bỏ đơn đã xóa, GIỮ NGUYÊN object đơn cũ (không clobber ô đang sửa).
+  useEffect(() => {
+    if (!month) return;
+    const t = setInterval(async () => {
+      try {
+        const fresh = (await api.get(`/api/team-orders?month=${encodeURIComponent(month)}`)).orders;
+        setOrders((prev) => { const byId = new Map(prev.map((o) => [o.id, o])); return fresh.map((f) => byId.get(f.id) || f); });
+      } catch {}
+    }, 15000);
+    return () => clearInterval(t);
+  }, [month]);
+
   const teamName = (id) => teams.find((t) => t.id === id)?.name || id;
   const canClaim = (o) => isAdmin || ((currentUser.teamIds || []).includes(o.team));
   const assignableFor = (o) => assignUsers.filter((u) => (u.teamIds || []).includes(o.team));

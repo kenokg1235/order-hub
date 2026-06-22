@@ -40,6 +40,15 @@ export default function Requests({ currentUser }) {
   }
   useEffect(() => { load(); }, []);
 
+  // Tự cập nhật mỗi 15s: thẻ cấp về / trạng thái / yêu cầu mới hiện ngay, không cần F5.
+  // (Ô nhập "nội dung" là textarea uncontrolled nên refresh đầy đủ không làm mất chữ đang gõ.)
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try { setReqs((await api.get("/api/card-requests")).requests); } catch {}
+    }, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   async function create() {
     if (!newContent.trim()) return;
     try { await api.post("/api/card-requests", { content: newContent.trim() }); setNewContent(""); load(); }
