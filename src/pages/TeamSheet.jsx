@@ -15,19 +15,26 @@ export default function TeamSheet({ currentUser, teams }) {
   const [procStatuses, setProcStatuses] = useState([]);
   const [colors, setColors] = useState({});
   const [assignUsers, setAssignUsers] = useState([]);
-  const [filter, setFilter] = useState("all"); // all | unclaimed | mine
-  const [teamFilter, setTeamFilter] = useState(""); // "" = all teams
-  const [q, setQ] = useState("");
-  const [cf, setCf] = useState({});                // per-column filters
-  const [deadlineSort, setDeadlineSort] = useState("");   // "" | "asc" | "desc"
+  // Khôi phục bộ lọc đã lưu (giữ nguyên khi chuyển tab rồi quay lại / tải lại trang).
+  const SAVED = (() => { try { return JSON.parse(localStorage.getItem("teamSheetFilters") || "{}"); } catch { return {}; } })();
+  const [filter, setFilter] = useState(SAVED.filter || "all"); // all | unclaimed | mine
+  const [teamFilter, setTeamFilter] = useState(SAVED.teamFilter || ""); // "" = all teams
+  const [q, setQ] = useState(SAVED.q || "");
+  const [cf, setCf] = useState(SAVED.cf || {});                // per-column filters
+  const [deadlineSort, setDeadlineSort] = useState(SAVED.deadlineSort || "");   // "" | "asc" | "desc"
   const [historyFor, setHistoryFor] = useState(null);
-  const [pinned, setPinned] = useState(true);
+  const [pinned, setPinned] = useState(SAVED.pinned !== false);
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
   const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
+
+  // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
+  useEffect(() => {
+    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, pinned })); } catch {}
+  }, [filter, teamFilter, q, cf, deadlineSort, pinned]);
 
   async function loadOrders(m) {
     try { setOrders((await api.get(`/api/team-orders?month=${encodeURIComponent(m || month)}`)).orders); } catch (e) { setErr(e.message); }

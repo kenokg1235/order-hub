@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hướng dẫn Admin — Order Hub</title>
+<style>
+  @page { size: A4; margin: 15mm 13mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", "Segoe UI Emoji", Arial, sans-serif; color: #1f2937; font-size: 12px; line-height: 1.5; margin: 0; }
+  h1 { font-size: 22px; color: #1d4ed8; margin: 0 0 2px; }
+  .sub { color: #6b7280; font-style: italic; margin: 0 0 12px; font-size: 11.5px; }
+  h2 { font-size: 14.5px; color: #fff; background: #1d4ed8; margin: 16px 0 8px; padding: 5px 10px; border-radius: 6px; }
+  h3 { font-size: 12.5px; color: #1d4ed8; margin: 10px 0 3px; }
+  p { margin: 4px 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  b, strong { color: #111827; }
+  code { background: #eef1f4; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 4px; font-family: Consolas, monospace; font-size: 11px; }
+  blockquote { margin: 6px 0; padding: 6px 10px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; color: #1e3a8a; }
+  .warn { background:#fff7ed; border-left:4px solid #f59e0b; color:#92400e; padding:6px 10px; border-radius:4px; margin:6px 0; }
+  table.tb { border-collapse: collapse; width: 100%; margin: 6px 0; }
+  table.tb td, table.tb th { border: 1px solid #e5e7eb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  table.tb th { background: #f3f4f6; }
+  .tag { display:inline-block; background:#dbeafe; color:#1e40af; border-radius:5px; padding:0 6px; font-weight:700; font-size:10.5px; }
+</style>
+</head>
+<body>
+  <h1>🔐 Hướng dẫn sử dụng — ADMIN</h1>
+  <p class="sub">Order Hub — quản lý đơn dropship eBay. Admin có toàn quyền: người dùng, đơn hàng, thẻ, tài chính, cấu hình hệ thống.</p>
+
+  <h2>1. Đăng nhập &amp; tổng quan</h2>
+  <p>Mở link app → đăng nhập bằng email + mật khẩu Admin. Menu trái gồm các nhóm:</p>
+  <ul>
+    <li><b>ĐƠN HÀNG:</b> Sheet Tổng · Danh sách đen · Sheet Con · Tracking · Leaderboard</li>
+    <li><b>FINANCE:</b> Payout · Thống kê tài chính (chi phí/profit)</li>
+    <li><b>THẺ:</b> Yêu cầu thẻ · Mua thẻ · Thống kê thẻ</li>
+    <li><b>HỆ THỐNG:</b> Người dùng · Teams · Stores · Cấu hình</li>
+  </ul>
+  <p>Góc dưới menu: <b>🟢 Online</b> (ai đang dùng), <b>🔔 Thông báo</b>, Đăng xuất.</p>
+
+  <h2>2. Người dùng &amp; phân quyền (HỆ THỐNG → Người dùng)</h2>
+  <p>Bấm <b>＋ Thêm người dùng</b>, nhập Họ tên / Email / Mật khẩu, chọn <b>Vai trò</b>:</p>
+  <table class="tb">
+    <tr><th>Vai trò</th><th>Thấy &amp; làm được</th></tr>
+    <tr><td><b>Admin</b></td><td>Toàn quyền tất cả.</td></tr>
+    <tr><td><b>Leader</b></td><td>Sheet Con của team (chia đơn cho thành viên), thẻ, leaderboard. Cấp thêm <b>📊 Quyền Sheet Tổng</b> để xem+sửa Sheet Tổng.</td></tr>
+    <tr><td><b>Member</b></td><td>Sheet Con (nhận &amp; xử lý đơn của team), Yêu cầu thẻ.</td></tr>
+    <tr><td><b>Listing</b></td><td>Chỉ Sheet Tổng (theo store được gán) + Payout. Không thấy Sheet Con/thẻ.</td></tr>
+    <tr><td><b>Mua thẻ</b></td><td>Chỉ thấy Yêu cầu thẻ + Mua thẻ (theo team).</td></tr>
+  </table>
+  <p><b>Tùy chọn quyền:</b></p>
+  <ul>
+    <li><b>Team:</b> tích team cho Leader/Member/Mua thẻ. <b>Store:</b> tích store cho Listing.</li>
+    <li><b>🎴 Quyền Mua thẻ:</b> cho Member/Leader được vào trang Mua thẻ cấp thẻ.</li>
+    <li><b>📊 Quyền Sheet Tổng:</b> (chỉ Leader) cho xem + sửa ô trên Sheet Tổng.</li>
+    <li><b>🔕 Tắt thông báo từ team:</b> (chỉ Admin) Admin này không nhận thông báo của team được tích.</li>
+    <li><b>Hoạt động:</b> bỏ tích = <b>khóa</b> tài khoản (không đăng nhập được). Đây KHÔNG phải cách phân quyền.</li>
+  </ul>
+
+  <h2>3. Teams &amp; Stores</h2>
+  <ul>
+    <li><b>Teams:</b> tạo / đổi tên team (vd Tín, V3). Mỗi team dùng chung 1 Sheet Con.</li>
+    <li><b>Stores:</b> thêm tài khoản eBay (store) và gán store cho nhân viên Listing.</li>
+  </ul>
+
+  <h2>4. Sheet Tổng — quản lý đơn</h2>
+  <h3>Nhập đơn</h3>
+  <ul>
+    <li><b>⬆️ Import eBay:</b> chọn Store → chọn file <b>.csv</b> (file OrdersReport của eBay <b>hoặc</b> mẫu chuẩn OrderHub) → Import. Đơn trùng tự bỏ qua; ngày <b>Ship By</b> tự vào cột Thời hạn; đơn nhiều sản phẩm tách thành nhiều dòng cùng order number.</li>
+    <li><b>＋ Thêm đơn:</b> nhập tay 1 đơn.</li>
+  </ul>
+  <h3>Chia đơn cho team</h3>
+  <p>Tích chọn các đơn (ô vuông đầu dòng) → thanh thao tác hiện ra → bấm tên <b>team</b> để chia, hoặc đổi cột <b>Team</b> từng dòng.</p>
+  <h3>Trạng thái &amp; chỉnh sửa</h3>
+  <ul>
+    <li>Sửa trực tiếp: Size, Màu, Profit, Thời hạn (gõ DD/MM hoặc bấm 📅), Note. Gõ xong rời ô là tự lưu.</li>
+    <li><b>Trạng thái tổng:</b> Đã Up / Đã Cancel. Khi chọn <b>Đã Cancel</b> hiện thêm ô <b>lý do cancel</b> (dùng cho Fail rate).</li>
+    <li>Hàng tự <b>đổi màu theo trạng thái</b>; địa chỉ trùng được tô vàng cảnh báo.</li>
+  </ul>
+  <h3>Công cụ</h3>
+  <ul>
+    <li><b>📌 Ghim:</b> giữ tiêu đề + ô <b>cột</b> = số cột ghim bên trái khi cuộn.</li>
+    <li><b>🖼️ Lấy ảnh:</b> tự lấy ảnh bìa eBay cho đơn thiếu ảnh.</li>
+    <li><b>🗑 Xóa đã chọn:</b> tích đơn → xóa hàng loạt (có xác nhận, không hoàn tác).</li>
+    <li><b>🕘 Lịch sử:</b> xem ai sửa ô gì, cũ→mới, lúc nào (mỗi dòng đơn).</li>
+    <li><b>↩️ Hoàn tác:</b> trả ô vừa sửa của bạn về giá trị cũ (lùi nhiều bước).</li>
+    <li>Bấm ô read-back (Tracking/Order#/Email…) → hiện đầy đủ trên thanh trên + nút <b>📋 Copy</b>.</li>
+  </ul>
+  <h3>Chốt tháng</h3>
+  <ul>
+    <li><b>🔒 Chốt tháng:</b> đơn chưa Đã Up/Đã Cancel chuyển sang tháng kế; đơn xong lưu ở tháng cũ.</li>
+    <li><b>⟲ Hoàn tác chốt</b> / <b>⟲ Mở lại tháng:</b> đảo lại / đặt tháng khác làm hiện tại.</li>
+  </ul>
+
+  <h2>5. Thẻ (Yêu cầu thẻ · Mua thẻ · Thống kê thẻ)</h2>
+  <ul>
+    <li><b>Yêu cầu thẻ:</b> nơi nhân viên xin thẻ. Admin thấy tất cả.</li>
+    <li><b>Mua thẻ:</b> nhập <b>thẻ cấp</b> vào từng yêu cầu + đặt <b>trạng thái</b>. Có tìm kiếm + lọc trạng thái, tô màu theo trạng thái. <b>Khóa:</b> khi trạng thái là nhóm <b>hợp lệ</b> (Live bill/Sai bill) thì NV chỉ đổi qua lại trong nhóm hợp lệ, không đổi sang loại khác (chống gian lận); Admin đổi tự do.</li>
+    <li><b>Thống kê thẻ:</b> xem thẻ Live bill/Sai bill theo team (giá trị thẻ ẩn), hiển thị đủ kể cả thẻ chưa add Sheet Con.</li>
+  </ul>
+
+  <h2>6. Tài chính (FINANCE)</h2>
+  <ul>
+    <li><b>Payout:</b> nhập tiền về theo store (Username/Bank/Số tiền/Ngày), nhóm theo store + tổng theo khoảng ngày.</li>
+    <li><b>Thống kê tài chính:</b> nhập tay <b>Chi phí</b> và <b>Profit</b> (VND/USDT/USD). Có 3 ô tổng: Chi phí, Profit, và <b>Lợi nhuận ròng = Profit − Chi phí</b>. Lọc theo Loại / khoảng ngày / loại tiền / tìm.</li>
+  </ul>
+
+  <h2>7. Leaderboard</h2>
+  <p>Xếp hạng theo tháng: <b>Số đơn</b> (Đã Up), <b>Số thẻ</b> (thẻ Live/Sai bill được cấp ở Mua thẻ theo người yêu cầu), Đơn/Thẻ, Profit, <b>Đơn lỗi (NV)</b> &amp; <b>Fail rate</b> (= đơn cancel do lỗi NV ÷ tổng đơn đã chốt). Bấm tiêu đề cột để đổi tiêu chí.</p>
+
+  <h2>8. Tracking · Danh sách đen · Thông báo</h2>
+  <ul>
+    <li><b>Tracking:</b> theo dõi vận chuyển qua AfterShip (cấu hình key ở Cấu hình).</li>
+    <li><b>Danh sách đen:</b> username khách khó (Admin + Listing thêm/xem) để cảnh báo trước khi xử lý.</li>
+    <li><b>Thông báo (🔔) + Telegram:</b> báo khi có yêu cầu thẻ, cấp thẻ, đổi trạng thái thẻ, đơn quá hạn, Note đơn. Đơn quá hạn gửi Lister của store (không có thì gửi Admin).</li>
+  </ul>
+
+  <h2>9. Cấu hình (HỆ THỐNG → Cấu hình)</h2>
+  <ul>
+    <li><b>Danh sách trạng thái:</b> trạng thái đơn (tổng), trạng thái xử lý, trạng thái thẻ; nhóm <b>thẻ hợp lệ</b> (tính số thẻ + khóa) và <b>thẻ lỗi</b>.</li>
+    <li><b>Lý do Cancel</b> + <b>Lý do tính Fail</b> (cho Fail rate).</li>
+    <li><b>Màu nền dòng theo trạng thái:</b> gán màu cho trạng thái tổng / xử lý / thẻ.</li>
+    <li><b>Telegram:</b> bật + dán Bot Token (xem hướng dẫn Telegram riêng). <b>AfterShip:</b> bật + thêm key.</li>
+    <li><b>🧹 Dọn dữ liệu cũ:</b> giữ tháng hiện tại + N tháng trước; xóa đơn + thẻ xử lý + yêu cầu thẻ của tháng cũ hơn (giữ payout/chi phí). Có xác nhận, KHÔNG hoàn tác.</li>
+  </ul>
+
+  <h2>10. Cài đặt thông báo Telegram (tạo bot mới)</h2>
+  <p>Order Hub đẩy thông báo (yêu cầu thẻ, cấp/đổi trạng thái thẻ, đơn quá hạn, Note đơn) về Telegram. Làm 2 phần: Admin tạo bot 1 lần, rồi mỗi người tự liên kết.</p>
+  <h3>Phần A — Admin tạo bot bằng BotFather (1 lần)</h3>
+  <ol>
+    <li>Mở Telegram, tìm <b>@BotFather</b> (tài khoản có dấu tích xanh) → bấm <b>Start</b>.</li>
+    <li>Gửi lệnh <code>/newbot</code>.</li>
+    <li>Nhập <b>tên hiển thị</b> của bot (vd <i>Order Hub Pacific</i>).</li>
+    <li>Nhập <b>username</b> cho bot — phải kết thúc bằng <code>bot</code> (vd <code>orderhub_pacific_bot</code>).</li>
+    <li>BotFather trả về <b>Bot Token</b> dạng <code>123456789:AAE...xyz</code> → <b>copy</b> chuỗi này.</li>
+  </ol>
+  <div class="warn">🔒 Bot Token là "chìa khóa" của bot — không chia sẻ công khai. Nếu lộ: gửi <code>/revoke</code> cho BotFather để lấy token mới.</div>
+  <h3>Phần B — Dán token vào Order Hub</h3>
+  <ol>
+    <li>Đăng nhập Admin → <b>⚙️ Cấu hình</b> → mục <b>Thông báo Telegram</b>.</li>
+    <li>Tích <b>☑️ Bật gửi Telegram</b> → dán <b>Bot Token</b> → bấm <b>Lưu Telegram</b>.</li>
+  </ol>
+  <h3>Phần C — Mỗi người liên kết tài khoản (1 lần)</h3>
+  <ol>
+    <li>Bấm <b>🔔 Thông báo</b> (góc dưới menu) → <b>🔗 Liên kết Telegram để nhận thông báo</b>.</li>
+    <li>App hiện <b>mã</b> dạng <code>LINK-XXXXXX</code> + tên bot.</li>
+    <li>Bấm tên bot <b>@…bot</b> → mở Telegram → bấm <b>Start</b> → <b>gửi mã</b> đó cho bot.</li>
+    <li>Quay lại app → <b>Tôi đã gửi — Kiểm tra</b> → thấy <b>✓ Đã liên kết</b> là xong.</li>
+  </ol>
+  <p class="sub" style="margin-top:4px">Khắc phục: "Telegram chưa được Admin bật" → làm Phần A/B. Bấm Kiểm tra báo chưa thấy → đảm bảo đã Start bot &amp; gửi đúng mã (mã hết hạn sau 10 phút, bấm liên kết lại). 🔕 Admin có thể tắt nhận thông báo theo team trong mục Người dùng.</p>
+
+  <h2>11. Vận hành &amp; an toàn dữ liệu</h2>
+  <ul>
+    <li>Toàn bộ dữ liệu (đơn, user, thẻ, cấu hình, key) nằm trong 1 file <code>server/data.db</code>. <b>Sao lưu file này</b> định kỳ.</li>
+    <li>Cập nhật tính năng mới: trên server chạy <code>bash update.sh</code> (tự backup data.db → lấy code mới → build → khởi động lại). Dữ liệu giữ nguyên.</li>
+    <li>Đổi VPS: cài Node + lấy code từ GitHub + <b>copy data.db</b> sang. (Có hướng dẫn riêng.)</li>
+  </ul>
+  <div class="warn">⚠️ Các thao tác KHÔNG hoàn tác: Xóa đơn / Xóa hàng loạt, Dọn dữ liệu cũ, Xóa người dùng. Cân nhắc kỹ &amp; giữ bản sao lưu data.db.</div>
+</body>
+</html>
