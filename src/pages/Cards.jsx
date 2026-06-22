@@ -41,12 +41,17 @@ export default function Cards({ currentUser }) {
   }
   useEffect(() => { load(); }, []);
 
-  // Tự cập nhật mỗi 15s: thêm yêu cầu mới + bỏ yêu cầu đã xóa, giữ nguyên dòng đang sửa.
+  // Tự cập nhật mỗi 15s: yêu cầu mới / trạng thái / thẻ cấp đều hiện ngay,
+  // chỉ CHỪA đúng dòng đang được focus (đang gõ thẻ) để không mất chữ.
   useEffect(() => {
     const t = setInterval(async () => {
       try {
         const fresh = (await api.get("/api/card-requests")).requests;
-        setReqs((prev) => { const byId = new Map(prev.map((r) => [r.id, r])); return fresh.map((f) => byId.get(f.id) || f); });
+        const editingId = document.activeElement?.closest?.("tr[data-rid]")?.getAttribute("data-rid") || null;
+        setReqs((prev) => {
+          const byId = new Map(prev.map((r) => [r.id, r]));
+          return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
+        });
       } catch {}
     }, 15000);
     return () => clearInterval(t);
@@ -87,7 +92,7 @@ export default function Cards({ currentUser }) {
           </tr></thead>
           <tbody>
             {filtered.map((r) => (
-              <tr key={r.id} style={{ background: statusColors[r.status] || undefined }}>
+              <tr key={r.id} data-rid={r.id} style={{ background: statusColors[r.status] || undefined }}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
                   <input className="input" style={{ padding: "5px 8px", width: 160 }} defaultValue={r.card}
