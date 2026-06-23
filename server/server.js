@@ -4,6 +4,7 @@
 // In production it also serves the built client from /dist.
 // ─────────────────────────────────────────────────────────────────────────────
 import express from "express";
+import compression from "compression";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
@@ -17,6 +18,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.use(compression());                    // nén gzip cho JSON API + file tĩnh
 app.use(express.json({ limit: "5mb" }));
 
 const PORT = process.env.PORT || 4000;
@@ -247,7 +249,8 @@ app.get("/api/orders", requireAuth, (req, res) => {
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: purchasesOf(o.id, false) })) });
+  const purMap = purchasesByOrders(rows.map((o) => o.id));
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)) })) });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
@@ -582,6 +585,19 @@ function purchaseOut(p, masked = false) {
 }
 const purchasesOf = (orderId, masked = false) =>
   db.prepare("SELECT * FROM purchases WHERE order_id=? ORDER BY created_at").all(orderId).map((p) => purchaseOut(p, masked));
+// Lấy purchases cho NHIỀU đơn trong 1 truy vấn (tránh N+1). Trả Map orderId -> [rows thô].
+function purchasesByOrders(orderIds) {
+  const map = new Map();
+  for (let i = 0; i < orderIds.length; i += 500) {
+    const chunk = orderIds.slice(i, i + 500);
+    const ph = chunk.map(() => "?").join(",");
+    for (const p of db.prepare(`SELECT * FROM purchases WHERE order_id IN (${ph}) ORDER BY created_at`).all(...chunk)) {
+      if (!map.has(p.order_id)) map.set(p.order_id, []);
+      map.get(p.order_id).push(p);
+    }
+  }
+  return map;
+}
 // Who may see/own a purchase's card info: Admin or the person who claimed the order.
 const canSeePurchases = (user, o) => !!user && (user.role === "Admin" || (!!o.claimed_by && o.claimed_by === user.id));
 const orderFull = (o, user) => ({ ...orderOut(o), purchases: purchasesOf(o.id, !canSeePurchases(user, o)) });
@@ -609,7 +625,8 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   } else return res.json({ orders: [] });
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  res.json({ orders: rows.map((o) => orderFull(o, u)) });
+  const purMap = purchasesByOrders(rows.map((o) => o.id));
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))) })) });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
