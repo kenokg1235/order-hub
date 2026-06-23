@@ -422,7 +422,8 @@ app.post("/api/cleanup-old", requireAdmin, (req, res) => {
 });
 
 // Edit history of an order's cells (+ its purchases). Anyone who can view the
-// order sees order-field history; purchase (card) history only for claimer + Admin.
+// order sees full history (order + card edits). Người không phải Admin/người nhận
+// vẫn xem được lịch sử thao tác trên thẻ, nhưng SỐ THẺ bị che để giữ riêng tư.
 app.get("/api/orders/:id/history", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
@@ -430,7 +431,11 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
   const canView = u.role === "Admin" || canTouchOrderTeam(u, o) || (u.role === "Lister" && (u.storeNames || []).includes(o.store));
   if (!canView) return res.status(403).json({ error: "Không có quyền" });
   let rows = db.prepare("SELECT * FROM audit_log WHERE order_id=? ORDER BY created_at DESC").all(o.id);
-  if (!canSeePurchases(u, o)) rows = rows.filter((r) => r.entity !== "purchase");   // hide card history
+  if (!canSeePurchases(u, o)) {   // che số thẻ với người không phải Admin/người nhận (vẫn thấy "đã đổi thẻ")
+    const mask = (v) => (v ? "••• (ẩn)" : v);
+    rows = rows.map((r) => (r.entity === "purchase" && r.field === "card")
+      ? { ...r, old_value: mask(r.old_value), new_value: mask(r.new_value) } : r);
+  }
   res.json({ history: rows.map((r) => ({
     entity: r.entity, field: r.field, oldValue: r.old_value, newValue: r.new_value,
     userName: r.user_name, createdAt: r.created_at,
