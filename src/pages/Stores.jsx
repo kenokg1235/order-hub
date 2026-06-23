@@ -25,6 +25,15 @@ export default function Stores() {
     if (!confirm(`Xóa store "${name}" khỏi danh sách? (đơn cũ giữ nguyên)`)) return;
     try { await api.del(`/api/stores/${encodeURIComponent(name)}`); load(); } catch (e) { setErr(e.message); }
   }
+  async function renameStore(name) {
+    const nn = prompt(`Đổi tên store "${name}" thành:`, name);
+    if (nn === null) return;
+    const t = nn.trim();
+    if (!t || t === name) return;
+    if (!confirm(`Đổi "${name}" → "${t}"?\nMọi đơn, payout và quyền store của nhân viên sẽ cập nhật theo.`)) return;
+    try { await api.put(`/api/stores/${encodeURIComponent(name)}`, { newName: t }); setErr(""); load(); }
+    catch (e) { setErr(e.message); }
+  }
   async function toggleAssign(lister, store) {
     const has = lister.storeNames.includes(store);
     const next = has ? lister.storeNames.filter((s) => s !== store) : [...lister.storeNames, store];
@@ -49,7 +58,9 @@ export default function Stores() {
         <div className="row" style={{ flexWrap: "wrap", marginTop: 14, gap: 8 }}>
           {stores.map((s) => (
             <span key={s} className="badge" style={{ gap: 6, fontSize: 13 }}>
-              🏪 {s} <span style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => delStore(s)}>✕</span>
+              🏪 {s}
+              <span style={{ cursor: "pointer" }} title="Đổi tên" onClick={() => renameStore(s)}>✎</span>
+              <span style={{ cursor: "pointer", color: "var(--red)" }} title="Xóa" onClick={() => delStore(s)}>✕</span>
             </span>
           ))}
           {stores.length === 0 && <span className="muted">Chưa có store nào</span>}

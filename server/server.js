@@ -165,6 +165,26 @@ app.delete("/api/stores/:name", requireAdmin, (req, res) => {
   db.prepare("DELETE FROM stores WHERE name=?").run(req.params.name);
   res.json({ ok: true });
 });
+// Đổi tên store — cập nhật đồng bộ mọi nơi tham chiếu (orders, payouts, store_names của user).
+app.put("/api/stores/:name", requireAdmin, (req, res) => {
+  const oldName = String(req.params.name || "").trim();
+  const newName = String(req.body.newName || "").trim();
+  if (!oldName || !newName) return res.status(400).json({ error: "Thiếu tên store" });
+  if (oldName === newName) return res.json({ ok: true });
+  if (!db.prepare("SELECT 1 FROM stores WHERE name=?").get(oldName)) return res.status(404).json({ error: "Không tìm thấy store" });
+  if (db.prepare("SELECT 1 FROM stores WHERE name=?").get(newName)) return res.status(409).json({ error: "Tên store mới đã tồn tại" });
+  db.transaction(() => {
+    db.prepare("UPDATE stores SET name=? WHERE name=?").run(newName, oldName);
+    db.prepare("UPDATE orders SET store=? WHERE store=?").run(newName, oldName);
+    db.prepare("UPDATE payouts SET store=? WHERE store=?").run(newName, oldName);
+    const upd = db.prepare("UPDATE users SET store_names=? WHERE id=?");
+    for (const u of db.prepare("SELECT id, store_names FROM users").all()) {
+      const list = JSON.parse(u.store_names || "[]");
+      if (list.includes(oldName)) upd.run(JSON.stringify(list.map((s) => s === oldName ? newName : s)), u.id);
+    }
+  })();
+  res.json({ ok: true });
+});
 
 // ── Monthly periods ───────────────────────────────────────────────────────────
 function getSetting(key, def) { const r = db.prepare("SELECT value FROM settings WHERE key=?").get(key); try { return r ? JSON.parse(r.value) : def; } catch { return def; } }
