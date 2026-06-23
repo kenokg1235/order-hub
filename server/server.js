@@ -136,6 +136,19 @@ function canTouchStore(user, store) {
   if (user.role === "Lister") return (user.storeNames || []).includes(store);
   return false;
 }
+// Lister tự thêm store cho chính mình khi nhập liệu (import/đơn/payout).
+// Chỉ cho tạo store MỚI (chưa tồn tại) → tránh chiếm store đã có của người khác.
+function ensureStoreForUser(user, store) {
+  if (canTouchStore(user, store)) return true;
+  if (user.role !== "Lister" || !store) return false;
+  if (db.prepare("SELECT 1 FROM stores WHERE name=?").get(store)) return false;   // store đã tồn tại → cần Admin gán
+  db.prepare("INSERT INTO stores (name,created_at) VALUES (?,?)").run(store, Date.now());
+  const row = db.prepare("SELECT store_names FROM users WHERE id=?").get(user.id);
+  const list = JSON.parse(row?.store_names || "[]");
+  if (!list.includes(store)) { list.push(store); db.prepare("UPDATE users SET store_names=? WHERE id=?").run(JSON.stringify(list), user.id); }
+  user.storeNames = list;   // cập nhật cho request hiện tại
+  return true;
+}
 // Ai được sửa ô trên Sheet Tổng: Admin/Lister (store) + Leader được cấp quyền Sheet Tổng.
 const canEditMasterOrder = (user, o) => canTouchStore(user, o.store) || (user.role === "Leader" && user.canMaster);
 
@@ -222,7 +235,7 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   const store = String(req.body.store || "").trim();
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (!store) return res.status(400).json({ error: "Chưa chọn store" });
-  if (!canTouchStore(req.user, store)) return res.status(403).json({ error: "Không có quyền với store này" });
+  if (!ensureStoreForUser(req.user, store)) return res.status(403).json({ error: "Store này đã tồn tại, nhờ Admin gán cho bạn" });
   ensureStore(store);
   const now = Date.now();
   const period = getActiveMonth();
@@ -292,7 +305,7 @@ app.post("/api/orders/fetch-images", requireAuth, (req, res) => {
 app.post("/api/orders", requireAuth, (req, res) => {
   const b = req.body || {};
   const store = String(b.store || "").trim();
-  if (!canTouchStore(req.user, store)) return res.status(403).json({ error: "Không có quyền với store này" });
+  if (!ensureStoreForUser(req.user, store)) return res.status(403).json({ error: "Store này đã tồn tại, nhờ Admin gán cho bạn" });
   const id = String(b.id || "").trim();
   if (!id) return res.status(400).json({ error: "Thiếu ID Order" });
   if (db.prepare("SELECT 1 FROM orders WHERE id=?").get(id)) return res.status(409).json({ error: "ID Order đã tồn tại" });
@@ -1036,7 +1049,7 @@ app.post("/api/payouts", requireAuth, (req, res) => {
   const b = req.body || {};
   const store = String(b.store || "").trim();
   if (!store) return res.status(400).json({ error: "Chưa chọn tài khoản eBay (store)" });
-  if (!canTouchStore(req.user, store)) return res.status(403).json({ error: "Không có quyền với store này" });
+  if (!ensureStoreForUser(req.user, store)) return res.status(403).json({ error: "Store này đã tồn tại, nhờ Admin gán cho bạn" });
   const id = newId("po");
   db.prepare(`INSERT INTO payouts (id,store,username,bank,amount,date,bank_name,note,created_by,created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?)`)

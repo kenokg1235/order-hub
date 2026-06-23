@@ -57,6 +57,10 @@ export default function App() {
   async function loadTeams() {
     try { setTeams((await api.get("/api/teams")).teams); } catch {}
   }
+  // Lấy lại thông tin user (vd khi Lister tự thêm store mới → cập nhật storeNames).
+  async function refreshUser() {
+    try { const { user } = await api.get("/api/auth/me"); setUser(user); } catch {}
+  }
 
   useEffect(() => {
     (async () => {
@@ -128,13 +132,13 @@ export default function App() {
         {page === "users"    && <Users teams={teams} />}
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}
-        {page === "payout"   && <Payout currentUser={user} />}
+        {page === "payout"   && <Payout currentUser={user} refreshUser={refreshUser} />}
         {page === "expenses" && <Expenses teams={teams} />}
         {page === "blacklist" && <Blacklist />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}
-        {page === "master"   && <Master currentUser={user} teams={teams} />}
+        {page === "master"   && <Master currentUser={user} teams={teams} refreshUser={refreshUser} />}
         {page === "team"     && <TeamSheet currentUser={user} teams={teams} />}
         {page === "requests" && <Requests currentUser={user} />}
         {page === "cards"    && <Cards currentUser={user} />}

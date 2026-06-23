@@ -4,8 +4,9 @@ import { Button, Input, Modal, Badge } from "../ui.jsx";
 
 // Payout per eBay account (store). Listing enters for own stores; Admin sees all.
 // Grouped by store with per-store totals + a date-range filter for grand totals.
-export default function Payout({ currentUser }) {
+export default function Payout({ currentUser, refreshUser }) {
   const isAdmin = currentUser.role === "Admin";
+  const isLister = currentUser.role === "Lister";
   const [payouts, setPayouts] = useState([]);
   const [stores, setStores] = useState([]);
   const [from, setFrom] = useState("");
@@ -52,6 +53,7 @@ export default function Payout({ currentUser }) {
       setQa((p) => ({ ...p, username: "", amount: "", note: "" }));   // keep store/bank/bankName/date
       setErr("");
       load();
+      refreshUser?.();   // store mới (nếu có) được gán cho Lister → cập nhật danh sách store
     } catch (e) { setErr(e.message); }
   }
 
@@ -75,10 +77,16 @@ export default function Payout({ currentUser }) {
         <div style={{ fontWeight: 700, marginBottom: 8 }}>➕ Nhập nhanh payout</div>
         <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
           <div><div className="label">Store</div>
-            <select className="input" style={{ minWidth: 130 }} value={qa.store} onChange={(e) => upQa("store", e.target.value)}>
-              <option value="">— chọn —</option>
-              {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select></div>
+            {isAdmin ? (
+              <select className="input" style={{ minWidth: 130 }} value={qa.store} onChange={(e) => upQa("store", e.target.value)}>
+                <option value="">— chọn —</option>
+                {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input className="input" list="payout-my-stores" style={{ minWidth: 130 }} value={qa.store}
+                placeholder="Chọn store, hoặc gõ store MỚI" onChange={(e) => upQa("store", e.target.value)} />
+            )}
+            <datalist id="payout-my-stores">{myStores.map((s) => <option key={s} value={s} />)}</datalist></div>
           <div><div className="label">Username</div><input className="input" style={{ width: 110 }} value={qa.username} onChange={(e) => upQa("username", e.target.value)} /></div>
           <div><div className="label">Bank</div><input className="input" style={{ width: 90 }} value={qa.bank} onChange={(e) => upQa("bank", e.target.value)} /></div>
           <div><div className="label">Name gắn bank</div><input className="input" style={{ width: 110 }} value={qa.bankName} onChange={(e) => upQa("bankName", e.target.value)} /></div>
@@ -135,7 +143,7 @@ export default function Payout({ currentUser }) {
 
       {editing && (
         <PayoutModal payout={editing} stores={myStores}
-          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); refreshUser?.(); }} />
       )}
     </div>
   );

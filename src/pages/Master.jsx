@@ -8,7 +8,7 @@ import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
 
 // Sheet Tổng — Admin sees all + divides to teams; Lister sees only assigned stores.
-export default function Master({ currentUser, teams }) {
+export default function Master({ currentUser, teams, refreshUser }) {
   const isAdmin = currentUser.role === "Admin";
   const isLister = currentUser.role === "Lister";
   const [orders, setOrders] = useState([]);
@@ -493,11 +493,11 @@ export default function Master({ currentUser, teams }) {
 
       {importOpen && (
         <ImportModal currentUser={currentUser} stores={stores}
-          onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); setPolling(12); }} />
+          onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); setPolling(12); refreshUser?.(); }} />
       )}
       {editing && (
         <OrderModal order={editing} currentUser={currentUser} stores={stores}
-          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); refreshUser?.(); }} />
       )}
       {historyFor && (
         <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
@@ -611,12 +611,12 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
               <input className="input" list="store-list" value={store} placeholder="Gõ tên store (vd Ha US 19)"
                 onChange={(e) => setStore(e.target.value)} />
             ) : (
-              <select className="input" value={store} onChange={(e) => setStore(e.target.value)}>
-                <option value="">— chọn store —</option>
-                {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <input className="input" list="my-store-list" value={store} placeholder="Chọn store của bạn, hoặc gõ tên store MỚI"
+                onChange={(e) => setStore(e.target.value)} />
             )}
             <datalist id="store-list">{stores.map((s) => <option key={s} value={s} />)}</datalist>
+            <datalist id="my-store-list">{myStores.map((s) => <option key={s} value={s} />)}</datalist>
+            {!isAdmin && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Gõ tên store mới chưa có sẽ tự thêm vào tài khoản bạn.</div>}
           </div>
           <div className="field">
             <label className="label">File eBay OrdersReport (.csv)</label>
@@ -633,6 +633,7 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
 function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
   const isNew = !order.id;
   const isAdmin = currentUser.role === "Admin";
+  const isLister = currentUser.role === "Lister";
   const myStores = isAdmin ? stores : (currentUser.storeNames || []);
   const [f, setF] = useState({
     id: order.id || "", store: order.store || (myStores[0] || ""),
@@ -671,9 +672,9 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
             <label className="label">Store</label>
             <select className="input" value={f.store} onChange={(e) => up("store", e.target.value)}>
               {(isAdmin ? stores : myStores).map((s) => <option key={s} value={s}>{s}</option>)}
-              {isAdmin && <option value="__new">+ store mới…</option>}
+              {(isAdmin || isLister) && <option value="__new">+ store mới…</option>}
             </select>
-            {isAdmin && f.store === "__new" &&
+            {(isAdmin || isLister) && f.store === "__new" &&
               <input className="input" style={{ marginTop: 6 }} placeholder="Tên store mới"
                 onChange={(e) => up("store", e.target.value)} />}
           </div>
