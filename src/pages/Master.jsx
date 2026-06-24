@@ -611,12 +611,20 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
               <input className="input" list="store-list" value={store} placeholder="Gõ tên store (vd Ha US 19)"
                 onChange={(e) => setStore(e.target.value)} />
             ) : (
-              <input className="input" list="my-store-list" value={store} placeholder="Chọn store của bạn, hoặc gõ tên store MỚI"
-                onChange={(e) => setStore(e.target.value)} />
+              <>
+                <select className="input" value={myStores.includes(store) ? store : "__new"}
+                  onChange={(e) => setStore(e.target.value === "__new" ? "" : e.target.value)}>
+                  <option value="">— chọn store —</option>
+                  {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
+                  <option value="__new">+ store mới…</option>
+                </select>
+                {!myStores.includes(store) && (
+                  <input className="input" style={{ marginTop: 6 }} value={store} placeholder="Tên store MỚI (chưa có sẽ tự thêm vào tài khoản bạn)"
+                    onChange={(e) => setStore(e.target.value)} />
+                )}
+              </>
             )}
             <datalist id="store-list">{stores.map((s) => <option key={s} value={s} />)}</datalist>
-            <datalist id="my-store-list">{myStores.map((s) => <option key={s} value={s} />)}</datalist>
-            {!isAdmin && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Gõ tên store mới chưa có sẽ tự thêm vào tài khoản bạn.</div>}
           </div>
           <div className="field">
             <label className="label">File eBay OrdersReport (.csv)</label>
