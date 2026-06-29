@@ -299,16 +299,16 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>
                       {o.claimedBy
                         ? <div>
-                            <div><Badge color="green">{o.claimedName}</Badge>{isManager && <Button sm onClick={() => unclaim(o)} style={{ marginLeft: 6 }} title="Gỡ người nhận">✕</Button>}</div>
-                            {/* Thành viên (không phải chủ đơn) xin nhận đơn */}
-                            {!iOwn && !isManager && canClaim(o) && (
+                            <div><Badge color="green">{o.claimedName}</Badge>{isAdmin && <Button sm onClick={() => unclaim(o)} style={{ marginLeft: 6 }} title="Gỡ người nhận">✕</Button>}</div>
+                            {/* Thành viên & Leader (không phải chủ đơn) xin nhận đơn */}
+                            {!iOwn && !isAdmin && canClaim(o) && (
                               myReq
                                 ? <div style={{ marginTop: 4 }}><span className="badge" style={{ fontSize: 11 }}>⏳ Đã xin</span>
                                     <Button sm onClick={() => rejectClaim(myReq.id)} style={{ marginLeft: 4 }} title="Hủy xin">✕</Button></div>
                                 : <Button sm onClick={() => requestClaim(o)} style={{ marginTop: 4 }} title="Xin nhận đơn này từ người đang giữ">🙋 Xin đơn</Button>
                             )}
-                            {/* Chủ đơn / quản lý duyệt các yêu cầu xin */}
-                            {(iOwn || isManager) && claimReqs.length > 0 && (
+                            {/* Chủ đơn (hoặc Admin) duyệt các yêu cầu xin */}
+                            {(iOwn || isAdmin) && claimReqs.length > 0 && (
                               <div style={{ marginTop: 6, borderTop: "1px dashed var(--border)", paddingTop: 4 }}>
                                 <div className="muted" style={{ fontSize: 11 }}>Xin nhận đơn:</div>
                                 {claimReqs.map((r) => (
@@ -322,7 +322,8 @@ export default function TeamSheet({ currentUser, teams }) {
                             )}
                           </div>
                         : (canClaim(o) ? <Button sm variant="primary" onClick={() => claim(o)}>Nhận đơn</Button> : <span className="muted">chưa nhận</span>)}
-                      {isManager && (
+                      {/* Chia đơn: Admin mọi lúc; Leader chỉ với đơn CHƯA có người nhận */}
+                      {isManager && (isAdmin || !o.claimedBy) && (
                         <div style={{ marginTop: 6 }}>
                           <select className="input" style={{ padding: "3px 5px", minWidth: 130 }} value=""
                             onChange={(e) => { if (e.target.value) assign(o, e.target.value); }}>

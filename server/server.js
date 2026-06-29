@@ -674,9 +674,11 @@ app.post("/api/orders/:id/claim", requireAuth, (req, res) => {
     if (!tu) return res.status(404).json({ error: "Không tìm thấy nhân viên" });
     if (req.user.role === "Leader" && !JSON.parse(tu.team_ids || "[]").includes(o.team))
       return res.status(403).json({ error: "Nhân viên không thuộc team của đơn" });
+    if (req.user.role === "Leader" && o.claimed_by && o.claimed_by !== tu.id)
+      return res.status(403).json({ error: "Leader chỉ chia được đơn chưa có người nhận — nhờ Admin để đổi người nhận" });
     uid = tu.id; uname = tu.name;
-  } else if (o.claimed_by && !isManager) {
-    return res.status(409).json({ error: "Đơn đã có người nhận" });
+  } else if (o.claimed_by && req.user.role !== "Admin") {
+    return res.status(409).json({ error: "Đơn đã có người nhận — dùng “Xin đơn”" });
   }
   const now = Date.now();
   logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, uname);
@@ -689,9 +691,8 @@ app.post("/api/orders/:id/claim", requireAuth, (req, res) => {
 app.post("/api/orders/:id/unclaim", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
-  const isManager = req.user.role === "Admin" || req.user.role === "Leader";
-  if (!isManager || !canTouchOrderTeam(req.user, o))
-    return res.status(403).json({ error: "Chỉ Admin hoặc Leader của team" });
+  if (req.user.role !== "Admin")
+    return res.status(403).json({ error: "Chỉ Admin được gỡ người nhận đơn" });
   logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, "");
   db.prepare("UPDATE orders SET claimed_by='', claimed_name='', claimed_at=0, updated_at=? WHERE id=?")
     .run(Date.now(), o.id);
@@ -721,8 +722,8 @@ app.post("/api/claim-requests/:id/approve", requireAuth, (req, res) => {
   if (!cr || cr.status !== "pending") return res.status(404).json({ error: "Yêu cầu không tồn tại hoặc đã xử lý" });
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(cr.order_id);
   if (!o) return res.status(404).json({ error: "Đơn không còn" });
-  const isMgr = req.user.role === "Admin" || (req.user.role === "Leader" && canTouchOrderTeam(req.user, o));
-  if (!(o.claimed_by === req.user.id || isMgr)) return res.status(403).json({ error: "Chỉ chủ đơn hoặc quản lý mới duyệt" });
+  const isMgr = req.user.role === "Admin";
+  if (!(o.claimed_by === req.user.id || isMgr)) return res.status(403).json({ error: "Chỉ chủ đơn hoặc Admin mới duyệt" });
   const now = Date.now();
   logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, cr.requester_name);
   db.prepare("UPDATE orders SET claimed_by=?, claimed_name=?, claimed_at=?, updated_at=? WHERE id=?")
@@ -737,7 +738,7 @@ app.post("/api/claim-requests/:id/reject", requireAuth, (req, res) => {
   const cr = db.prepare("SELECT * FROM claim_requests WHERE id=?").get(req.params.id);
   if (!cr || cr.status !== "pending") return res.status(404).json({ error: "Yêu cầu không tồn tại hoặc đã xử lý" });
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(cr.order_id);
-  const isMgr = req.user.role === "Admin" || (req.user.role === "Leader" && o && canTouchOrderTeam(req.user, o));
+  const isMgr = req.user.role === "Admin";
   const isOwner = o && o.claimed_by === req.user.id;
   const isRequester = cr.requester_id === req.user.id;
   if (!(isOwner || isMgr || isRequester)) return res.status(403).json({ error: "Không có quyền" });
