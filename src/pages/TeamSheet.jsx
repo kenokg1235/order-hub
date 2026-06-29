@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
 import { rowBg } from "../statusColors.js";
@@ -24,6 +24,9 @@ export default function TeamSheet({ currentUser, teams }) {
   const [deadlineSort, setDeadlineSort] = useState(SAVED.deadlineSort || "");   // "" | "asc" | "desc"
   const [historyFor, setHistoryFor] = useState(null);
   const [pinned, setPinned] = useState(SAVED.pinned !== false);
+  const [freezeCols, setFreezeCols] = useState(Number.isFinite(SAVED.freezeCols) ? SAVED.freezeCols : 3);   // số cột ghim từ trái
+  const [colLefts, setColLefts] = useState([]);
+  const tableRef = useRef(null);
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -33,8 +36,8 @@ export default function TeamSheet({ currentUser, teams }) {
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
-    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, pinned })); } catch {}
-  }, [filter, teamFilter, q, cf, deadlineSort, pinned]);
+    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, pinned, freezeCols })); } catch {}
+  }, [filter, teamFilter, q, cf, deadlineSort, pinned, freezeCols]);
 
   async function loadOrders(m) {
     try { setOrders((await api.get(`/api/team-orders?month=${encodeURIComponent(m || month)}`)).orders); } catch (e) { setErr(e.message); }
@@ -138,6 +141,38 @@ export default function TeamSheet({ currentUser, teams }) {
     });
   }, [list, deadlineSort]);
 
+  // Đo độ rộng cột (từ hàng tiêu đề) để ghim N cột đầu đúng vị trí khi cuộn ngang.
+  useLayoutEffect(() => {
+    if (!pinned || freezeCols <= 0) { setColLefts([]); return; }
+    const measure = () => {
+      const row = tableRef.current?.querySelector("thead tr");
+      if (!row) return;
+      const lefts = []; let acc = 0;
+      for (const cell of row.children) { lefts.push(acc); acc += cell.offsetWidth; }
+      setColLefts(lefts);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [pinned, freezeCols, displayed, cf, q, month, orders]);
+
+  // CSS ghim: thead cả 2 hàng + CHỈ dòng đầu mỗi đơn (tr.ordrow) — các cột đơn dùng rowSpan
+  // nên dòng thẻ phụ (idx>0) không có ô cột-đơn, không ghim để tránh dính nhầm ô thẻ.
+  const colStyle = useMemo(() => {
+    if (!pinned || freezeCols <= 0 || !colLefts.length) return "";
+    const n = Math.min(freezeCols, colLefts.length);
+    let css = "";
+    for (let i = 0; i < n; i++) {
+      const k = i + 1, L = colLefts[i];
+      css += `#ttbl>thead>tr>*:nth-child(${k}){position:sticky;left:${L}px;z-index:5;}`;
+      css += `#ttbl>tbody>tr.ordrow>*:nth-child(${k}){position:sticky;left:${L}px;background:var(--rowbg,#fff);z-index:3;}`;
+      css += `#ttbl>thead>tr:first-child>th:nth-child(${k}){z-index:7;}`;
+      css += `#ttbl>thead>tr:nth-child(2)>td:nth-child(${k}){z-index:6;}`;
+    }
+    css += `#ttbl>thead>tr>*:nth-child(${n}),#ttbl>tbody>tr.ordrow>*:nth-child(${n}){box-shadow:2px 0 4px rgba(0,0,0,.06);}`;
+    return css;
+  }, [pinned, freezeCols, colLefts]);
+
   // local state helpers
   const replaceOrder = (order) => setOrders((p) => p.map((o) => (o.id === order.id ? order : o)));
   const setPur = (oid, pur) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: o.purchases.map((x) => x.id === pur.id ? pur : x) } : o));
@@ -216,13 +251,22 @@ export default function TeamSheet({ currentUser, teams }) {
         ))}
         <Button sm onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button sm onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột đầu khi cuộn">📌 Ghim</Button>
+        {pinned && (
+          <span className="row" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: 12 }}>cột:</span>
+            <input className="input" type="number" min="0" max="14" style={{ width: 56, padding: "4px 6px" }}
+              value={freezeCols} title="Số cột ghim từ trái"
+              onChange={(e) => setFreezeCols(Math.max(0, Math.min(14, Number(e.target.value) || 0)))} />
+          </span>
+        )}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <Bar />
 
+      {colStyle && <style>{colStyle}</style>}
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
-        <table className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
+        <table id="ttbl" ref={tableRef} className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
             <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>Địa chỉ</th><th>SL</th><th>Profit</th>
             <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
@@ -274,9 +318,10 @@ export default function TeamSheet({ currentUser, teams }) {
                 const iOwn = o.claimedBy === currentUser.id;
                 const claimReqs = o.claimRequests || [];
                 const myReq = claimReqs.find((r) => r.requesterId === currentUser.id);
+                const rc = rowBg(o.masterStatus, p?.processStatus, colors);
                 return (
-                <tr key={o.id + "_" + (p ? p.id : "none")} data-oid={o.id}
-                  style={{ background: rowBg(o.masterStatus, p?.processStatus, colors) }}>
+                <tr key={o.id + "_" + (p ? p.id : "none")} data-oid={o.id} className={idx === 0 ? "ordrow" : undefined}
+                  style={{ background: rc, "--rowbg": rc || "#fff" }}>
                   {idx === 0 && <>
                     <td rowSpan={span}>{o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
