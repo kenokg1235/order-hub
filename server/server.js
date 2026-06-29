@@ -574,8 +574,13 @@ function cardExists(card) {
   return !!card && !!db.prepare("SELECT 1 FROM card_requests WHERE card_value=? LIMIT 1").get(card);
 }
 function purchaseOut(p, masked = false) {
-  // Card/purchase details are private to the order's claimer — other teammates get a masked stub.
-  if (masked) return { id: p.id, orderId: p.order_id, hidden: true };
+  // Teammate khác xem được thông tin xử lý (tracking/order#/email…) nhưng KHÔNG thấy số thẻ.
+  if (masked) return {
+    id: p.id, orderId: p.order_id, amount: p.amount,
+    orderNumber: p.order_number, email: p.email, tracking: p.tracking,
+    phone: p.phone, zip: p.zip, processStatus: p.process_status,
+    orderTime: p.order_time, card: null, hidden: true,   // hidden=true: chỉ-đọc + ẩn số thẻ
+  };
   return {
     id: p.id, orderId: p.order_id, card: p.card, amount: p.amount,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,

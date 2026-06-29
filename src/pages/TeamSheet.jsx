@@ -220,7 +220,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
-            <th>Tổng</th><th>Store</th><th>ID Order</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>Địa chỉ</th><th>SL</th><th>Profit</th>
+            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>Địa chỉ</th><th>SL</th><th>Profit</th>
             <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
@@ -314,7 +314,18 @@ export default function TeamSheet({ currentUser, teams }) {
                       {canEdit ? "Chưa có thẻ — bấm “＋ Thẻ”" : "— chưa có thẻ —"}
                     </td>
                   ) : p.hidden ? (
-                    <td colSpan={10} className="muted" style={{ fontStyle: "italic" }}>🔒 Thông tin thẻ của người nhận (ẩn)</td>
+                    <>
+                      <td className="muted" style={{ fontStyle: "italic", fontSize: 12 }} title="Số thẻ của người nhận được ẩn">🔒 ẩn</td>
+                      <td>{p.amount || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.tracking || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.orderNumber || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.email || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.phone || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.zip || <span className="muted">—</span>}</td>
+                      <td>{p.processStatus ? <Badge>{p.processStatus}</Badge> : <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
+                      <td></td>
+                    </>
                   ) : <>
                     <td>
                       <input className="input" style={{ padding: "4px 6px", width: 130,
