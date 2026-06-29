@@ -216,6 +216,22 @@ CREATE INDEX IF NOT EXISTS idx_audit_order ON audit_log(order_id);
 `);
 ensureColumn("audit_log", "undone", "INTEGER DEFAULT 0");   // cho DB cũ
 
+// Xin đơn — thành viên xin nhận đơn của thành viên khác; chủ đơn (hoặc Admin/Leader) duyệt.
+db.exec(`
+CREATE TABLE IF NOT EXISTS claim_requests (
+  id             TEXT PRIMARY KEY,
+  order_id       TEXT NOT NULL,
+  requester_id   TEXT NOT NULL,
+  requester_name TEXT NOT NULL,
+  owner_id       TEXT DEFAULT '',     -- chủ đơn tại thời điểm xin
+  status         TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | rejected | canceled
+  created_at     INTEGER NOT NULL,
+  resolved_at    INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_claimreq_order ON claim_requests(order_id);
+CREATE INDEX IF NOT EXISTS idx_claimreq_status ON claim_requests(status);
+`);
+
 // ── Seed defaults ────────────────────────────────────────────────────────────
 function seedSetting(key, value) {
   if (!db.prepare("SELECT 1 FROM settings WHERE key=?").get(key))

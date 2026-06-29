@@ -603,6 +603,19 @@ function purchasesByOrders(orderIds) {
   }
   return map;
 }
+// Yêu cầu xin đơn đang chờ (pending) cho NHIỀU đơn. Trả Map orderId -> [{id,requesterId,requesterName,createdAt}].
+function pendingClaimsByOrders(orderIds) {
+  const map = new Map();
+  for (let i = 0; i < orderIds.length; i += 500) {
+    const chunk = orderIds.slice(i, i + 500);
+    const ph = chunk.map(() => "?").join(",");
+    for (const r of db.prepare(`SELECT id, order_id, requester_id, requester_name, created_at FROM claim_requests WHERE status='pending' AND order_id IN (${ph}) ORDER BY created_at`).all(...chunk)) {
+      if (!map.has(r.order_id)) map.set(r.order_id, []);
+      map.get(r.order_id).push({ id: r.id, requesterId: r.requester_id, requesterName: r.requester_name, createdAt: r.created_at });
+    }
+  }
+  return map;
+}
 // Who may see/own a purchase's card info: Admin or the person who claimed the order.
 const canSeePurchases = (user, o) => !!user && (user.role === "Admin" || (!!o.claimed_by && o.claimed_by === user.id));
 const orderFull = (o, user) => ({ ...orderOut(o), purchases: purchasesOf(o.id, !canSeePurchases(user, o)) });
@@ -631,7 +644,8 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   const purMap = purchasesByOrders(rows.map((o) => o.id));
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))) })) });
+  const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [] })) });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
@@ -682,6 +696,55 @@ app.post("/api/orders/:id/unclaim", requireAuth, (req, res) => {
   db.prepare("UPDATE orders SET claimed_by='', claimed_name='', claimed_at=0, updated_at=? WHERE id=?")
     .run(Date.now(), o.id);
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
+});
+
+// ── Xin đơn (chuyển đơn giữa thành viên): A xin → chủ đơn/quản lý duyệt → đổi chủ sang A ──
+const isOrderProcessor = (u) => u.role === "Admin" || u.role === "Leader" || u.role === "Member";
+// Thành viên xin nhận đơn đang do người khác giữ.
+app.post("/api/orders/:id/claim-request", requireAuth, (req, res) => {
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
+  if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
+  if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không thuộc team của đơn" });
+  if (!isOrderProcessor(req.user)) return res.status(403).json({ error: "Vai trò không xử lý đơn" });
+  if (!o.claimed_by) return res.status(400).json({ error: "Đơn chưa có người nhận — bấm Nhận đơn" });
+  if (o.claimed_by === req.user.id) return res.status(400).json({ error: "Đơn đã là của bạn" });
+  if (db.prepare("SELECT 1 FROM claim_requests WHERE order_id=? AND requester_id=? AND status='pending'").get(o.id, req.user.id))
+    return res.status(409).json({ error: "Bạn đã xin đơn này, đang chờ duyệt" });
+  db.prepare(`INSERT INTO claim_requests (id,order_id,requester_id,requester_name,owner_id,status,created_at)
+              VALUES (?,?,?,?,?, 'pending', ?)`).run(newId("clr"), o.id, req.user.id, req.user.name, o.claimed_by, Date.now());
+  notify([o.claimed_by], "claim-request", `🙋 ${req.user.name} xin nhận đơn ${o.id} (${o.store}). Vào Sheet Con để duyệt.`, "", o.team ? [o.team] : []);
+  res.json({ ok: true });
+});
+// Chủ đơn (hoặc Admin/Leader của team) duyệt → đổi chủ đơn sang người xin.
+app.post("/api/claim-requests/:id/approve", requireAuth, (req, res) => {
+  const cr = db.prepare("SELECT * FROM claim_requests WHERE id=?").get(req.params.id);
+  if (!cr || cr.status !== "pending") return res.status(404).json({ error: "Yêu cầu không tồn tại hoặc đã xử lý" });
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(cr.order_id);
+  if (!o) return res.status(404).json({ error: "Đơn không còn" });
+  const isMgr = req.user.role === "Admin" || (req.user.role === "Leader" && canTouchOrderTeam(req.user, o));
+  if (!(o.claimed_by === req.user.id || isMgr)) return res.status(403).json({ error: "Chỉ chủ đơn hoặc quản lý mới duyệt" });
+  const now = Date.now();
+  logChange(req.user, "order", o.id, o.id, "claimedBy", o.claimed_name, cr.requester_name);
+  db.prepare("UPDATE orders SET claimed_by=?, claimed_name=?, claimed_at=?, updated_at=? WHERE id=?")
+    .run(cr.requester_id, cr.requester_name, now, now, o.id);
+  db.prepare("UPDATE claim_requests SET status='approved', resolved_at=? WHERE id=?").run(now, cr.id);
+  db.prepare("UPDATE claim_requests SET status='rejected', resolved_at=? WHERE order_id=? AND status='pending'").run(now, o.id);
+  notify([cr.requester_id], "claim-approved", `✅ ${req.user.name} đã duyệt — đơn ${o.id} (${o.store}) giờ là của bạn.`, "", o.team ? [o.team] : []);
+  res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
+});
+// Từ chối (chủ đơn/quản lý) hoặc người xin tự hủy.
+app.post("/api/claim-requests/:id/reject", requireAuth, (req, res) => {
+  const cr = db.prepare("SELECT * FROM claim_requests WHERE id=?").get(req.params.id);
+  if (!cr || cr.status !== "pending") return res.status(404).json({ error: "Yêu cầu không tồn tại hoặc đã xử lý" });
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(cr.order_id);
+  const isMgr = req.user.role === "Admin" || (req.user.role === "Leader" && o && canTouchOrderTeam(req.user, o));
+  const isOwner = o && o.claimed_by === req.user.id;
+  const isRequester = cr.requester_id === req.user.id;
+  if (!(isOwner || isMgr || isRequester)) return res.status(403).json({ error: "Không có quyền" });
+  const selfCancel = isRequester && !isOwner && !isMgr;
+  db.prepare("UPDATE claim_requests SET status=?, resolved_at=? WHERE id=?").run(selfCancel ? "canceled" : "rejected", Date.now(), cr.id);
+  if (!selfCancel) notify([cr.requester_id], "claim-rejected", `❌ Yêu cầu xin đơn ${cr.order_id} bị từ chối.`, "", o && o.team ? [o.team] : []);
+  res.json({ ok: true });
 });
 
 // Order-level notes (team members).

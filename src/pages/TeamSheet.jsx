@@ -154,6 +154,10 @@ export default function TeamSheet({ currentUser, teams }) {
   async function claim(o) { try { replaceOrder((await api.post(`/api/orders/${o.id}/claim`, {})).order); } catch (e) { setErr(e.message); } }
   async function assign(o, userId) { try { replaceOrder((await api.post(`/api/orders/${o.id}/claim`, { userId })).order); } catch (e) { setErr(e.message); } }
   async function unclaim(o) { try { replaceOrder((await api.post(`/api/orders/${o.id}/unclaim`, {})).order); } catch (e) { setErr(e.message); } }
+  // Xin đơn của thành viên khác — chủ đơn/quản lý duyệt thì đổi chủ.
+  async function requestClaim(o) { try { await api.post(`/api/orders/${o.id}/claim-request`, {}); loadOrders(month); } catch (e) { setErr(e.message); } }
+  async function approveClaim(reqId) { try { replaceOrder((await api.post(`/api/claim-requests/${reqId}/approve`, {})).order); loadOrders(month); } catch (e) { setErr(e.message); } }
+  async function rejectClaim(reqId) { try { await api.post(`/api/claim-requests/${reqId}/reject`, {}); loadOrders(month); } catch (e) { setErr(e.message); } }
   async function saveNote(o, field, value) {
     if (value === (o[field] || "")) return;
     try { replaceOrder((await api.put(`/api/orders/${o.id}/notes`, { [field]: value })).order); } catch (e) { setErr(e.message); }
@@ -267,6 +271,9 @@ export default function TeamSheet({ currentUser, teams }) {
               return purs.map((p, idx) => {
                 const canEdit = isAdmin || o.claimedBy === currentUser.id;       // owner of the order
                 const locked = p && !p.hidden && !(p.card && p.cardValid);        // need valid card first
+                const iOwn = o.claimedBy === currentUser.id;
+                const claimReqs = o.claimRequests || [];
+                const myReq = claimReqs.find((r) => r.requesterId === currentUser.id);
                 return (
                 <tr key={o.id + "_" + (p ? p.id : "none")} data-oid={o.id}
                   style={{ background: rowBg(o.masterStatus, p?.processStatus, colors) }}>
@@ -291,7 +298,29 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span} style={{ maxWidth: 160, whiteSpace: "normal", fontSize: 12 }}>{o.masterNote || <span className="muted">—</span>}</td>
                     <td rowSpan={span}>
                       {o.claimedBy
-                        ? <div><Badge color="green">{o.claimedName}</Badge>{isManager && <Button sm onClick={() => unclaim(o)} style={{ marginLeft: 6 }} title="Gỡ người nhận">✕</Button>}</div>
+                        ? <div>
+                            <div><Badge color="green">{o.claimedName}</Badge>{isManager && <Button sm onClick={() => unclaim(o)} style={{ marginLeft: 6 }} title="Gỡ người nhận">✕</Button>}</div>
+                            {/* Thành viên (không phải chủ đơn) xin nhận đơn */}
+                            {!iOwn && !isManager && canClaim(o) && (
+                              myReq
+                                ? <div style={{ marginTop: 4 }}><span className="badge" style={{ fontSize: 11 }}>⏳ Đã xin</span>
+                                    <Button sm onClick={() => rejectClaim(myReq.id)} style={{ marginLeft: 4 }} title="Hủy xin">✕</Button></div>
+                                : <Button sm onClick={() => requestClaim(o)} style={{ marginTop: 4 }} title="Xin nhận đơn này từ người đang giữ">🙋 Xin đơn</Button>
+                            )}
+                            {/* Chủ đơn / quản lý duyệt các yêu cầu xin */}
+                            {(iOwn || isManager) && claimReqs.length > 0 && (
+                              <div style={{ marginTop: 6, borderTop: "1px dashed var(--border)", paddingTop: 4 }}>
+                                <div className="muted" style={{ fontSize: 11 }}>Xin nhận đơn:</div>
+                                {claimReqs.map((r) => (
+                                  <div key={r.id} className="row" style={{ gap: 4, marginTop: 2, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600 }}>{r.requesterName}</span>
+                                    <Button sm variant="primary" onClick={() => approveClaim(r.id)} title="Duyệt — đổi chủ đơn">Duyệt</Button>
+                                    <Button sm variant="danger" onClick={() => rejectClaim(r.id)} title="Từ chối">✕</Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         : (canClaim(o) ? <Button sm variant="primary" onClick={() => claim(o)}>Nhận đơn</Button> : <span className="muted">chưa nhận</span>)}
                       {isManager && (
                         <div style={{ marginTop: 6 }}>
