@@ -268,7 +268,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="ttbl" ref={tableRef} className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
-            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>Địa chỉ</th><th>SL</th><th>Profit</th>
+            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>SL</th><th>Profit</th>
             <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
@@ -282,12 +282,12 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fMulti("masterStatus", [{ v: "__empty", l: "(trống)" }, ...masterStatuses.map((s) => ({ v: s, l: s }))])}</td>
             <td>{fMulti("store", storeOptions.map((s) => ({ v: s, l: s })), true)}</td>
             <td>{fText("id", 100)}</td>
+            <td>{fText("address", 110)}</td>
             <td></td>
             <td>{fText("product", 110)}</td>
             <td></td>
             <td>{fText("size", 55)}</td>
             <td>{fText("color", 55)}</td>
-            <td>{fText("address", 110)}</td>
             <td>{fText("qty", 40)}</td>
             <td>{fText("profit", 55)}</td>
             <td>{fText("deadline", 55)}</td>
@@ -326,6 +326,10 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
                     <td rowSpan={span} title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
+                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                      {String(o.address || "").split("\n").filter(Boolean).map((l, i) =>
+                        <div key={i} style={{ fontWeight: i === 0 ? 800 : 600, color: "var(--text)" }}>{l}</div>)}
+                    </td>
                     <td rowSpan={span}>{o.image
                       ? <a href={o.image} target="_blank" rel="noreferrer"><img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)" }} /></a>
                       : <span className="muted">—</span>}</td>
@@ -333,10 +337,6 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.size || <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.color || <span className="muted">—</span>}</td>
-                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                      {String(o.address || "").split("\n").filter(Boolean).map((l, i) =>
-                        <div key={i} style={{ fontWeight: i === 0 ? 800 : 600, color: "var(--text)" }}>{l}</div>)}
-                    </td>
                     <td rowSpan={span}>{o.qty}</td>
                     <td rowSpan={span}>{o.profit ? `$${o.profit}` : ""}</td>
                     <td rowSpan={span}>{o.deadline || <span className="muted">—</span>}</td>
