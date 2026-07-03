@@ -17,6 +17,8 @@ export default function Cards({ currentUser }) {
   const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");   // "" tất cả | "__empty" | tên trạng thái
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 100;
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
 
@@ -28,6 +30,12 @@ export default function Cards({ currentUser }) {
     if (s && ![r.card, r.requesterName, r.content, r.code].some((v) => String(v || "").toLowerCase().includes(s))) return false;
     return true;
   }), [reqs, q, statusFilter]);
+
+  // Phân trang 100 hàng/trang.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  useEffect(() => { setPage(1); }, [q, statusFilter]);                 // đổi bộ lọc → về trang 1
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);   // giữ trang hợp lệ
+  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   async function load() {
     try {
@@ -91,7 +99,7 @@ export default function Cards({ currentUser }) {
             <th>Đơn đã xử lý (ID Order)</th><th>Thống kê</th>
           </tr></thead>
           <tbody>
-            {filtered.map((r) => (
+            {paged.map((r) => (
               <tr key={r.id} data-rid={r.id} style={{ background: statusColors[r.status] || undefined }}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
@@ -132,6 +140,18 @@ export default function Cards({ currentUser }) {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div className="row" style={{ marginTop: 12, gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+          <Button sm disabled={page <= 1} onClick={() => setPage(1)}>« Đầu</Button>
+          <Button sm disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹ Trước</Button>
+          <span className="muted" style={{ fontSize: 13 }}>
+            Trang <b>{page}</b>/{totalPages} · {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)}/{filtered.length}
+          </span>
+          <Button sm disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Sau ›</Button>
+          <Button sm disabled={page >= totalPages} onClick={() => setPage(totalPages)}>Cuối »</Button>
+        </div>
+      )}
       <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
         💡 Cột Thẻ bạn nhập sẽ là thẻ hợp lệ để nhân viên dùng ở Sheet Con. Profit chia theo tỉ lệ số tiền mỗi thẻ, chỉ tính đơn “Đã Up”.
       </div>
