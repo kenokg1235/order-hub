@@ -385,6 +385,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
             {displayed.map((o) => {
               const procSt = (o.purchases || []).map((p) => p.processStatus).find(Boolean) || "";
               const rowColor = rowBg(o.masterStatus, procSt, statusColors);
+              // "Có tracking": khi MỌI hàng (thẻ) đã tạo trong đơn đều đã note tracking.
+              const purs = o.purchases || [];
+              const allTracked = purs.length > 0 && purs.every((p) => String(p.tracking || "").trim());
               return (
               <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
@@ -467,7 +470,11 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   )}
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
-                <td style={{ fontSize: 12 }}>{stack(o, "tracking", 150, "Tracking")}</td>
+                <td style={{ fontSize: 12, background: allTracked ? "var(--green-bg)" : undefined }}
+                    title={allTracked ? "Tất cả hàng trong đơn đã có tracking" : ""}>
+                  {allTracked && <div style={{ marginBottom: 3 }}><Badge color="green">✓ Có tracking</Badge></div>}
+                  {stack(o, "tracking", 150, "Tracking")}
+                </td>
                 <td style={{ fontSize: 12 }}>{stack(o, "orderNumber", 110, "Order#")}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "email", 160, "Email")}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "phone", 110, "Phone")}</td>
