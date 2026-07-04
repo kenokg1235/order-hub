@@ -165,7 +165,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
     const arr = (k) => Array.isArray(cf[k]) ? cf[k] : [];
     return orders.filter((o) => {
       if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.masterNote].some((v) => T(v).includes(s))
-            && !(o.purchases || []).some((p) => [p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
+            && !(o.purchases || []).some((p) => [p.name, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
       if (arr("team").length && !arr("team").some((v) => v === "__none" ? !o.team : o.team === v)) return false;
       if (arr("store").length && !arr("store").includes(o.store)) return false;
       if (!txt(o.orderNo, cf.id)) return false;
@@ -180,6 +180,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       if (!txt(o.masterNote, cf.masterNote)) return false;
       if (arr("masterStatus").length && !arr("masterStatus").some((v) => v === "__empty" ? !o.masterStatus : o.masterStatus === v)) return false;
       if (!txt(o.claimedName, cf.claimedName)) return false;
+      if (!pTxt(o, "name", cf.name)) return false;
       if (!pTxt(o, "orderNumber", cf.orderNumber)) return false;
       if (!pTxt(o, "email", cf.email)) return false;
       if (!pTxt(o, "tracking", cf.tracking)) return false;
@@ -369,7 +370,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
             </th>
             <th>Note</th>
             <th>Trạng thái tổng</th>
-            <th>Người nhận</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th>
+            <th>Người nhận</th><th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th>
             <th></th>
           </tr>
           <tr style={{ background: "#fbfcfd" }}>
@@ -390,6 +391,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
             <td>{fText("masterNote", 90)}</td>
             <td>{fMulti("masterStatus", [{ v: "__empty", l: "(trống)" }, ...statuses.map((s) => ({ v: s, l: s }))])}</td>
             <td>{fText("claimedName", 80)}</td>
+            <td>{fText("name", 90)}</td>
             <td>{fText("tracking", 100)}</td>
             <td>{fText("orderNumber", 90)}</td>
             <td>{fText("email", 100)}</td>
@@ -487,6 +489,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   )}
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
+                <td style={{ fontSize: 12 }}>{stack(o, "name", 120, "Name")}</td>
                 <td style={{ fontSize: 12, background: allTracked ? "var(--green-bg)" : undefined }}
                     title={allTracked ? "Tất cả hàng trong đơn đều ở trạng thái 'Có Tracking'" : ""}>
                   {allTracked && <div style={{ marginBottom: 3 }}><Badge color="green">✓ Có tracking</Badge></div>}
@@ -507,7 +510,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 24 : 23} style={{ textAlign: "center", padding: 30 }} className="muted">
+              <tr><td colSpan={isAdmin ? 25 : 24} style={{ textAlign: "center", padding: 30 }} className="muted">
                 Chưa có đơn nào. Bấm <b>Import eBay</b> để đổ đơn vào.
               </td></tr>
             )}

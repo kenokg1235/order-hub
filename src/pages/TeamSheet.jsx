@@ -108,7 +108,7 @@ export default function TeamSheet({ currentUser, teams }) {
     else if (filter === "mine") arr = arr.filter((o) => o.claimedBy === currentUser.id);
     return arr.filter((o) => {
       if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.note1, o.note2, o.note3, o.note4].some((v) => T(v).includes(s))
-            && !(o.purchases || []).some((p) => [p.card, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
+            && !(o.purchases || []).some((p) => [p.card, p.name, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
       if (cfa("masterStatus").length && !cfa("masterStatus").some((v) => v === "__empty" ? !o.masterStatus : o.masterStatus === v)) return false;
       if (cfa("store").length && !cfa("store").includes(o.store)) return false;
       if (!txt(o.orderNo, cf.id)) return false;
@@ -122,7 +122,7 @@ export default function TeamSheet({ currentUser, teams }) {
       if (!txt(o.masterNote, cf.masterNote)) return false;
       if (!txt(o.claimedName, cf.claimedName)) return false;
       for (const nf of ["note1", "note2", "note3", "note4"]) if (!txt(o[nf], cf[nf])) return false;
-      for (const pf of ["card", "amount", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
+      for (const pf of ["card", "amount", "name", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
       if (cfa("procStatus").length && !cfa("procStatus").some((v) => v === "__empty" ? !(o.purchases || []).some((p) => p.processStatus) : (o.purchases || []).some((p) => p.processStatus === v))) return false;
       return true;
     });
@@ -275,7 +275,7 @@ export default function TeamSheet({ currentUser, teams }) {
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
             </th>
             <th>Note tổng</th><th>Nhận đơn</th>
-            <th>Thẻ</th><th>Số tiền</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
+            <th>Thẻ</th><th>Số tiền</th><th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
             <th>Note 1</th><th>Note 2</th><th>Note 3</th><th>Note 4</th>
           </tr>
           <tr style={{ background: "#fbfcfd" }}>
@@ -295,6 +295,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("claimedName", 75)}</td>
             <td>{fText("card", 90)}</td>
             <td>{fText("amount", 50)}</td>
+            <td>{fText("name", 90)}</td>
             <td>{fText("tracking", 100)}</td>
             <td>{fText("orderNumber", 90)}</td>
             <td>{fText("email", 100)}</td>
@@ -385,13 +386,14 @@ export default function TeamSheet({ currentUser, teams }) {
                   </>}
 
                   {!p ? (
-                    <td colSpan={10} className="muted" style={{ fontStyle: "italic" }}>
+                    <td colSpan={11} className="muted" style={{ fontStyle: "italic" }}>
                       {canEdit ? "Chưa có thẻ — bấm “＋ Thẻ”" : "— chưa có thẻ —"}
                     </td>
                   ) : p.hidden ? (
                     <>
                       <td className="muted" style={{ fontStyle: "italic", fontSize: 12 }} title="Số thẻ của người nhận được ẩn">🔒 ẩn</td>
                       <td>{p.amount || <span className="muted">—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{p.name || <span className="muted">—</span>}</td>
                       <td style={{ fontSize: 12 }}>{p.tracking || <span className="muted">—</span>}</td>
                       <td style={{ fontSize: 12 }}>{p.orderNumber || <span className="muted">—</span>}</td>
                       <td style={{ fontSize: 12 }}>{p.email || <span className="muted">—</span>}</td>
@@ -412,6 +414,7 @@ export default function TeamSheet({ currentUser, teams }) {
                       {locked && !p.card && <div className="muted" style={{ fontSize: 10 }}>Nhập thẻ để mở các ô →</div>}
                     </td>
                     <td>{pin(p, "amount", { type: "number", w: 80, label: "Số tiền", disabled: locked, required: o.purchases.length >= 2 })}</td>
+                    <td>{pin(p, "name", { w: 120, label: "Name", disabled: locked })}</td>
                     <td>{pin(p, "tracking", { w: 150, label: "Tracking number", disabled: locked })}</td>
                     <td>{pin(p, "orderNumber", { w: 120, label: "Order number", disabled: locked })}</td>
                     <td>{pin(p, "email", { w: 150, label: "Email", disabled: locked })}</td>

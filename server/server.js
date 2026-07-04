@@ -480,7 +480,7 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
 
 // Hoàn tác thao tác sửa ô gần nhất CỦA CHÍNH MÌNH (đi lùi dần qua audit log).
 const UNDO_ORDER_FIELDS = { size: ["size", "t"], color: ["color", "t"], profit: ["profit", "n"], deadline: ["deadline", "t"], masterStatus: ["master_status", "t"], masterNote: ["master_note", "t"], cancelReason: ["cancel_reason", "t"], team: ["team", "t"], note1: ["note1", "t"], note2: ["note2", "t"], note3: ["note3", "t"], note4: ["note4", "t"] };
-const UNDO_PUR_FIELDS = { card: ["card", "t"], amount: ["amount", "n"], orderNumber: ["order_number", "t"], email: ["email", "t"], tracking: ["tracking", "t"], phone: ["phone", "t"], zip: ["zip", "t"], processStatus: ["process_status", "t"] };
+const UNDO_PUR_FIELDS = { card: ["card", "t"], amount: ["amount", "n"], name: ["name", "t"], orderNumber: ["order_number", "t"], email: ["email", "t"], tracking: ["tracking", "t"], phone: ["phone", "t"], zip: ["zip", "t"], processStatus: ["process_status", "t"] };
 app.post("/api/undo", requireAuth, (req, res) => {
   const fields = [...Object.keys(UNDO_ORDER_FIELDS), ...Object.keys(UNDO_PUR_FIELDS)];
   const ph = fields.map(() => "?").join(",");
@@ -576,13 +576,13 @@ function cardExists(card) {
 function purchaseOut(p, masked = false) {
   // Teammate khác xem được thông tin xử lý (tracking/order#/email…) nhưng KHÔNG thấy số thẻ.
   if (masked) return {
-    id: p.id, orderId: p.order_id, amount: p.amount,
+    id: p.id, orderId: p.order_id, amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
     orderTime: p.order_time, card: null, hidden: true,   // hidden=true: chỉ-đọc + ẩn số thẻ
   };
   return {
-    id: p.id, orderId: p.order_id, card: p.card, amount: p.amount,
+    id: p.id, orderId: p.order_id, card: p.card, amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
     cardValid: !p.card || cardExists(p.card), orderTime: p.order_time, hidden: false,
@@ -770,9 +770,9 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới thêm thẻ" });
   const b = req.body || {};
   const id = newId("pur");
-  db.prepare(`INSERT INTO purchases (id,order_id,card,amount,order_number,email,tracking,phone,zip,process_status,created_at)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.orderNumber || "", b.email || "",
+  db.prepare(`INSERT INTO purchases (id,order_id,card,amount,name,order_number,email,tracking,phone,zip,process_status,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.name || "", b.orderNumber || "", b.email || "",
          b.tracking || "", b.phone || "", b.zip || "", b.processStatus || "", Date.now());
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(id)) });
 });
@@ -783,7 +783,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới sửa thẻ" });
   const b = req.body || {};
-  const map = { card: "card", amount: "amount", orderNumber: "order_number", email: "email",
+  const map = { card: "card", amount: "amount", name: "name", orderNumber: "order_number", email: "email",
     tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status" };
   // Must have a valid issued card before entering any other field.
   const effCard = ("card" in b) ? String(b.card || "") : p.card;
