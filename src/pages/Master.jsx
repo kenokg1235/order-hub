@@ -385,9 +385,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
             {displayed.map((o) => {
               const procSt = (o.purchases || []).map((p) => p.processStatus).find(Boolean) || "";
               const rowColor = rowBg(o.masterStatus, procSt, statusColors);
-              // "Có tracking": khi MỌI hàng (thẻ) đã tạo trong đơn đều đã note tracking.
+              // "Có tracking": khi MỌI hàng (thẻ) trong đơn đều có TRẠNG THÁI XỬ LÝ = "Có Tracking".
               const purs = o.purchases || [];
-              const allTracked = purs.length > 0 && purs.every((p) => String(p.tracking || "").trim());
+              const allTracked = purs.length > 0 && purs.every((p) => String(p.processStatus || "").trim().toLowerCase() === "có tracking");
               return (
               <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
@@ -471,7 +471,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                 </td>
                 <td style={{ fontSize: 12 }}>{o.claimedName ? <Badge color="green">{o.claimedName}</Badge> : <span className="muted">—</span>}</td>
                 <td style={{ fontSize: 12, background: allTracked ? "var(--green-bg)" : undefined }}
-                    title={allTracked ? "Tất cả hàng trong đơn đã có tracking" : ""}>
+                    title={allTracked ? "Tất cả hàng trong đơn đều ở trạng thái 'Có Tracking'" : ""}>
                   {allTracked && <div style={{ marginBottom: 3 }}><Badge color="green">✓ Có tracking</Badge></div>}
                   {stack(o, "tracking", 150, "Tracking")}
                 </td>
