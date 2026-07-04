@@ -285,6 +285,23 @@ export default function Master({ currentUser, teams, refreshUser }) {
         return <TruncCell key={i} text={v} w={w} onShow={(t) => viewCell(label, t)} />;
       })
     : <span className="muted">—</span>;
+  const fmtTime = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts), p = (n) => String(n).padStart(2, "0");
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  // Cột Order#: hiện giá trị + mốc thời gian lần Order# thay đổi gần nhất (order_time).
+  const stackOrderNo = (o) => o.purchases && o.purchases.length
+    ? o.purchases.map((p, i) => {
+        const v = p.orderNumber != null && p.orderNumber !== "" ? String(p.orderNumber) : "";
+        return (
+          <div key={i} style={{ marginBottom: 3 }}>
+            <TruncCell text={v} w={110} onShow={(t) => viewCell("Order#", t)} />
+            {p.orderTime ? <div className="muted" style={{ fontSize: 10 }}>🕒 {fmtTime(p.orderTime)}</div> : null}
+          </div>
+        );
+      })
+    : <span className="muted">—</span>;
 
   return (
     <div>
@@ -475,7 +492,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   {allTracked && <div style={{ marginBottom: 3 }}><Badge color="green">✓ Có tracking</Badge></div>}
                   {stack(o, "tracking", 150, "Tracking")}
                 </td>
-                <td style={{ fontSize: 12 }}>{stack(o, "orderNumber", 110, "Order#")}</td>
+                <td style={{ fontSize: 12 }}>{stackOrderNo(o)}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "email", 160, "Email")}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "phone", 110, "Phone")}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "zip", 70, "Zip")}</td>
