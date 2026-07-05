@@ -1038,9 +1038,9 @@ app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
       .filter((r) => r.requester_id === u.id || mates.has(r.requester_id));
     return res.json({ requests: rows.map(cardOutFull), manager: true });
   }
-  // Plain employee: only their own requests.
+  // Plain employee: only their own requests — kèm stats (đơn Đã Up / profit / balance) để tự theo dõi.
   const rows = db.prepare("SELECT * FROM card_requests WHERE requester_id=? ORDER BY created_at DESC").all(u.id);
-  res.json({ requests: rows.map(cardOut), manager: false });
+  res.json({ requests: rows.map(cardOutFull), manager: false });
 });
 
 // Valid issued card values (for client-side validation in Sheet Con).

@@ -63,10 +63,21 @@ export default function Requests({ currentUser }) {
     try { await api.del(`/api/card-requests/${id}`); load(); } catch (e) { setErr(e.message); }
   }
 
+  const totals = reqs.reduce((a, r) => ({
+    completed: a.completed + (r.stats?.completed || 0),
+    profit: a.profit + (r.stats?.profit || 0),
+    balance: a.balance + (r.stats?.balance || 0),
+  }), { completed: 0, profit: 0, balance: 0 });
+
   return (
     <div style={{ maxWidth: 720 }}>
       <h2 style={{ margin: "0 0 4px" }}>Yêu cầu thẻ</h2>
-      <div className="muted" style={{ marginBottom: 14 }}>Gửi yêu cầu thẻ — người mua sẽ cấp thẻ về đây. Bạn chỉ thấy yêu cầu của chính mình.</div>
+      <div className="muted" style={{ marginBottom: 10 }}>Gửi yêu cầu thẻ — người mua sẽ cấp thẻ về đây. Bạn chỉ thấy yêu cầu của chính mình.</div>
+      <div className="row" style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <Badge color="green">✅ {totals.completed} đơn Đã Up</Badge>
+        <Badge color="green">💰 Tổng profit: ${Math.round(totals.profit * 100) / 100}</Badge>
+        <Badge color="blue">💳 Tổng balance: ${Math.round(totals.balance * 100) / 100}</Badge>
+      </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -116,6 +127,11 @@ export default function Requests({ currentUser }) {
               </select>
               {isLocked(r.status) && <span title="Đã chốt bill">🔒</span>}
             </div>
+          </div>
+          <div className="row" style={{ gap: 16, marginTop: 10, flexWrap: "wrap", fontSize: 13, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+            <span>✅ <b>{r.stats?.completed || 0}</b> đơn Đã Up</span>
+            <span>💰 Profit: <b>${r.stats?.profit || 0}</b></span>
+            <span>💳 Balance: <b>${r.stats?.balance || 0}</b></span>
           </div>
         </div>
       ))}
