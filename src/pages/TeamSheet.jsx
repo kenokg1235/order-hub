@@ -32,7 +32,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [activeMonth, setActiveMonth] = useState("");
   const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
-  const { cellProps, Bar } = useFormulaBar();
+  const { cellProps, Bar, viewCell } = useFormulaBar();
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
@@ -219,6 +219,14 @@ export default function TeamSheet({ currentUser, teams }) {
         {...(disabled ? {} : cellProps(label || field, (v) => savePurchase(p, field, type === "number" ? (Number(v) || 0) : v)))} />
     );
   };
+  // Ô read-only cố định bề rộng, cắt gọn (…) để không đẩy cột; bấm để xem đầy đủ ở thanh trên.
+  const roCell = (label, value, w) => {
+    const v = value != null && value !== "" ? String(value) : "";
+    return v
+      ? <div title={v} onClick={() => viewCell(label, v)}
+          style={{ width: w, maxWidth: w, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, cursor: "pointer" }}>{v}</div>
+      : <span className="muted">—</span>;
+  };
 
   const fmtTime = (ts) => {
     if (!ts) return "";
@@ -392,13 +400,13 @@ export default function TeamSheet({ currentUser, teams }) {
                   ) : p.hidden ? (
                     <>
                       <td className="muted" style={{ fontStyle: "italic", fontSize: 12 }} title="Số thẻ của người nhận được ẩn">🔒 ẩn</td>
-                      <td>{p.amount || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.name || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.tracking || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.orderNumber || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.email || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.phone || <span className="muted">—</span>}</td>
-                      <td style={{ fontSize: 12 }}>{p.zip || <span className="muted">—</span>}</td>
+                      <td>{roCell("Số tiền", p.amount, 80)}</td>
+                      <td>{roCell("Name", p.name, 120)}</td>
+                      <td>{roCell("Tracking", p.tracking, 150)}</td>
+                      <td>{roCell("Order#", p.orderNumber, 120)}</td>
+                      <td>{roCell("Email", p.email, 150)}</td>
+                      <td>{roCell("Phone", p.phone, 110)}</td>
+                      <td>{roCell("Zip", p.zip, 80)}</td>
                       <td>{p.processStatus ? <Badge>{p.processStatus}</Badge> : <span className="muted">—</span>}</td>
                       <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
                       <td></td>
