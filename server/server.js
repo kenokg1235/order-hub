@@ -990,12 +990,14 @@ function cardOut(r) {
 // Stats for an issued card: orders it paid for + completed count + profit share
 // (profit split across cards by amount, counted only for "Đã Up" orders).
 function cardStats(cardValue) {
-  if (!cardValue) return { orders: [], profit: 0, completed: 0 };
+  if (!cardValue) return { orders: [], profit: 0, completed: 0, balance: 0 };
   const purs = db.prepare(`
     SELECT p.amount AS amount, o.id AS oid, o.master_status AS master, o.profit AS profit
     FROM purchases p JOIN orders o ON o.id = p.order_id WHERE p.card = ?`).all(cardValue);
   const byOrder = {};
+  let balance = 0;   // tổng số tiền đã nhập khi dùng thẻ này
   for (const p of purs) {
+    balance += p.amount || 0;
     if (!byOrder[p.oid]) byOrder[p.oid] = { oid: p.oid, master: p.master, profit: p.profit || 0, mine: 0 };
     byOrder[p.oid].mine += p.amount || 0;
   }
@@ -1009,7 +1011,7 @@ function cardStats(cardValue) {
       profit += info.profit * (total > 0 ? info.mine / total : 1);
     }
   }
-  return { orders, profit: Math.round(profit * 100) / 100, completed };
+  return { orders, profit: Math.round(profit * 100) / 100, completed, balance: Math.round(balance * 100) / 100 };
 }
 const cardOutFull = (r) => ({ ...cardOut(r), stats: cardStats(r.card_value) });
 // card_value → earliest order period that used it ("first-used month"); robust to op order.

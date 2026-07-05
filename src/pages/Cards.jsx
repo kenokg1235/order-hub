@@ -71,6 +71,7 @@ export default function Cards({ currentUser }) {
   }
 
   const totalProfit = filtered.reduce((s, r) => s + (r.stats?.profit || 0), 0);
+  const totalBalance = filtered.reduce((s, r) => s + (r.stats?.balance || 0), 0);
 
   return (
     <div>
@@ -78,6 +79,7 @@ export default function Cards({ currentUser }) {
         <h2 style={{ margin: 0 }}>Mua thẻ</h2>
         <Badge color="blue">{filtered.length} thẻ/yêu cầu</Badge>
         <Badge color="green">Tổng profit: ${Math.round(totalProfit * 100) / 100}</Badge>
+        <Badge color="blue">Tổng balance: ${Math.round(totalBalance * 100) / 100}</Badge>
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
@@ -128,6 +130,7 @@ export default function Cards({ currentUser }) {
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <div>💰 <b>${r.stats?.profit || 0}</b></div>
+                  <div>💳 Balance: <b>${r.stats?.balance || 0}</b></div>
                   <div className="muted" style={{ fontSize: 12 }}>✅ {r.stats?.completed || 0} đơn Đã Up</div>
                 </td>
               </tr>
