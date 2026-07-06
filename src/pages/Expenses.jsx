@@ -45,6 +45,11 @@ export default function Expenses({ teams = [] }) {
     try { const r = await api.post("/api/expense-months/undo-close", {}); setMonth(r.restoredTo); loadMonths(); }
     catch (e) { setErr(e.message); }
   }
+  async function setActiveExpenseMonth(m) {
+    if (!/^\d{4}-\d{2}$/.test(m || "")) return;
+    try { await api.post("/api/expense-months/set", { month: m }); loadMonths(); }
+    catch (e) { setErr(e.message); }
+  }
 
   const fmtVND = (n) => Math.round(n || 0).toLocaleString("vi-VN") + " ₫";
   const fmtUSDT = (n) => (Math.round((n || 0) * 100) / 100).toLocaleString("en-US") + " USDT";
@@ -162,6 +167,8 @@ export default function Expenses({ teams = [] }) {
           <option value="all">📅 Tất cả tháng</option>
           {months.map((m) => <option key={m} value={m}>{m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
         </select>
+        {month && month !== "all" && month !== activeMonth &&
+          <Button sm onClick={() => setActiveExpenseMonth(month)} title={`Đặt ${month} làm tháng hiện tại`}>📌 Đặt {month} hiện tại</Button>}
         <Button sm variant="primary" onClick={closeExpenseMonth} title="Chốt tháng chi phí — tách biệt với chốt tháng dời đơn">🔒 Chốt tháng CP</Button>
         {lastClose && <Button sm onClick={undoCloseExpenseMonth} title={`Hoàn tác chốt (${lastClose.to} → ${lastClose.from})`}>↩️ Hoàn tác</Button>}
         <div className="spacer" />

@@ -1258,6 +1258,14 @@ app.post("/api/expense-months/undo-close", requireAdmin, (req, res) => {
   setSetting("expenseLastClose", null);
   res.json({ ok: true, restoredTo: lc.from });
 });
+// Đặt thẳng tháng hoạt động chi phí = một tháng cụ thể (sửa nếu lỡ chốt sai).
+app.post("/api/expense-months/set", requireAdmin, (req, res) => {
+  const month = String(req.body.month || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: "Tháng không hợp lệ (YYYY-MM)" });
+  setSetting("expenseActiveMonth", month);
+  setSetting("expenseLastClose", null);
+  res.json({ ok: true, activeMonth: month });
+});
 
 // ── Blacklist (difficult buyers, eBay usernames) — Admin + Lister ─────────────
 function adminOrLister(req, res, next) {
