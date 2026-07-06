@@ -36,6 +36,15 @@ export default function Expenses({ teams = [] }) {
   }
   useEffect(() => { load(); loadMonths(); }, []);
 
+  // Xem tháng nào thì ô "thêm nhanh" mặc định Ngày thuộc tháng đó → bổ sung khoản vào tháng cũ dễ dàng.
+  useEffect(() => {
+    if (month && month !== "all") {
+      setQa((p) => String(p.date || "").startsWith(month) ? p : { ...p, date: `${month}-01` });
+    } else {
+      setQa((p) => String(p.date || "").startsWith(today().slice(0, 7)) ? p : { ...p, date: today() });
+    }
+  }, [month]);
+
   async function closeExpenseMonth() {
     if (!confirm(`Chốt tháng chi phí ${activeMonth}?\nTháng hoạt động sẽ chuyển sang tháng kế tiếp. (Không ảnh hưởng chốt tháng đơn hàng)`)) return;
     try { const r = await api.post("/api/expense-months/close", {}); setMonth(r.to); loadMonths(); }
@@ -232,7 +241,7 @@ export default function Expenses({ teams = [] }) {
             </select>
           </div>
           <div>
-            <label className="label">Ngày</label>
+            <label className="label">Ngày{month && month !== "all" && month !== today().slice(0, 7) ? ` · bổ sung vào ${month}` : ""}</label>
             <input className="input" type="date" style={{ width: 150 }} value={qa.date} onChange={(e) => upQa("date", e.target.value)} />
           </div>
           <div>
