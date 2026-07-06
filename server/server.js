@@ -424,6 +424,8 @@ function subMonths(ym, n) {
   return `${y}-${String(m).padStart(2, "0")}`;
 }
 const ymOf = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+// Ngày YYYY-MM-DD theo giờ VN (UTC+7) từ timestamp ms — để lọc theo KỲ (khoảng ngày tự chọn).
+const dOf = (ts) => { const d = new Date((ts || 0) + 7 * 3600 * 1000), p = (n) => String(n).padStart(2, "0"); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`; };
 // Tháng cũ hơn (period <) mốc này sẽ bị xóa. Giữ tháng hiện tại + retentionMonths tháng trước.
 function cleanupCutoff() {
   const keep = Math.max(0, Number(getSetting("retentionMonths", 2)) || 0);
@@ -1275,7 +1277,7 @@ app.post("/api/expense-months/set", requireAdmin, (req, res) => {
 // ── Chốt KỲ chi phí theo khoảng ngày tự chọn (vd đầu T6 → 6/7) ─────────────────
 const earliestExpenseDate = () => { const r = db.prepare("SELECT MIN(date) d FROM expenses WHERE date!=''").get(); return r && r.d ? r.d : ""; };
 const nextDay = (iso) => { const [y, m, d] = String(iso).split("-").map(Number); const dt = new Date(y, m - 1, d + 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`; };
-app.get("/api/expense-periods", requireAdmin, (req, res) => {
+app.get("/api/expense-periods", requireAuth, (req, res) => {   // đọc: mọi vai trò (Leaderboard dùng chung kỳ)
   const closed = getSetting("expenseClosedPeriods", []);
   let openStart = getSetting("expensePeriodStart", "");
   if (!openStart) openStart = earliestExpenseDate();
@@ -1357,20 +1359,19 @@ app.delete("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
 // profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.
 app.get("/api/leaderboard", requireAuth, (req, res) => {
-  const month = req.query.month || getActiveMonth();
   const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
+  // KỲ: nếu có from/to → lọc theo NGÀY TẠO trong khoảng (giống Thống kê chi phí). Không thì theo tháng lịch (period).
+  const from = String(req.query.from || "").trim(), to = String(req.query.to || "").trim();
+  const usePeriod = !!(from || to);
+  const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
+  const month = usePeriod ? null : (req.query.month || getActiveMonth());
+  const scopeM = (arr) => usePeriod ? arr.filter((o) => inRange(o.created_at)) : (month && month !== "all") ? arr.filter((o) => o.period === month) : arr;
 
-  // Đã Up orders, scoped to the selected month
-  const orders = (month && month !== "all")
-    ? db.prepare("SELECT id, claimed_by, claimed_name, profit FROM orders WHERE claimed_by!='' AND master_status='Đã Up' AND period=?").all(month)
-    : db.prepare("SELECT id, claimed_by, claimed_name, profit FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all();
-
+  const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
   const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
-  const cancels = (month && month !== "all")
-    ? db.prepare("SELECT claimed_by, claimed_name, cancel_reason FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel' AND period=?").all(month)
-    : db.prepare("SELECT claimed_by, claimed_name, cancel_reason FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all();
+  const cancels = scopeM(db.prepare("SELECT claimed_by, claimed_name, cancel_reason, period, created_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
 
   const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0 });
   const byUser = {};
@@ -1387,8 +1388,8 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   // tính theo THÁNG CẤP (card_requests.period — cuốn theo chốt tháng đơn). Không phụ thuộc gán vào Sheet Con.
   for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status, period, created_at FROM card_requests WHERE card_value!=''").all()) {
     if (!countSet.has(String(c.status || "").toLowerCase())) continue;
-    const cm = c.period || ymOf(c.created_at);
-    if (month !== "all" && cm !== month) continue;
+    if (usePeriod) { if (!inRange(c.created_at)) continue; }
+    else { const cm = c.period || ymOf(c.created_at); if (month !== "all" && cm !== month) continue; }
     const u = byUser[c.requester_id] || (byUser[c.requester_id] = mkUser(c.requester_id, c.requester_name));
     u.cardSet.add(c.card_value);
   }

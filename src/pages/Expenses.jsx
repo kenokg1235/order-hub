@@ -45,9 +45,10 @@ export default function Expenses({ teams = [] }) {
   }, [periodSel, openStart, closedPeriods]);
 
   async function closePeriod() {
-    const to = today();
-    if (!confirm(`Chốt kỳ chi phí đến hôm nay?\nKỳ: từ ${openStart || "đầu"} → ${to}.\nSau khi chốt, kỳ mới bắt đầu từ ngày kế tiếp. (Tách biệt với chốt tháng đơn)`)) return;
-    try { await api.post("/api/expense-periods/close", { to }); await loadPeriods(); setPeriodSel("current"); }
+    const to = prompt(`Chốt kỳ — nhập NGÀY CUỐI của kỳ (YYYY-MM-DD).\nKỳ hiện tại bắt đầu từ ${openStart || "đầu"}. Kỳ mới sẽ bắt đầu từ ngày kế tiếp.\n(vd nếu hôm nay là ngày đầu kỳ mới thì nhập ngày HÔM QUA)`, today());
+    if (!to) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to.trim())) { setErr("Ngày không hợp lệ (YYYY-MM-DD)"); return; }
+    try { await api.post("/api/expense-periods/close", { to: to.trim() }); await loadPeriods(); setPeriodSel("current"); setErr(""); }
     catch (e) { setErr(e.message); }
   }
   async function undoPeriod() {
@@ -179,7 +180,7 @@ export default function Expenses({ teams = [] }) {
           <option value="all">📅 Tất cả</option>
         </select>
         {periodSel === "current" && <Button sm onClick={setPeriodStart} title="Đặt ngày bắt đầu kỳ hiện tại">📌 Ngày bắt đầu</Button>}
-        <Button sm variant="primary" onClick={closePeriod} title="Chốt kỳ chi phí đến hôm nay — tách biệt với chốt tháng dời đơn">🔒 Chốt kỳ (đến nay)</Button>
+        <Button sm variant="primary" onClick={closePeriod} title="Chốt kỳ — chọn ngày cuối kỳ; dùng chung cho Thống kê chi phí + Leaderboard">🔒 Chốt kỳ</Button>
         {closedPeriods.length > 0 && <Button sm onClick={undoPeriod} title="Hoàn tác lần chốt kỳ gần nhất">↩️ Hoàn tác</Button>}
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 140 }} value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>

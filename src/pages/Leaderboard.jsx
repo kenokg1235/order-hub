@@ -6,21 +6,26 @@ import { Badge } from "../ui.jsx";
 export default function Leaderboard({ currentUser }) {
   const [rows, setRows] = useState([]);
   const [sortKey, setSortKey] = useState("orders");
-  const [months, setMonths] = useState([]);
-  const [activeMonth, setActiveMonth] = useState("");
-  const [month, setMonth] = useState("");
+  const [openStart, setOpenStart] = useState("");
+  const [closedPeriods, setClosedPeriods] = useState([]);
+  const [periodSel, setPeriodSel] = useState("current");   // "all" | "current" | "c<idx>"
   const [err, setErr] = useState("");
 
-  async function loadRows(m) {
-    try { setRows((await api.get(`/api/leaderboard?month=${encodeURIComponent(m || month)}`)).leaderboard); } catch (e) { setErr(e.message); }
+  const fmtP = (d) => { if (!d) return "đầu"; const [y, m, dd] = String(d).split("-"); return (dd && m && y) ? `${dd}/${m}/${y}` : d; };
+  async function loadRows(from, to) {
+    try { setRows((await api.get(`/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}`)).leaderboard); }
+    catch (e) { setErr(e.message); }
   }
+  async function loadPeriods() {
+    try { const r = await api.get("/api/expense-periods"); setOpenStart(r.openStart || ""); setClosedPeriods(r.closed || []); }
+    catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { loadPeriods(); }, []);
   useEffect(() => {
-    (async () => {
-      try { const mo = await api.get("/api/months"); setMonths(mo.months); setActiveMonth(mo.activeMonth); setMonth((c) => c || mo.activeMonth); }
-      catch (e) { setErr(e.message); }
-    })();
-  }, []);
-  useEffect(() => { if (month) loadRows(month); }, [month]);
+    if (periodSel === "all") loadRows("", "");
+    else if (periodSel === "current") loadRows(openStart || "", "");
+    else { const p = closedPeriods[Number(String(periodSel).slice(1))]; if (p) loadRows(p.from || "", p.to || ""); }
+  }, [periodSel, openStart, closedPeriods]);
 
   const money = (n) => "$" + (Math.round((n || 0) * 100) / 100).toLocaleString("en-US");
   const cols = [
@@ -40,13 +45,14 @@ export default function Leaderboard({ currentUser }) {
       <div className="row" style={{ marginBottom: 4 }}>
         <h2 style={{ margin: 0 }}>🏆 Leaderboard</h2>
         <div className="spacer" />
-        <select className="input" style={{ maxWidth: 160 }} value={month} onChange={(e) => setMonth(e.target.value)}>
-          {months.map((m) => <option key={m} value={m}>📅 {m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
-          <option value="all">Tất cả tháng</option>
+        <select className="input" style={{ maxWidth: 240 }} value={periodSel} onChange={(e) => setPeriodSel(e.target.value)} title="Kỳ (khoảng ngày, dùng chung với Thống kê chi phí)">
+          <option value="current">📆 Kỳ hiện tại ({fmtP(openStart)} → nay)</option>
+          {closedPeriods.map((p, i) => <option key={i} value={"c" + i}>🔒 {fmtP(p.from)} → {fmtP(p.to)}</option>).reverse()}
+          <option value="all">📅 Tất cả</option>
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Theo <b>từng tháng</b>: Số đơn & Profit tính đơn <b>Đã Up</b> trong tháng; <b>Số thẻ</b> = thẻ NV được cấp ở <b>Mua thẻ</b> có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, tính theo người yêu cầu (không phụ thuộc gán vào Sheet Con). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt (Đã Up + Đã Cancel). Bấm tiêu đề cột để đổi tiêu chí.
+        Theo <b>từng kỳ</b> (khoảng ngày, dùng chung với Thống kê chi phí — theo <b>ngày tạo</b>): Số đơn & Profit tính đơn <b>Đã Up</b>; <b>Số thẻ</b> = thẻ NV được cấp ở <b>Mua thẻ</b> có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, tính theo người yêu cầu (không phụ thuộc gán vào Sheet Con). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí.
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
