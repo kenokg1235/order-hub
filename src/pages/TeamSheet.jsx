@@ -27,6 +27,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [freezeCols, setFreezeCols] = useState(Number.isFinite(SAVED.freezeCols) ? SAVED.freezeCols : 3);   // số cột ghim từ trái
   const [colLefts, setColLefts] = useState([]);
   const tableRef = useRef(null);
+  const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột: { label, text }
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -219,6 +220,13 @@ export default function TeamSheet({ currentUser, teams }) {
         {...(disabled ? {} : cellProps(label || field, (v) => savePurchase(p, field, type === "number" ? (Number(v) || 0) : v)))} />
     );
   };
+  // Nút Σ ở tiêu đề cột số: bấm → cộng tổng cột đó theo các dòng đang hiển thị (đã lọc).
+  const round2 = (n) => Math.round((n || 0) * 100) / 100;
+  const SumBtn = ({ label, text }) => (
+    <button className="btn" style={{ padding: "0 5px", fontSize: 11, marginLeft: 3, verticalAlign: "middle" }}
+      title={`Cộng tổng cột ${label} (các dòng đang lọc)`}
+      onClick={(e) => { e.stopPropagation(); setSumRes({ label, text: text() }); }}>Σ</button>
+  );
   // Ô read-only cố định bề rộng, cắt gọn (…) để không đẩy cột; bấm để xem đầy đủ ở thanh trên.
   const roCell = (label, value, w) => {
     const v = value != null && value !== "" ? String(value) : "";
@@ -270,20 +278,32 @@ export default function TeamSheet({ currentUser, teams }) {
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
+      {sumRes && (
+        <div className="card" style={{ padding: "8px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10, background: "var(--green-bg)", borderColor: "#16a34a" }}>
+          <span>Σ <b>{sumRes.label}</b> ({displayed.length} dòng): <b style={{ fontSize: 16 }}>{sumRes.text}</b></span>
+          <div className="spacer" />
+          <Button sm onClick={() => setSumRes(null)}>✕</Button>
+        </div>
+      )}
+
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="ttbl" ref={tableRef} className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
-            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th><th>SL</th><th>Profit</th>
+            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th>
+            <th>SL <SumBtn label="SL" text={() => round2(displayed.reduce((s, o) => s + (Number(o.qty) || 0), 0))} /></th>
+            <th>Profit <SumBtn label="Profit" text={() => "$" + round2(displayed.reduce((s, o) => s + (Number(o.profit) || 0), 0))} /></th>
             <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
             </th>
             <th>Note tổng</th><th>Nhận đơn</th>
-            <th>Thẻ</th><th>Số tiền</th><th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
+            <th>Thẻ</th>
+            <th>Số tiền <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} /></th>
+            <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
             <th>Note 1</th><th>Note 2</th><th>Note 3</th><th>Note 4</th>
           </tr>
           <tr style={{ background: "#fbfcfd" }}>

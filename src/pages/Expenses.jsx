@@ -16,6 +16,7 @@ export default function Expenses({ teams = [] }) {
   const [month, setMonth] = useState("");             // tháng chi phí đang xem ("" = tất cả)
   const [activeMonth, setActiveMonth] = useState("");
   const [lastClose, setLastClose] = useState(null);
+  const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột số
   const [err, setErr] = useState("");
   const today = () => {
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -135,6 +136,22 @@ export default function Expenses({ teams = [] }) {
     );
   };
 
+  // Nút Σ ở tiêu đề cột số: cộng tổng theo các dòng đang hiển thị (shown), tách theo loại tiền.
+  const SumBtn = ({ label, text }) => (
+    <button className="btn" style={{ padding: "0 5px", fontSize: 11, marginLeft: 3 }}
+      title={`Cộng tổng cột ${label} (các dòng đang lọc)`}
+      onClick={() => setSumRes({ label, text: text() })}>Σ</button>
+  );
+  const sumAmountByCur = () => {
+    const c = { VND: 0, USDT: 0, USD: 0 };
+    shown.forEach((e) => { c[e.currency] = (c[e.currency] || 0) + (Number(e.amount) || 0); });
+    const parts = [];
+    if (c.VND) parts.push(fmtVND(c.VND));
+    if (c.USDT) parts.push(fmtUSDT(c.USDT));
+    if (c.USD) parts.push(fmtUSD(c.USD));
+    return parts.length ? parts.join("  ·  ") : "0";
+  };
+
   const isProfit = qa.kind === "profit";
   return (
     <div>
@@ -173,6 +190,14 @@ export default function Expenses({ teams = [] }) {
       </div>
 
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {sumRes && (
+        <div className="card" style={{ padding: "8px 12px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, background: "var(--green-bg)", borderColor: "#16a34a" }}>
+          <span>Σ <b>{sumRes.label}</b> ({shown.length} khoản): <b style={{ fontSize: 16 }}>{sumRes.text}</b></span>
+          <div className="spacer" />
+          <Button sm onClick={() => setSumRes(null)}>✕</Button>
+        </div>
+      )}
 
       {/* Tổng Chi phí, Profit, và Lợi nhuận ròng = Profit − Chi phí */}
       <div className="row" style={{ gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
@@ -266,7 +291,7 @@ export default function Expenses({ teams = [] }) {
         <div className="card" style={{ padding: 0, flex: "2 1 520px", minWidth: 360, overflowX: "auto" }}>
           <div style={{ padding: "10px 14px", fontWeight: 700, borderBottom: "1px solid var(--border)" }}>Chi tiết</div>
           <table className="tbl" style={{ minWidth: 720 }}>
-            <thead><tr><th>Loại</th><th>Ngày</th><th>Danh mục</th><th>Tiền</th><th style={{ textAlign: "right" }}>Số tiền</th><th>Ghi chú</th><th></th></tr></thead>
+            <thead><tr><th>Loại</th><th>Ngày</th><th>Danh mục</th><th>Tiền</th><th style={{ textAlign: "right" }}>Số tiền <SumBtn label="Số tiền" text={sumAmountByCur} /></th><th>Ghi chú</th><th></th></tr></thead>
             <tbody>
               {shown.map((e) => (
                 <tr key={e.id}>
