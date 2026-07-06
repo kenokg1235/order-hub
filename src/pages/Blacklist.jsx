@@ -6,23 +6,54 @@ import { Button, Badge } from "../ui.jsx";
 export default function Blacklist() {
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
-  const [na, setNa] = useState({ username: "", reason: "" });
+  const [na, setNa] = useState({ username: "", reason: "", category: "" });
+  const [categories, setCategories] = useState([]);
+  const [catFilter, setCatFilter] = useState("");
   const [err, setErr] = useState("");
 
   async function load() {
-    try { setItems((await api.get("/api/blacklist")).blacklist); } catch (e) { setErr(e.message); }
+    try {
+      setItems((await api.get("/api/blacklist")).blacklist);
+      const s = (await api.get("/api/settings")).settings;
+      setCategories(s.blacklistCategories || []);
+    } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
+
+  // Ngành hàng cho dropdown = danh sách cấu hình ∪ các ngành hàng đã dùng trong entries.
+  const allCats = useMemo(() => {
+    const set = new Set(categories);
+    items.forEach((b) => b.category && set.add(b.category));
+    return [...set].sort((a, b) => a.localeCompare(b, "vi"));
+  }, [categories, items]);
+
+  async function addCategory() {
+    const name = prompt("Tên ngành hàng mới:");
+    if (!name || !name.trim()) return null;
+    try { const r = await api.post("/api/blacklist-categories", { name: name.trim() }); setCategories(r.categories || []); return name.trim(); }
+    catch (e) { setErr(e.message); return null; }
+  }
+  const CatSelect = ({ value, onChange, style }) => (
+    <select className="input" style={style} value={value || ""}
+      onChange={async (e) => { if (e.target.value === "__new") { const c = await addCategory(); if (c) onChange(c); } else onChange(e.target.value); }}>
+      <option value="">— ngành hàng —</option>
+      {allCats.map((c) => <option key={c} value={c}>{c}</option>)}
+      <option value="__new">＋ Thêm ngành hàng…</option>
+    </select>
+  );
 
   const fmtDate = (ts) => { if (!ts) return ""; const d = new Date(ts), p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return items.filter((b) => !s || [b.username, b.reason, b.createdByName].some((v) => String(v || "").toLowerCase().includes(s)));
-  }, [items, q]);
+    return items.filter((b) => {
+      if (catFilter && (b.category || "") !== catFilter) return false;
+      return !s || [b.username, b.reason, b.category, b.createdByName].some((v) => String(v || "").toLowerCase().includes(s));
+    });
+  }, [items, q, catFilter]);
 
   async function add() {
     if (!na.username.trim()) { setErr("Nhập username khách hàng"); return; }
-    try { await api.post("/api/blacklist", na); setNa({ username: "", reason: "" }); setErr(""); load(); }
+    try { await api.post("/api/blacklist", na); setNa((p) => ({ username: "", reason: "", category: p.category })); setErr(""); load(); }
     catch (e) { setErr(e.message); }
   }
   async function save(b, field, value) {
@@ -40,7 +71,11 @@ export default function Blacklist() {
         <h2 style={{ margin: 0 }}>⛔ Danh sách đen</h2>
         <Badge color="red">{items.length} khách</Badge>
         <div className="spacer" />
-        <input className="input" style={{ maxWidth: 240 }} placeholder="🔍 Tìm username / lý do…"
+        <select className="input" style={{ maxWidth: 170 }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)} title="Lọc theo ngành hàng">
+          <option value="">🏷 Tất cả ngành hàng</option>
+          {allCats.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input className="input" style={{ maxWidth: 240 }} placeholder="🔍 Tìm username / lý do / ngành hàng…"
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
@@ -60,7 +95,11 @@ export default function Blacklist() {
               onChange={(e) => setNa((p) => ({ ...p, username: e.target.value }))}
               onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
           </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
+          <div>
+            <label className="label">Ngành hàng</label>
+            <CatSelect value={na.category} onChange={(v) => setNa((p) => ({ ...p, category: v }))} style={{ width: 170 }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
             <label className="label">Lý do (tùy chọn)</label>
             <input className="input" style={{ width: "100%" }} placeholder="vd: hay mở case, đòi refund vô lý…" value={na.reason}
               onChange={(e) => setNa((p) => ({ ...p, reason: e.target.value }))}
@@ -73,7 +112,7 @@ export default function Blacklist() {
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 700 }}>
           <thead><tr>
-            <th>Username</th><th>Lý do</th><th>Người thêm</th><th>Ngày</th><th></th>
+            <th>Username</th><th>Ngành hàng</th><th>Lý do</th><th>Người thêm</th><th>Ngày</th><th></th>
           </tr></thead>
           <tbody>
             {filtered.map((b) => (
@@ -83,7 +122,10 @@ export default function Blacklist() {
                     onBlur={(e) => save(b, "username", e.target.value)} />
                 </td>
                 <td>
-                  <input className="input" style={{ padding: "3px 6px", width: 260 }} defaultValue={b.reason} placeholder="—"
+                  <CatSelect value={b.category} onChange={(v) => save(b, "category", v)} style={{ padding: "3px 6px", width: 150 }} />
+                </td>
+                <td>
+                  <input className="input" style={{ padding: "3px 6px", width: 240 }} defaultValue={b.reason} placeholder="—"
                     onBlur={(e) => save(b, "reason", e.target.value)} />
                 </td>
                 <td className="muted">{b.createdByName}</td>
@@ -92,7 +134,7 @@ export default function Blacklist() {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <tr><td colSpan={6} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 {items.length ? "Không khớp tìm kiếm." : "Chưa có khách nào trong danh sách đen."}
               </td></tr>
             )}

@@ -129,6 +129,7 @@ ensureColumn("orders", "line_key", "TEXT DEFAULT ''");        // khóa chống t
 ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# last changed
 ensureColumn("purchases", "name", "TEXT DEFAULT ''");          // Name tự nhập (trước cột Tracking)
 ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterShip key registered it
+ensureColumn("blacklist", "category", "TEXT DEFAULT ''");       // Ngành hàng (dropdown) để lọc user theo loại hàng
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID
 ensureColumn("card_requests", "period", "TEXT DEFAULT ''");    // tháng (YYYY-MM) của yêu cầu thẻ, theo tháng đơn hoạt động
 // Backfill period cho yêu cầu thẻ cũ (từ tháng tạo) để lọc theo tháng ở Mua thẻ.

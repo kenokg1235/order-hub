@@ -1320,9 +1320,17 @@ app.get("/api/blacklist", requireAuth, adminOrLister, (req, res) => {
   const names = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
   const rows = db.prepare("SELECT * FROM blacklist ORDER BY created_at DESC").all();
   res.json({ blacklist: rows.map((b) => ({
-    id: b.id, username: b.username, reason: b.reason,
+    id: b.id, username: b.username, reason: b.reason, category: b.category || "",
     createdBy: b.created_by, createdByName: names[b.created_by] || "—", createdAt: b.created_at,
   })) });
+});
+// Danh sách ngành hàng (dropdown) — thêm được bởi Admin/Lister.
+app.post("/api/blacklist-categories", requireAuth, adminOrLister, (req, res) => {
+  const name = String(req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Thiếu tên ngành hàng" });
+  const list = getSetting("blacklistCategories", []);
+  if (!list.some((c) => c.toLowerCase() === name.toLowerCase())) { list.push(name); setSetting("blacklistCategories", list); }
+  res.json({ ok: true, categories: list });
 });
 app.post("/api/blacklist", requireAuth, adminOrLister, (req, res) => {
   const username = String(req.body.username || "").trim();
@@ -1330,8 +1338,8 @@ app.post("/api/blacklist", requireAuth, adminOrLister, (req, res) => {
   if (db.prepare("SELECT id FROM blacklist WHERE LOWER(username)=LOWER(?)").get(username))
     return res.status(409).json({ error: "Username đã có trong danh sách đen" });
   const id = newId("bl");
-  db.prepare("INSERT INTO blacklist (id,username,reason,created_by,created_at) VALUES (?,?,?,?,?)")
-    .run(id, username, String(req.body.reason || ""), req.user.id, Date.now());
+  db.prepare("INSERT INTO blacklist (id,username,reason,category,created_by,created_at) VALUES (?,?,?,?,?,?)")
+    .run(id, username, String(req.body.reason || ""), String(req.body.category || ""), req.user.id, Date.now());
   res.json({ ok: true, id });
 });
 app.put("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
@@ -1347,6 +1355,7 @@ app.put("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
     sets.push("username=?"); vals.push(un);
   }
   if ("reason" in body) { sets.push("reason=?"); vals.push(String(body.reason || "")); }
+  if ("category" in body) { sets.push("category=?"); vals.push(String(body.category || "")); }
   if (sets.length) db.prepare(`UPDATE blacklist SET ${sets.join(",")} WHERE id=?`).run(...vals, b.id);
   res.json({ ok: true });
 });
