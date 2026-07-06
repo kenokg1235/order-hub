@@ -12,6 +12,10 @@ export default function Expenses({ teams = [] }) {
   const [kindFilter, setKindFilter] = useState("");   // "" | expense | profit
   const [curFilter, setCurFilter] = useState("");     // "" | VND | USDT | USD
   const [q, setQ] = useState("");                     // tìm trong chi tiết
+  const [months, setMonths] = useState([]);
+  const [month, setMonth] = useState("");             // tháng chi phí đang xem ("" = tất cả)
+  const [activeMonth, setActiveMonth] = useState("");
+  const [lastClose, setLastClose] = useState(null);
   const [err, setErr] = useState("");
   const today = () => {
     const d = new Date(), p = (n) => String(n).padStart(2, "0");
@@ -22,7 +26,24 @@ export default function Expenses({ teams = [] }) {
   async function load() {
     try { setItems((await api.get("/api/expenses")).expenses); } catch (e) { setErr(e.message); }
   }
-  useEffect(() => { load(); }, []);
+  async function loadMonths() {
+    try {
+      const r = await api.get("/api/expense-months");
+      setMonths(r.months || []); setActiveMonth(r.activeMonth || ""); setLastClose(r.lastClose || null);
+      setMonth((cur) => cur || r.activeMonth || "");
+    } catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); loadMonths(); }, []);
+
+  async function closeExpenseMonth() {
+    if (!confirm(`Chốt tháng chi phí ${activeMonth}?\nTháng hoạt động sẽ chuyển sang tháng kế tiếp. (Không ảnh hưởng chốt tháng đơn hàng)`)) return;
+    try { const r = await api.post("/api/expense-months/close", {}); setMonth(r.to); loadMonths(); }
+    catch (e) { setErr(e.message); }
+  }
+  async function undoCloseExpenseMonth() {
+    try { const r = await api.post("/api/expense-months/undo-close", {}); setMonth(r.restoredTo); loadMonths(); }
+    catch (e) { setErr(e.message); }
+  }
 
   const fmtVND = (n) => Math.round(n || 0).toLocaleString("vi-VN") + " ₫";
   const fmtUSDT = (n) => (Math.round((n || 0) * 100) / 100).toLocaleString("en-US") + " USDT";
@@ -41,11 +62,12 @@ export default function Expenses({ teams = [] }) {
 
   // Lọc theo ngày + danh mục (2 loại còn lại để tính tổng riêng).
   const filtered = useMemo(() => items.filter((e) => {
+    if (month && month !== "all" && !String(e.date || "").startsWith(month)) return false;
     if (from && (e.date || "") < from) return false;
     if (to && (e.date || "") > to) return false;
     if (catFilter && e.category !== catFilter) return false;
     return true;
-  }), [items, from, to, catFilter]);
+  }), [items, month, from, to, catFilter]);
   // Lọc thêm cho bảng chi tiết + theo danh mục: theo Loại, Loại tiền, và tìm theo chữ.
   const shown = useMemo(() => filtered.filter((e) => {
     if (kindFilter && kindOf(e) !== kindFilter) return false;
@@ -119,6 +141,12 @@ export default function Expenses({ teams = [] }) {
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <h2 style={{ margin: 0 }}>Thống kê tài chính</h2>
         <Badge color="blue">{shown.length} khoản</Badge>
+        <select className="input" style={{ maxWidth: 160 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Tháng chi phí (tách biệt với tháng đơn)">
+          <option value="all">📅 Tất cả tháng</option>
+          {months.map((m) => <option key={m} value={m}>{m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
+        </select>
+        <Button sm variant="primary" onClick={closeExpenseMonth} title="Chốt tháng chi phí — tách biệt với chốt tháng dời đơn">🔒 Chốt tháng CP</Button>
+        {lastClose && <Button sm onClick={undoCloseExpenseMonth} title={`Hoàn tác chốt (${lastClose.to} → ${lastClose.from})`}>↩️ Hoàn tác</Button>}
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 140 }} value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
           <option value="">Tất cả loại</option>

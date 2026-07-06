@@ -1233,6 +1233,32 @@ app.delete("/api/expenses/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Tháng chi phí (TÁCH BIỆT với chốt tháng dời đơn) ──────────────────────────
+// Tháng của một khoản = YYYY-MM của cột date. Có "tháng hoạt động" riêng cho chi phí.
+const curYM = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const getExpenseMonth = () => getSetting("expenseActiveMonth", "") || curYM();
+app.get("/api/expense-months", requireAdmin, (req, res) => {
+  const months = db.prepare("SELECT DISTINCT substr(date,1,7) m FROM expenses WHERE date!='' ORDER BY m DESC").all().map((r) => r.m);
+  const active = getExpenseMonth();
+  if (active && !months.includes(active)) months.unshift(active);
+  const lc = getSetting("expenseLastClose", null);
+  res.json({ months, activeMonth: active, lastClose: lc ? { from: lc.from, to: lc.to } : null });
+});
+app.post("/api/expense-months/close", requireAdmin, (req, res) => {
+  const from = getExpenseMonth();
+  const to = nextMonth(from);
+  setSetting("expenseActiveMonth", to);
+  setSetting("expenseLastClose", { from, to });
+  res.json({ ok: true, from, to });
+});
+app.post("/api/expense-months/undo-close", requireAdmin, (req, res) => {
+  const lc = getSetting("expenseLastClose", null);
+  if (!lc) return res.status(400).json({ error: "Không có lần chốt chi phí nào để hoàn tác" });
+  setSetting("expenseActiveMonth", lc.from);
+  setSetting("expenseLastClose", null);
+  res.json({ ok: true, restoredTo: lc.from });
+});
+
 // ── Blacklist (difficult buyers, eBay usernames) — Admin + Lister ─────────────
 function adminOrLister(req, res, next) {
   if (req.user.role !== "Admin" && req.user.role !== "Lister")
