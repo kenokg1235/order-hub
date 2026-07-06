@@ -12,10 +12,9 @@ export default function Expenses({ teams = [] }) {
   const [kindFilter, setKindFilter] = useState("");   // "" | expense | profit
   const [curFilter, setCurFilter] = useState("");     // "" | VND | USDT | USD
   const [q, setQ] = useState("");                     // tìm trong chi tiết
-  const [months, setMonths] = useState([]);
-  const [month, setMonth] = useState("");             // tháng chi phí đang xem ("" = tất cả)
-  const [activeMonth, setActiveMonth] = useState("");
-  const [lastClose, setLastClose] = useState(null);
+  const [openStart, setOpenStart] = useState("");       // ngày bắt đầu kỳ hiện tại
+  const [closedPeriods, setClosedPeriods] = useState([]); // [{from,to}] các kỳ đã chốt
+  const [periodSel, setPeriodSel] = useState("current"); // "all" | "current" | "c<idx>"
   const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột số
   const [err, setErr] = useState("");
   const today = () => {
@@ -27,38 +26,41 @@ export default function Expenses({ teams = [] }) {
   async function load() {
     try { setItems((await api.get("/api/expenses")).expenses); } catch (e) { setErr(e.message); }
   }
-  async function loadMonths() {
+  async function loadPeriods() {
     try {
-      const r = await api.get("/api/expense-months");
-      setMonths(r.months || []); setActiveMonth(r.activeMonth || ""); setLastClose(r.lastClose || null);
-      setMonth((cur) => cur || r.activeMonth || "");
+      const r = await api.get("/api/expense-periods");
+      setOpenStart(r.openStart || ""); setClosedPeriods(r.closed || []);
     } catch (e) { setErr(e.message); }
   }
-  useEffect(() => { load(); loadMonths(); }, []);
+  useEffect(() => { load(); loadPeriods(); }, []);
 
-  // Xem tháng nào thì ô "thêm nhanh" mặc định Ngày thuộc tháng đó → bổ sung khoản vào tháng cũ dễ dàng.
+  // Chọn kỳ nào → áp khoảng ngày (from/to) của kỳ đó cho mọi tổng; ô thêm nhanh nhảy Ngày vào kỳ.
   useEffect(() => {
-    if (month && month !== "all") {
-      setQa((p) => String(p.date || "").startsWith(month) ? p : { ...p, date: `${month}-01` });
-    } else {
-      setQa((p) => String(p.date || "").startsWith(today().slice(0, 7)) ? p : { ...p, date: today() });
+    if (periodSel === "all") { setFrom(""); setTo(""); setQa((q) => ({ ...q, date: today() })); }
+    else if (periodSel === "current") { setFrom(openStart || ""); setTo(""); setQa((q) => ({ ...q, date: today() })); }
+    else {
+      const p = closedPeriods[Number(String(periodSel).slice(1))];
+      if (p) { setFrom(p.from || ""); setTo(p.to || ""); setQa((q) => (q.date >= p.from && q.date <= p.to) ? q : { ...q, date: p.to }); }
     }
-  }, [month]);
+  }, [periodSel, openStart, closedPeriods]);
 
-  async function closeExpenseMonth() {
-    if (!confirm(`Chốt tháng chi phí ${activeMonth}?\nTháng hoạt động sẽ chuyển sang tháng kế tiếp. (Không ảnh hưởng chốt tháng đơn hàng)`)) return;
-    try { const r = await api.post("/api/expense-months/close", {}); setMonth(r.to); loadMonths(); }
+  async function closePeriod() {
+    const to = today();
+    if (!confirm(`Chốt kỳ chi phí đến hôm nay?\nKỳ: từ ${openStart || "đầu"} → ${to}.\nSau khi chốt, kỳ mới bắt đầu từ ngày kế tiếp. (Tách biệt với chốt tháng đơn)`)) return;
+    try { await api.post("/api/expense-periods/close", { to }); await loadPeriods(); setPeriodSel("current"); }
     catch (e) { setErr(e.message); }
   }
-  async function undoCloseExpenseMonth() {
-    try { const r = await api.post("/api/expense-months/undo-close", {}); setMonth(r.restoredTo); loadMonths(); }
+  async function undoPeriod() {
+    try { await api.post("/api/expense-periods/undo-close", {}); await loadPeriods(); setPeriodSel("current"); }
     catch (e) { setErr(e.message); }
   }
-  async function setActiveExpenseMonth(m) {
-    if (!/^\d{4}-\d{2}$/.test(m || "")) return;
-    try { await api.post("/api/expense-months/set", { month: m }); loadMonths(); }
+  async function setPeriodStart() {
+    const d = prompt("Ngày bắt đầu kỳ hiện tại (YYYY-MM-DD):", openStart || today());
+    if (!d) return;
+    try { await api.post("/api/expense-periods/set-start", { start: String(d).trim() }); loadPeriods(); }
     catch (e) { setErr(e.message); }
   }
+  const fmtP = (d) => d ? fmtDate(d) : "đầu";
 
   const fmtVND = (n) => Math.round(n || 0).toLocaleString("vi-VN") + " ₫";
   const fmtUSDT = (n) => (Math.round((n || 0) * 100) / 100).toLocaleString("en-US") + " USDT";
@@ -77,12 +79,11 @@ export default function Expenses({ teams = [] }) {
 
   // Lọc theo ngày + danh mục (2 loại còn lại để tính tổng riêng).
   const filtered = useMemo(() => items.filter((e) => {
-    if (month && month !== "all" && !String(e.date || "").startsWith(month)) return false;
     if (from && (e.date || "") < from) return false;
     if (to && (e.date || "") > to) return false;
     if (catFilter && e.category !== catFilter) return false;
     return true;
-  }), [items, month, from, to, catFilter]);
+  }), [items, from, to, catFilter]);
   // Lọc thêm cho bảng chi tiết + theo danh mục: theo Loại, Loại tiền, và tìm theo chữ.
   const shown = useMemo(() => filtered.filter((e) => {
     if (kindFilter && kindOf(e) !== kindFilter) return false;
@@ -172,14 +173,14 @@ export default function Expenses({ teams = [] }) {
       <div className="row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
         <h2 style={{ margin: 0 }}>Thống kê tài chính</h2>
         <Badge color="blue">{shown.length} khoản</Badge>
-        <select className="input" style={{ maxWidth: 160 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Tháng chi phí (tách biệt với tháng đơn)">
-          <option value="all">📅 Tất cả tháng</option>
-          {months.map((m) => <option key={m} value={m}>{m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
+        <select className="input" style={{ maxWidth: 230 }} value={periodSel} onChange={(e) => setPeriodSel(e.target.value)} title="Kỳ chi phí (khoảng ngày tự chọn, tách biệt với tháng đơn)">
+          <option value="current">📆 Kỳ hiện tại ({fmtP(openStart)} → nay)</option>
+          {closedPeriods.map((p, i) => <option key={i} value={"c" + i}>🔒 {fmtP(p.from)} → {fmtP(p.to)}</option>).reverse()}
+          <option value="all">📅 Tất cả</option>
         </select>
-        {month && month !== "all" && month !== activeMonth &&
-          <Button sm onClick={() => setActiveExpenseMonth(month)} title={`Đặt ${month} làm tháng hiện tại`}>📌 Đặt {month} hiện tại</Button>}
-        <Button sm variant="primary" onClick={closeExpenseMonth} title="Chốt tháng chi phí — tách biệt với chốt tháng dời đơn">🔒 Chốt tháng CP</Button>
-        {lastClose && <Button sm onClick={undoCloseExpenseMonth} title={`Hoàn tác chốt (${lastClose.to} → ${lastClose.from})`}>↩️ Hoàn tác</Button>}
+        {periodSel === "current" && <Button sm onClick={setPeriodStart} title="Đặt ngày bắt đầu kỳ hiện tại">📌 Ngày bắt đầu</Button>}
+        <Button sm variant="primary" onClick={closePeriod} title="Chốt kỳ chi phí đến hôm nay — tách biệt với chốt tháng dời đơn">🔒 Chốt kỳ (đến nay)</Button>
+        {closedPeriods.length > 0 && <Button sm onClick={undoPeriod} title="Hoàn tác lần chốt kỳ gần nhất">↩️ Hoàn tác</Button>}
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 140 }} value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}>
           <option value="">Tất cả loại</option>
@@ -202,7 +203,7 @@ export default function Expenses({ teams = [] }) {
         </select>
         <input className="input" style={{ maxWidth: 200 }} placeholder="🔍 Tìm danh mục / ghi chú / số tiền…"
           value={q} onChange={(e) => setQ(e.target.value)} />
-        {(from || to || catFilter || kindFilter || curFilter || q) && <Button sm onClick={() => { setFrom(""); setTo(""); setCatFilter(""); setKindFilter(""); setCurFilter(""); setQ(""); }}>✕ Xóa lọc</Button>}
+        {(from || to || catFilter || kindFilter || curFilter || q) && <Button sm onClick={() => { setPeriodSel("all"); setFrom(""); setTo(""); setCatFilter(""); setKindFilter(""); setCurFilter(""); setQ(""); }}>✕ Xóa lọc</Button>}
       </div>
 
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
@@ -241,7 +242,7 @@ export default function Expenses({ teams = [] }) {
             </select>
           </div>
           <div>
-            <label className="label">Ngày{month && month !== "all" && month !== today().slice(0, 7) ? ` · bổ sung vào ${month}` : ""}</label>
+            <label className="label">Ngày{String(periodSel).startsWith("c") ? " · bổ sung vào kỳ đã chốt" : ""}</label>
             <input className="input" type="date" style={{ width: 150 }} value={qa.date} onChange={(e) => upQa("date", e.target.value)} />
           </div>
           <div>

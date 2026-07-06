@@ -1267,6 +1267,42 @@ app.post("/api/expense-months/set", requireAdmin, (req, res) => {
   res.json({ ok: true, activeMonth: month });
 });
 
+// ── Chốt KỲ chi phí theo khoảng ngày tự chọn (vd đầu T6 → 6/7) ─────────────────
+const earliestExpenseDate = () => { const r = db.prepare("SELECT MIN(date) d FROM expenses WHERE date!=''").get(); return r && r.d ? r.d : ""; };
+const nextDay = (iso) => { const [y, m, d] = String(iso).split("-").map(Number); const dt = new Date(y, m - 1, d + 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`; };
+app.get("/api/expense-periods", requireAdmin, (req, res) => {
+  const closed = getSetting("expenseClosedPeriods", []);
+  let openStart = getSetting("expensePeriodStart", "");
+  if (!openStart) openStart = earliestExpenseDate();
+  res.json({ openStart, closed });
+});
+app.post("/api/expense-periods/close", requireAdmin, (req, res) => {
+  const to = String(req.body.to || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({ error: "Ngày chốt không hợp lệ" });
+  let from = getSetting("expensePeriodStart", "") || earliestExpenseDate() || to;
+  if (from > to) return res.status(400).json({ error: "Ngày chốt phải ≥ ngày bắt đầu kỳ" });
+  const closed = getSetting("expenseClosedPeriods", []);
+  closed.push({ from, to, closedAt: Date.now() });
+  setSetting("expenseClosedPeriods", closed);
+  setSetting("expensePeriodStart", nextDay(to));
+  res.json({ ok: true, from, to });
+});
+app.post("/api/expense-periods/undo-close", requireAdmin, (req, res) => {
+  const closed = getSetting("expenseClosedPeriods", []);
+  if (!closed.length) return res.status(400).json({ error: "Chưa có kỳ nào để hoàn tác" });
+  const last = closed.pop();
+  setSetting("expenseClosedPeriods", closed);
+  setSetting("expensePeriodStart", last.from);
+  res.json({ ok: true, restoredFrom: last.from });
+});
+// Đặt lại ngày bắt đầu kỳ hiện tại (sửa thủ công).
+app.post("/api/expense-periods/set-start", requireAdmin, (req, res) => {
+  const d = String(req.body.start || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: "Ngày không hợp lệ" });
+  setSetting("expensePeriodStart", d);
+  res.json({ ok: true, openStart: d });
+});
+
 // ── Blacklist (difficult buyers, eBay usernames) — Admin + Lister ─────────────
 function adminOrLister(req, res, next) {
   if (req.user.role !== "Admin" && req.user.role !== "Lister")
