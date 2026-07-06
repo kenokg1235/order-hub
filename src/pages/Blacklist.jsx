@@ -43,7 +43,13 @@ export default function Blacklist() {
         <input className="input" style={{ maxWidth: 240 }} placeholder="🔍 Tìm username / lý do…"
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="muted" style={{ marginBottom: 14 }}>Username khách hàng khó — để nhân viên listing kiểm tra trước khi xử lý/ship đơn.</div>
+      <div className="muted" style={{ marginBottom: 14 }}>
+        Username khách hàng khó — để nhân viên listing kiểm tra trước khi xử lý/ship đơn.
+        <div style={{ marginTop: 6 }}>
+          🔗 Link block user trên eBay:{" "}
+          <a href="https://www.ebay.com/bmgt/BuyerBlock" target="_blank" rel="noreferrer" style={{ wordBreak: "break-all" }}>https://www.ebay.com/bmgt/BuyerBlock</a>
+        </div>
+      </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <div className="card" style={{ padding: 12, marginBottom: 16 }}>
