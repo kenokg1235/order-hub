@@ -525,9 +525,12 @@ app.post("/api/months/close", requireAdmin, (req, res) => {
     "SELECT id FROM orders WHERE period=? AND master_status NOT IN ('Đã Up','Đã Cancel')").all(from).map((r) => r.id);
   const now = Date.now();
   for (const id of ids) db.prepare("UPDATE orders SET period=?, updated_at=? WHERE id=?").run(to, now, id);
+  // Cuốn theo Mua thẻ: yêu cầu thẻ CHƯA cấp (card_value rỗng) của tháng cũ → sang tháng mới; thẻ đã cấp giữ nguyên tháng.
+  const cardIds = db.prepare("SELECT id FROM card_requests WHERE period=? AND (card_value IS NULL OR card_value='')").all(from).map((r) => r.id);
+  for (const id of cardIds) db.prepare("UPDATE card_requests SET period=?, updated_at=? WHERE id=?").run(to, now, id);
   setSetting("activeMonth", to);
-  setSetting("lastClose", { from, to, ids });   // remember for undo
-  res.json({ ok: true, from, to, moved: ids.length });
+  setSetting("lastClose", { from, to, ids, cardIds });   // remember for undo
+  res.json({ ok: true, from, to, moved: ids.length, cardsMoved: cardIds.length });
 });
 
 // Undo the most recent close: move exactly those orders back + restore active month.
@@ -540,6 +543,8 @@ app.post("/api/months/undo-close", requireAdmin, (req, res) => {
     // only move back orders still sitting in the closed-to month (not since re-changed)
     restored += db.prepare("UPDATE orders SET period=?, updated_at=? WHERE id=? AND period=?").run(lc.from, now, id, lc.to).changes;
   }
+  for (const id of lc.cardIds || [])   // trả yêu cầu thẻ đã cuốn về lại tháng cũ
+    db.prepare("UPDATE card_requests SET period=?, updated_at=? WHERE id=? AND period=?").run(lc.from, now, id, lc.to);
   setSetting("activeMonth", lc.from);
   setSetting("lastClose", null);
   res.json({ ok: true, restoredTo: lc.from, restored });
@@ -983,7 +988,7 @@ const cardCode = (seq) => "MT-" + String(seq || 0).padStart(4, "0");   // human-
 function cardOut(r) {
   return {
     id: r.id, seq: r.seq, code: cardCode(r.seq), requesterId: r.requester_id, requesterName: r.requester_name,
-    content: r.content, card: r.card_value, status: r.status,
+    content: r.content, card: r.card_value, status: r.status, period: r.period || "",
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -1055,9 +1060,9 @@ app.post("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const high = Math.max(db.prepare("SELECT COALESCE(MAX(seq),0) m FROM card_requests").get().m, getSetting("cardSeqHigh", 0));
   const seq = high + 1;
   setSetting("cardSeqHigh", seq);
-  db.prepare(`INSERT INTO card_requests (id,requester_id,requester_name,content,card_value,status,seq,created_at,updated_at)
-              VALUES (?,?,?,?,?,?,?,?,?)`)
-    .run(id, req.user.id, req.user.name, String(req.body.content || ""), "", "", seq, now, now);
+  db.prepare(`INSERT INTO card_requests (id,requester_id,requester_name,content,card_value,status,seq,period,created_at,updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, req.user.id, req.user.name, String(req.body.content || ""), "", "", seq, getActiveMonth(), now, now);
   notify(cardManagersForRequester(req.user.id), "card-request", `🎴 Yêu cầu thẻ mới từ ${req.user.name}: ${String(req.body.content || "").slice(0, 80)}`, "", userTeams(req.user.id));
   res.json({ request: cardOut(db.prepare("SELECT * FROM card_requests WHERE id=?").get(id)) });
 });

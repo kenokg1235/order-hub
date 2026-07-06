@@ -130,7 +130,9 @@ ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# l
 ensureColumn("purchases", "name", "TEXT DEFAULT ''");          // Name tự nhập (trước cột Tracking)
 ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterShip key registered it
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID
-ensureColumn("card_requests", "period", "TEXT DEFAULT ''");    // month the card was first used "YYYY-MM"
+ensureColumn("card_requests", "period", "TEXT DEFAULT ''");    // tháng (YYYY-MM) của yêu cầu thẻ, theo tháng đơn hoạt động
+// Backfill period cho yêu cầu thẻ cũ (từ tháng tạo) để lọc theo tháng ở Mua thẻ.
+db.exec("UPDATE card_requests SET period = strftime('%Y-%m', created_at/1000, 'unixepoch') WHERE (period IS NULL OR period='') AND created_at > 0");
 // Backfill running IDs for card requests that don't have one yet.
 {
   const todo = db.prepare("SELECT id FROM card_requests WHERE seq IS NULL OR seq=0 ORDER BY created_at").all();

@@ -17,23 +17,32 @@ export default function Cards({ currentUser }) {
   const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");   // "" tất cả | "__empty" | tên trạng thái
+  const [month, setMonth] = useState("");                 // tháng Mua thẻ (theo tháng đơn); "" chưa set, "all" = tất cả
+  const [activeMonth, setActiveMonth] = useState("");
   const [page, setPage] = useState(1);
   const PER_PAGE = 100;
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
 
   const statusOptions = [...new Set([...lockStatuses, ...errorStatuses, ...cardStatuses])];
+  // Danh sách tháng: gộp các period của yêu cầu thẻ + tháng đơn đang hoạt động.
+  const months = useMemo(() => {
+    const set = new Set(reqs.map((r) => r.period).filter(Boolean));
+    if (activeMonth) set.add(activeMonth);
+    return [...set].sort().reverse();
+  }, [reqs, activeMonth]);
   const filtered = useMemo(() => reqs.filter((r) => {
+    if (month && month !== "all" && (r.period || "") !== month) return false;
     if (statusFilter === "__empty") { if (r.status) return false; }
     else if (statusFilter && r.status !== statusFilter) return false;
     const s = q.trim().toLowerCase();
     if (s && ![r.card, r.requesterName, r.content, r.code].some((v) => String(v || "").toLowerCase().includes(s))) return false;
     return true;
-  }), [reqs, q, statusFilter]);
+  }), [reqs, month, q, statusFilter]);
 
   // Phân trang 100 hàng/trang.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  useEffect(() => { setPage(1); }, [q, statusFilter]);                 // đổi bộ lọc → về trang 1
+  useEffect(() => { setPage(1); }, [q, statusFilter, month]);          // đổi bộ lọc → về trang 1
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);   // giữ trang hợp lệ
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
@@ -45,6 +54,7 @@ export default function Cards({ currentUser }) {
       setLockStatuses(s.cardCountStatuses || []);
       setErrorStatuses(s.cardErrorStatuses || []);
       setStatusColors(s.statusColors || {});
+      try { const mo = await api.get("/api/months"); setActiveMonth(mo.activeMonth || ""); setMonth((cur) => cur || mo.activeMonth || "all"); } catch {}
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -81,6 +91,10 @@ export default function Cards({ currentUser }) {
         <Badge color="green">Tổng profit: ${Math.round(totalProfit * 100) / 100}</Badge>
         <Badge color="blue">Tổng balance: ${Math.round(totalBalance * 100) / 100}</Badge>
         <div className="spacer" />
+        <select className="input" style={{ maxWidth: 150 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Tháng Mua thẻ (theo tháng đơn)">
+          <option value="all">📅 Tất cả tháng</option>
+          {months.map((m) => <option key={m} value={m}>{m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
+        </select>
         <select className="input" style={{ maxWidth: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">Tất cả trạng thái</option>
           <option value="__empty">— chưa có trạng thái —</option>
