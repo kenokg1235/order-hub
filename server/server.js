@@ -1359,7 +1359,6 @@ app.delete("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
 app.get("/api/leaderboard", requireAuth, (req, res) => {
   const month = req.query.month || getActiveMonth();
   const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
-  const firstM = cardFirstMonths();
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
 
   // Đã Up orders, scoped to the selected month
@@ -1384,12 +1383,11 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
     u.cancels++;
     if (o.cancel_reason && failSet.has(String(o.cancel_reason).toLowerCase())) u.failCancels++;
   }
-  // Số thẻ = TẤT CẢ thẻ NV được cấp ở Mua thẻ (theo người yêu cầu) có trạng thái HỢP LỆ
-  // (Live Bill / Sai bill). Gắn vào tháng dùng-lần-đầu (hoặc tháng tạo yêu cầu nếu chưa dùng).
-  // KHÔNG phụ thuộc việc gán thẻ vào Sheet Con.
-  for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status, created_at FROM card_requests WHERE card_value!=''").all()) {
+  // Số thẻ = thẻ NV được cấp ở Mua thẻ (theo người yêu cầu) có trạng thái HỢP LỆ (Live Bill / Sai bill),
+  // tính theo THÁNG CẤP (card_requests.period — cuốn theo chốt tháng đơn). Không phụ thuộc gán vào Sheet Con.
+  for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status, period, created_at FROM card_requests WHERE card_value!=''").all()) {
     if (!countSet.has(String(c.status || "").toLowerCase())) continue;
-    const cm = firstM[c.card_value] || ymOf(c.created_at);
+    const cm = c.period || ymOf(c.created_at);
     if (month !== "all" && cm !== month) continue;
     const u = byUser[c.requester_id] || (byUser[c.requester_id] = mkUser(c.requester_id, c.requester_name));
     u.cardSet.add(c.card_value);
