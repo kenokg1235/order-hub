@@ -9,6 +9,8 @@ export default function Blacklist() {
   const [na, setNa] = useState({ username: "", reason: "", category: "" });
   const [categories, setCategories] = useState([]);
   const [catFilter, setCatFilter] = useState("");
+  const [showExport, setShowExport] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState("");
 
   async function load() {
@@ -65,6 +67,18 @@ export default function Blacklist() {
     try { await api.del(`/api/blacklist/${b.id}`); setItems((p) => p.filter((x) => x.id !== b.id)); } catch (e) { setErr(e.message); }
   }
 
+  // Xuất username theo chuẩn eBay Blocked buyer list: phân tách bằng dấu phẩy, theo bộ lọc hiện tại (ngành hàng).
+  const exportText = useMemo(() => [...new Set(filtered.map((b) => String(b.username || "").trim()).filter(Boolean))].join(", "), [filtered]);
+  const copyExport = async () => {
+    if (!exportText) return;
+    try { await navigator.clipboard.writeText(exportText); }
+    catch {
+      const ta = document.createElement("textarea"); ta.value = exportText; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand("copy"); } catch {} ta.remove();
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div style={{ maxWidth: 900 }}>
       <div className="row" style={{ marginBottom: 6 }}>
@@ -77,6 +91,7 @@ export default function Blacklist() {
         </select>
         <input className="input" style={{ maxWidth: 240 }} placeholder="🔍 Tìm username / lý do / ngành hàng…"
           value={q} onChange={(e) => setQ(e.target.value)} />
+        <Button variant="primary" onClick={() => setShowExport((v) => !v)} title="Xuất username (chuẩn eBay Blocked buyer list) theo bộ lọc hiện tại">📤 Xuất eBay ({filtered.length})</Button>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
         Username khách hàng khó — để nhân viên listing kiểm tra trước khi xử lý/ship đơn.
@@ -86,6 +101,24 @@ export default function Blacklist() {
         </div>
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {showExport && (
+        <div className="card" style={{ padding: 12, marginBottom: 16, borderColor: "var(--primary)" }}>
+          <div className="row" style={{ marginBottom: 8 }}>
+            <b>📤 Xuất username — chuẩn eBay Blocked buyer list</b>
+            <Badge color="blue">{exportText ? exportText.split(", ").filter(Boolean).length : 0} username</Badge>
+            <span className="muted" style={{ fontSize: 13 }}>({catFilter || "tất cả ngành hàng"})</span>
+            <div className="spacer" />
+            <Button variant="primary" onClick={copyExport} disabled={!exportText}>{copied ? "✓ Đã copy" : "📋 Copy"}</Button>
+            <Button sm onClick={() => setShowExport(false)}>✕</Button>
+          </div>
+          <textarea className="input" readOnly value={exportText || "(không có username nào khớp bộ lọc)"}
+            onFocus={(e) => e.target.select()} rows={4} style={{ width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 13 }} />
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+            Username cách nhau bằng dấu phẩy. Chọn ngành hàng ở bộ lọc trên rồi Copy → dán vào ô "Blocked buyer list" của eBay.
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 12, marginBottom: 16 }}>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
