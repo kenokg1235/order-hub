@@ -121,6 +121,7 @@ export default function TeamSheet({ currentUser, teams }) {
       if (!txt(o.profit, cf.profit)) return false;
       if (!txt(o.deadline, cf.deadline)) return false;
       if (!txt(o.masterNote, cf.masterNote)) return false;
+      if (!txt(o.staffNote, cf.staffNote)) return false;
       if (!txt(o.claimedName, cf.claimedName)) return false;
       for (const nf of ["note1", "note2", "note3", "note4"]) if (!txt(o[nf], cf[nf])) return false;
       for (const pf of ["card", "amount", "name", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
@@ -300,7 +301,7 @@ export default function TeamSheet({ currentUser, teams }) {
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
             </th>
-            <th>Note tổng</th><th>Nhận đơn</th>
+            <th>Note tổng</th><th title="Nhân viên xử lý ghi chú để Lister theo dõi">Note gửi Lister</th><th>Nhận đơn</th>
             <th>Thẻ</th>
             <th>Số tiền <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} /></th>
             <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
@@ -320,6 +321,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("profit", 55)}</td>
             <td>{fText("deadline", 55)}</td>
             <td>{fText("masterNote", 90)}</td>
+            <td>{fText("staffNote", 90)}</td>
             <td>{fText("claimedName", 75)}</td>
             <td>{fText("card", 90)}</td>
             <td>{fText("amount", 50)}</td>
@@ -380,6 +382,10 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.profit ? `$${o.profit}` : ""}</td>
                     <td rowSpan={span}>{o.deadline || <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ maxWidth: 160, whiteSpace: "normal", fontSize: 12 }}>{o.masterNote || <span className="muted">—</span>}</td>
+                    <td rowSpan={span}>
+                      <input className="input" style={{ padding: "4px 6px", width: 140 }} defaultValue={o.staffNote} placeholder="note gửi Lister…"
+                        title="Ghi chú của bạn cho Lister theo dõi" {...cellProps("Note gửi Lister", (v) => saveNote(o, "staffNote", v))} />
+                    </td>
                     <td rowSpan={span}>
                       {o.claimedBy
                         ? <div>

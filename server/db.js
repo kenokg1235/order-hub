@@ -117,6 +117,7 @@ ensureColumn("orders", "order_no", "TEXT DEFAULT ''");        // eBay order numb
 ensureColumn("orders", "line_key", "TEXT DEFAULT ''");        // khóa chống trùng theo dòng: orderNo||itemNo||variation
 ensureColumn("orders", "urgent", "INTEGER DEFAULT 0");        // cảnh báo GẤP (Lister bật) để người xử lý chú ý
 ensureColumn("orders", "urgent_note", "TEXT DEFAULT ''");     // ghi chú cảnh báo gấp (Lister cung cấp thông tin)
+ensureColumn("orders", "staff_note", "TEXT DEFAULT ''");     // note của NV xử lý (Sheet Con) → Lister theo dõi
 // Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).
 {
   const rows = db.prepare("SELECT id, raw, size, order_no, line_key FROM orders").all();

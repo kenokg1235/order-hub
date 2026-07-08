@@ -205,7 +205,7 @@ function orderOut(o) {
     qty: o.qty, product: o.product, image: o.image, link: o.link, size: o.size, color: o.color,
     profit: o.profit, deadline: o.deadline, masterStatus: o.master_status,
     masterNote: o.master_note, cancelReason: o.cancel_reason,
-    urgent: !!o.urgent, urgentNote: o.urgent_note || "",
+    urgent: !!o.urgent, urgentNote: o.urgent_note || "", staffNote: o.staff_note || "",
     claimedBy: o.claimed_by, claimedName: o.claimed_name, claimedAt: o.claimed_at,
     note1: o.note1, note2: o.note2, note3: o.note3, note4: o.note4,
     listedBy: o.listed_by, period: o.period, createdAt: o.created_at, updatedAt: o.updated_at,
@@ -498,7 +498,7 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
 });
 
 // Hoàn tác thao tác sửa ô gần nhất CỦA CHÍNH MÌNH (đi lùi dần qua audit log).
-const UNDO_ORDER_FIELDS = { size: ["size", "t"], color: ["color", "t"], profit: ["profit", "n"], deadline: ["deadline", "t"], masterStatus: ["master_status", "t"], masterNote: ["master_note", "t"], cancelReason: ["cancel_reason", "t"], urgentNote: ["urgent_note", "t"], team: ["team", "t"], note1: ["note1", "t"], note2: ["note2", "t"], note3: ["note3", "t"], note4: ["note4", "t"] };
+const UNDO_ORDER_FIELDS = { size: ["size", "t"], color: ["color", "t"], profit: ["profit", "n"], deadline: ["deadline", "t"], masterStatus: ["master_status", "t"], masterNote: ["master_note", "t"], cancelReason: ["cancel_reason", "t"], urgentNote: ["urgent_note", "t"], staffNote: ["staff_note", "t"], team: ["team", "t"], note1: ["note1", "t"], note2: ["note2", "t"], note3: ["note3", "t"], note4: ["note4", "t"] };
 const UNDO_PUR_FIELDS = { card: ["card", "t"], amount: ["amount", "n"], name: ["name", "t"], orderNumber: ["order_number", "t"], email: ["email", "t"], tracking: ["tracking", "t"], phone: ["phone", "t"], zip: ["zip", "t"], processStatus: ["process_status", "t"] };
 app.post("/api/undo", requireAuth, (req, res) => {
   const fields = [...Object.keys(UNDO_ORDER_FIELDS), ...Object.keys(UNDO_PUR_FIELDS)];
@@ -778,11 +778,17 @@ app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canTouchOrderTeam(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   const b = req.body || {};
+  const noteMap = { note1: "note1", note2: "note2", note3: "note3", note4: "note4", staffNote: "staff_note" };
   const sets = [], vals = [];
-  for (const k of ["note1", "note2", "note3", "note4"]) if (k in b) { logChange(req.user, "order", o.id, o.id, k, o[k], b[k]); sets.push(`${k}=?`); vals.push(b[k]); }
+  for (const [k, col] of Object.entries(noteMap)) if (k in b) { logChange(req.user, "order", o.id, o.id, k, o[col], b[k]); sets.push(`${col}=?`); vals.push(b[k]); }
   if (sets.length) {
     sets.push("updated_at=?"); vals.push(Date.now());
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
+  }
+  // NV thêm/sửa "note cho Lister" → báo Lister của store để theo dõi.
+  if ("staffNote" in b && String(b.staffNote || "").trim() && String(b.staffNote) !== String(o.staff_note || "")) {
+    const lst = listersForStore(o.store);
+    if (lst.length) notify(lst, "staff-note", `📌 NV note đơn ${o.id} (${o.store}): ${String(b.staffNote).slice(0, 90)}`, "", o.team ? [o.team] : []);
   }
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
