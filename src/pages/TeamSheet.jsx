@@ -374,7 +374,9 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.size || <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ fontSize: 12 }}>{o.color || <span className="muted">—</span>}</td>
-                    <td rowSpan={span}>{o.qty}</td>
+                    <td rowSpan={span}>{Number(o.qty) >= 2
+                      ? <span title="Đơn nhiều sản phẩm — chú ý!" style={{ background: "#fff3cd", color: "var(--red)", fontWeight: 800, fontSize: 15, padding: "2px 9px", borderRadius: 20, border: "1.5px solid var(--red)", whiteSpace: "nowrap" }}>⚠ ×{o.qty}</span>
+                      : o.qty}</td>
                     <td rowSpan={span}>{o.profit ? `$${o.profit}` : ""}</td>
                     <td rowSpan={span}>{o.deadline || <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ maxWidth: 160, whiteSpace: "normal", fontSize: 12 }}>{o.masterNote || <span className="muted">—</span>}</td>

@@ -440,7 +440,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   );
                 })()}
                 <td>{o.custPhone}</td>
-                <td>{o.qty}</td>
+                <td>{Number(o.qty) >= 2
+                  ? <span title="Đơn nhiều sản phẩm — chú ý!" style={{ background: "#fff3cd", color: "var(--red)", fontWeight: 800, fontSize: 15, padding: "2px 9px", borderRadius: 20, border: "1.5px solid var(--red)", whiteSpace: "nowrap" }}>⚠ ×{o.qty}</span>
+                  : o.qty}</td>
                 <td style={{ maxWidth: 240, whiteSpace: "normal" }}>{o.product}</td>
                 <td>
                   {o.image ? (
