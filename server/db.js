@@ -115,6 +115,8 @@ ensureColumn("orders", "period", "TEXT DEFAULT ''");   // working month "YYYY-MM
 ensureColumn("orders", "cancel_reason", "TEXT DEFAULT ''");   // lý do khi master_status = Đã Cancel
 ensureColumn("orders", "order_no", "TEXT DEFAULT ''");        // eBay order number (hiển thị; nhiều dòng có thể chung)
 ensureColumn("orders", "line_key", "TEXT DEFAULT ''");        // khóa chống trùng theo dòng: orderNo||itemNo||variation
+ensureColumn("orders", "urgent", "INTEGER DEFAULT 0");        // cảnh báo GẤP (Lister bật) để người xử lý chú ý
+ensureColumn("orders", "urgent_note", "TEXT DEFAULT ''");     // ghi chú cảnh báo gấp (Lister cung cấp thông tin)
 // Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).
 {
   const rows = db.prepare("SELECT id, raw, size, order_no, line_key FROM orders").all();

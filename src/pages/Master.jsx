@@ -178,6 +178,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       if (!txt(o.profit, cf.profit)) return false;
       if (!txt(o.deadline, cf.deadline)) return false;
       if (!txt(o.masterNote, cf.masterNote)) return false;
+      if (cf.urgent === "1" && !o.urgent) return false;
       if (arr("masterStatus").length && !arr("masterStatus").some((v) => v === "__empty" ? !o.masterStatus : o.masterStatus === v)) return false;
       if (!txt(o.claimedName, cf.claimedName)) return false;
       if (!pTxt(o, "name", cf.name)) return false;
@@ -369,6 +370,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
             </th>
             <th>Note</th>
+            <th title="Cảnh báo GẤP (Lister bật) để người xử lý chú ý">🚨 Gấp</th>
             <th>Trạng thái tổng</th>
             <th>Người nhận</th><th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th>
             <th></th>
@@ -389,6 +391,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
             <td>{fText("profit", 60)}</td>
             <td>{fText("deadline", 60)}</td>
             <td>{fText("masterNote", 90)}</td>
+            <td>{fEnum("urgent", [{ v: "", l: "Tất cả" }, { v: "1", l: "🚨 Chỉ gấp" }])}</td>
             <td>{fMulti("masterStatus", [{ v: "__empty", l: "(trống)" }, ...statuses.map((s) => ({ v: s, l: s }))])}</td>
             <td>{fText("claimedName", 80)}</td>
             <td>{fText("name", 90)}</td>
@@ -408,7 +411,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
               const purs = o.purchases || [];
               const allTracked = purs.length > 0 && purs.every((p) => String(p.processStatus || "").trim().toLowerCase() === "có tracking");
               return (
-              <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff" }}>
+              <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff", boxShadow: o.urgent ? "inset 4px 0 0 0 var(--red)" : undefined }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
                 <td>{isAdmin
                   ? <select className="input" style={{ padding: "4px 6px", minWidth: 90 }} value={o.team}
@@ -474,6 +477,16 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   <input className="input" style={{ padding: "4px 6px", width: 150 }} defaultValue={o.masterNote} placeholder="ghi chú…"
                     {...cellProps("Note", (v) => { if (v !== o.masterNote) patch(o.id, { masterNote: v }); })} />
                 </td>
+                <td style={{ background: o.urgent ? "var(--red-bg)" : undefined, minWidth: 150 }}>
+                  <label className="row" style={{ gap: 5, cursor: "pointer", fontWeight: 700, color: o.urgent ? "var(--red)" : undefined }}>
+                    <input type="checkbox" checked={!!o.urgent} onChange={(e) => patch(o.id, { urgent: e.target.checked })} /> 🚨 Gấp
+                  </label>
+                  {o.urgent && (
+                    <input className="input" style={{ padding: "4px 6px", width: 150, marginTop: 4, borderColor: "var(--red)" }}
+                      defaultValue={o.urgentNote} placeholder="lý do gấp / thông tin…"
+                      {...cellProps("Cảnh báo gấp", (v) => { if (v !== o.urgentNote) patch(o.id, { urgentNote: v }); })} />
+                  )}
+                </td>
                 <td>
                   <select className="input" style={{ padding: "4px 6px", minWidth: 110 }} value={o.masterStatus}
                     onChange={(e) => patch(o.id, { masterStatus: e.target.value })}>
@@ -510,7 +523,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 25 : 24} style={{ textAlign: "center", padding: 30 }} className="muted">
+              <tr><td colSpan={isAdmin ? 26 : 25} style={{ textAlign: "center", padding: 30 }} className="muted">
                 Chưa có đơn nào. Bấm <b>Import eBay</b> để đổ đơn vào.
               </td></tr>
             )}

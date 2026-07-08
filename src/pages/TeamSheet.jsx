@@ -350,9 +350,17 @@ export default function TeamSheet({ currentUser, teams }) {
                 const rc = rowBg(o.masterStatus, p?.processStatus, colors);
                 return (
                 <tr key={o.id + "_" + (p ? p.id : "none")} data-oid={o.id} className={idx === 0 ? "ordrow" : undefined}
-                  style={{ background: rc, "--rowbg": rc || "#fff" }}>
+                  style={{ background: rc, "--rowbg": rc || "#fff", boxShadow: o.urgent ? "inset 4px 0 0 0 var(--red)" : undefined }}>
                   {idx === 0 && <>
-                    <td rowSpan={span}>{o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}</td>
+                    <td rowSpan={span}>
+                      {o.masterStatus ? <Badge>{o.masterStatus}</Badge> : <span className="muted">—</span>}
+                      {o.urgent && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="badge red" style={{ fontWeight: 800 }}>🚨 GẤP</span>
+                          {o.urgentNote && <div style={{ color: "var(--red)", fontSize: 12, fontWeight: 600, whiteSpace: "normal", marginTop: 2 }}>{o.urgentNote}</div>}
+                        </div>
+                      )}
+                    </td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
                     <td rowSpan={span} title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
                     <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
