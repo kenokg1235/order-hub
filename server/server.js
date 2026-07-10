@@ -1392,8 +1392,20 @@ function requireOrderStaff(req, res, next) {
   if (!["Admin", "Leader", "Member"].includes(req.user.role)) return res.status(403).json({ error: "Chỉ dành cho nhân viên xử lý đơn" });
   next();
 }
+// Team bị Admin ẩn khỏi trang Proxy → thành viên team đó không xem được.
+const proxyAllowed = (user) => {
+  if (user.role === "Admin") return true;
+  const hidden = getSetting("proxyHiddenTeams", []);
+  const teams = user.teamIds || [];
+  if (!teams.length || !hidden.length) return true;
+  return teams.some((t) => !hidden.includes(t));   // còn ít nhất 1 team không bị ẩn
+};
+function requireProxyAccess(req, res, next) {
+  if (!proxyAllowed(req.user)) return res.status(403).json({ error: "Team của bạn không được xem Proxy" });
+  next();
+}
 const proxyOut = (p) => ({ id: p.id, name: p.name, note: p.note || "", adminNote: p.admin_note || "", userId: p.user_id || "", userName: p.user_name || "", usedAt: p.used_at || 0, createdAt: p.created_at });
-app.get("/api/proxies", requireAuth, requireOrderStaff, (req, res) => {
+app.get("/api/proxies", requireAuth, requireOrderStaff, requireProxyAccess, (req, res) => {
   res.json({ proxies: db.prepare("SELECT * FROM proxies ORDER BY created_at").all().map(proxyOut) });
 });
 app.post("/api/proxies", requireAdmin, (req, res) => {
@@ -1418,14 +1430,14 @@ app.delete("/api/proxies/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 // Note cho Admin — mọi nhân viên xử lý ghi/sửa được (báo tình trạng proxy cho Admin).
-app.post("/api/proxies/:id/admin-note", requireAuth, requireOrderStaff, (req, res) => {
+app.post("/api/proxies/:id/admin-note", requireAuth, requireOrderStaff, requireProxyAccess, (req, res) => {
   const p = db.prepare("SELECT * FROM proxies WHERE id=?").get(req.params.id);
   if (!p) return res.status(404).json({ error: "Không tìm thấy proxy" });
   db.prepare("UPDATE proxies SET admin_note=? WHERE id=?").run(String(req.body.adminNote || ""), p.id);
   res.json({ proxy: proxyOut(db.prepare("SELECT * FROM proxies WHERE id=?").get(p.id)) });
 });
 // Đặt/nhả người đang dùng — bất kỳ nhân viên xử lý nào cũng đổi được.
-app.post("/api/proxies/:id/use", requireAuth, requireOrderStaff, (req, res) => {
+app.post("/api/proxies/:id/use", requireAuth, requireOrderStaff, requireProxyAccess, (req, res) => {
   const p = db.prepare("SELECT * FROM proxies WHERE id=?").get(req.params.id);
   if (!p) return res.status(404).json({ error: "Không tìm thấy proxy" });
   const release = !!(req.body && req.body.release);

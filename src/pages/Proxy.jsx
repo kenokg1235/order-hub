@@ -4,15 +4,25 @@ import { Button, Badge } from "../ui.jsx";
 
 // Proxy accounts — Admin thêm danh sách; nhân viên xử lý tự chọn "đang dùng",
 // tên hiện cho tất cả mọi người. Mọi thành viên xử lý đều đổi được.
-export default function Proxy({ currentUser }) {
+export default function Proxy({ currentUser, teams = [], onHiddenChange }) {
   const isAdmin = currentUser.role === "Admin";
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [na, setNa] = useState({ name: "", note: "" });
+  const [hiddenTeams, setHiddenTeams] = useState([]);
   const [err, setErr] = useState("");
 
   async function load() {
-    try { setItems((await api.get("/api/proxies")).proxies); } catch (e) { setErr(e.message); }
+    try {
+      setItems((await api.get("/api/proxies")).proxies);
+      if (isAdmin) { try { setHiddenTeams((await api.get("/api/settings")).settings?.proxyHiddenTeams || []); } catch {} }
+    } catch (e) { setErr(e.message); }
+  }
+  async function toggleHiddenTeam(teamId) {
+    const next = hiddenTeams.includes(teamId) ? hiddenTeams.filter((t) => t !== teamId) : [...hiddenTeams, teamId];
+    setHiddenTeams(next);
+    try { await api.put("/api/settings/proxyHiddenTeams", { value: next }); onHiddenChange?.(); }
+    catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
   // Tự cập nhật 15s để mọi người thấy ngay ai đang dùng proxy nào.
@@ -64,6 +74,19 @@ export default function Proxy({ currentUser }) {
         Ai muốn dùng proxy nào thì bấm <b>✋ Tôi dùng</b> — tên bạn hiện cho mọi người. Dùng xong bấm <b>Nhả</b>. Mọi thành viên đều đổi được.
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {isAdmin && teams.length > 0 && (
+        <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+          <div className="label" style={{ marginBottom: 6 }}>🙈 Ẩn trang Proxy với team (tích để ẩn — thành viên team đó sẽ không thấy mục Proxy)</div>
+          <div className="row" style={{ flexWrap: "wrap", gap: 14 }}>
+            {teams.map((t) => (
+              <label key={t.id} className="row" style={{ gap: 5, cursor: "pointer" }}>
+                <input type="checkbox" checked={hiddenTeams.includes(t.id)} onChange={() => toggleHiddenTeam(t.id)} /> {t.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isAdmin && (
         <div className="card" style={{ padding: 12, marginBottom: 16 }}>

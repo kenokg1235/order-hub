@@ -56,8 +56,12 @@ export default function App() {
   const [page, setPage] = useState("team");
   const [teams, setTeams] = useState([]);
 
+  const [proxyHidden, setProxyHidden] = useState([]);
   async function loadTeams() {
     try { setTeams((await api.get("/api/teams")).teams); } catch {}
+  }
+  async function loadProxyHidden() {
+    try { setProxyHidden((await api.get("/api/settings")).settings?.proxyHiddenTeams || []); } catch {}
   }
   // Lấy lại thông tin user (vd khi Lister tự thêm store mới → cập nhật storeNames).
   async function refreshUser() {
@@ -74,7 +78,7 @@ export default function App() {
     })();
   }, []);
 
-  useEffect(() => { if (user) loadTeams(); }, [user]);
+  useEffect(() => { if (user) { loadTeams(); loadProxyHidden(); } }, [user]);
 
   // Pick a sensible default landing page per role once logged in.
   useEffect(() => {
@@ -89,8 +93,10 @@ export default function App() {
   if (loading) return <div style={{ padding: 40 }} className="muted">Đang tải…</div>;
   if (!user) return <Login onLogin={setUser} />;
 
+  // Proxy: Admin luôn thấy; thành viên bị ẩn nếu MỌI team của họ nằm trong danh sách ẩn.
+  const proxyOk = user.role === "Admin" || !((user.teamIds || []).length && (user.teamIds || []).every((t) => proxyHidden.includes(t)));
   const visibleNav = NAV
-    .map((g) => ({ ...g, items: g.items.filter((it) => it.access(user)) }))
+    .map((g) => ({ ...g, items: g.items.filter((it) => it.access(user) && (it.id !== "proxy" || proxyOk)) }))
     .filter((g) => g.items.length);
 
   return (
@@ -137,7 +143,7 @@ export default function App() {
         {page === "payout"   && <Payout currentUser={user} refreshUser={refreshUser} />}
         {page === "expenses" && <Expenses teams={teams} />}
         {page === "blacklist" && <Blacklist />}
-        {page === "proxy"    && <Proxy currentUser={user} />}
+        {page === "proxy" && proxyOk && <Proxy currentUser={user} teams={teams} onHiddenChange={loadProxyHidden} />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}
