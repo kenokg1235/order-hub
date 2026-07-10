@@ -204,6 +204,19 @@ CREATE TABLE IF NOT EXISTS blacklist (
 CREATE INDEX IF NOT EXISTS idx_blacklist_username ON blacklist(username);
 `);
 
+// Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng", hiện tên cho mọi người.
+db.exec(`
+CREATE TABLE IF NOT EXISTS proxies (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,          -- tài khoản/địa chỉ proxy
+  note       TEXT DEFAULT '',
+  user_id    TEXT DEFAULT '',        -- người đang sử dụng
+  user_name  TEXT DEFAULT '',
+  used_at     INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+`);
+
 // Audit log — every cell edit on orders & purchases (who, field, old→new, when).
 db.exec(`
 CREATE TABLE IF NOT EXISTS audit_log (

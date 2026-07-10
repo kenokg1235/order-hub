@@ -1387,6 +1387,46 @@ app.delete("/api/blacklist/:id", requireAuth, adminOrLister, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng" (mọi thành viên đổi được) ──
+function requireOrderStaff(req, res, next) {
+  if (!["Admin", "Leader", "Member"].includes(req.user.role)) return res.status(403).json({ error: "Chỉ dành cho nhân viên xử lý đơn" });
+  next();
+}
+const proxyOut = (p) => ({ id: p.id, name: p.name, note: p.note || "", userId: p.user_id || "", userName: p.user_name || "", usedAt: p.used_at || 0, createdAt: p.created_at });
+app.get("/api/proxies", requireAuth, requireOrderStaff, (req, res) => {
+  res.json({ proxies: db.prepare("SELECT * FROM proxies ORDER BY created_at").all().map(proxyOut) });
+});
+app.post("/api/proxies", requireAdmin, (req, res) => {
+  const name = String(req.body.name || "").trim();
+  if (!name) return res.status(400).json({ error: "Thiếu tên/tài khoản proxy" });
+  const id = newId("px");
+  db.prepare("INSERT INTO proxies (id,name,note,created_at) VALUES (?,?,?,?)").run(id, name, String(req.body.note || ""), Date.now());
+  res.json({ proxy: proxyOut(db.prepare("SELECT * FROM proxies WHERE id=?").get(id)) });
+});
+app.put("/api/proxies/:id", requireAdmin, (req, res) => {   // Admin sửa tên/ghi chú
+  const p = db.prepare("SELECT * FROM proxies WHERE id=?").get(req.params.id);
+  if (!p) return res.status(404).json({ error: "Không tìm thấy proxy" });
+  const b = req.body || {};
+  const sets = [], vals = [];
+  if ("name" in b) { const n = String(b.name || "").trim(); if (!n) return res.status(400).json({ error: "Tên trống" }); sets.push("name=?"); vals.push(n); }
+  if ("note" in b) { sets.push("note=?"); vals.push(String(b.note || "")); }
+  if (sets.length) db.prepare(`UPDATE proxies SET ${sets.join(",")} WHERE id=?`).run(...vals, p.id);
+  res.json({ proxy: proxyOut(db.prepare("SELECT * FROM proxies WHERE id=?").get(p.id)) });
+});
+app.delete("/api/proxies/:id", requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM proxies WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+// Đặt/nhả người đang dùng — bất kỳ nhân viên xử lý nào cũng đổi được.
+app.post("/api/proxies/:id/use", requireAuth, requireOrderStaff, (req, res) => {
+  const p = db.prepare("SELECT * FROM proxies WHERE id=?").get(req.params.id);
+  if (!p) return res.status(404).json({ error: "Không tìm thấy proxy" });
+  const release = !!(req.body && req.body.release);
+  db.prepare("UPDATE proxies SET user_id=?, user_name=?, used_at=? WHERE id=?")
+    .run(release ? "" : req.user.id, release ? "" : req.user.name, release ? 0 : Date.now(), p.id);
+  res.json({ proxy: proxyOut(db.prepare("SELECT * FROM proxies WHERE id=?").get(p.id)) });
+});
+
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
 // profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.

@@ -16,6 +16,7 @@ import Stores from "./pages/Stores.jsx";
 import Payout from "./pages/Payout.jsx";
 import Expenses from "./pages/Expenses.jsx";
 import Blacklist from "./pages/Blacklist.jsx";
+import Proxy from "./pages/Proxy.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import Tracking from "./pages/Tracking.jsx";
 import Placeholder from "./pages/Placeholder.jsx";
@@ -29,6 +30,7 @@ const NAV = [
     { id: "team",    icon: "📄", label: "Sheet Con",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "tracking",    icon: "🚚", label: "Tracking",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "leaderboard", icon: "🏆", label: "Leaderboard", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
+    { id: "proxy",   icon: "🌐", label: "Proxy",         access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "FINANCE", items: [
     { id: "payout",  icon: "💰", label: "Payout",       access: (u) => u.role === "Admin" || u.role === "Lister" },
@@ -135,6 +137,7 @@ export default function App() {
         {page === "payout"   && <Payout currentUser={user} refreshUser={refreshUser} />}
         {page === "expenses" && <Expenses teams={teams} />}
         {page === "blacklist" && <Blacklist />}
+        {page === "proxy"    && <Proxy currentUser={user} />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}
