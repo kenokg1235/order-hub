@@ -210,12 +210,14 @@ CREATE TABLE IF NOT EXISTS proxies (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,          -- tài khoản/địa chỉ proxy
   note       TEXT DEFAULT '',
+  admin_note TEXT DEFAULT '',        -- note nhân viên gửi cho Admin (mọi người sửa được)
   user_id    TEXT DEFAULT '',        -- người đang sử dụng
   user_name  TEXT DEFAULT '',
   used_at     INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 `);
+ensureColumn("proxies", "admin_note", "TEXT DEFAULT ''");   // cho DB đã tạo bảng trước đó
 
 // Audit log — every cell edit on orders & purchases (who, field, old→new, when).
 db.exec(`

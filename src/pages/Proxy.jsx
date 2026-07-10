@@ -24,7 +24,7 @@ export default function Proxy({ currentUser }) {
   const fmtTime = (ts) => { if (!ts) return ""; const d = new Date(ts), p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return items.filter((p) => !s || [p.name, p.note, p.userName].some((v) => String(v || "").toLowerCase().includes(s)));
+    return items.filter((p) => !s || [p.name, p.note, p.adminNote, p.userName].some((v) => String(v || "").toLowerCase().includes(s)));
   }, [items, q]);
 
   const inUse = items.filter((p) => p.userId).length;
@@ -38,6 +38,10 @@ export default function Proxy({ currentUser }) {
   async function saveField(p, field, value) {
     if (String(value) === String(p[field] ?? "")) return;
     try { replace((await api.put(`/api/proxies/${p.id}`, { [field]: value })).proxy); } catch (e) { setErr(e.message); }
+  }
+  async function saveAdminNote(p, value) {
+    if (String(value) === String(p.adminNote ?? "")) return;
+    try { replace((await api.post(`/api/proxies/${p.id}/admin-note`, { adminNote: value })).proxy); } catch (e) { setErr(e.message); }
   }
   async function claim(p) { try { replace((await api.post(`/api/proxies/${p.id}/use`, {})).proxy); } catch (e) { setErr(e.message); } }
   async function release(p) { try { replace((await api.post(`/api/proxies/${p.id}/use`, { release: true })).proxy); } catch (e) { setErr(e.message); } }
@@ -84,7 +88,7 @@ export default function Proxy({ currentUser }) {
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 760 }}>
           <thead><tr>
-            <th>Proxy</th><th>Ghi chú</th><th>Người sử dụng</th><th></th>{isAdmin && <th></th>}
+            <th>Proxy</th><th>Ghi chú</th><th title="Nhân viên ghi để báo Admin (mọi người sửa được)">📝 Note cho Admin</th><th>Người sử dụng</th><th></th>{isAdmin && <th></th>}
           </tr></thead>
           <tbody>
             {filtered.map((p) => {
@@ -102,6 +106,10 @@ export default function Proxy({ currentUser }) {
                       ? <input className="input" style={{ padding: "3px 6px", width: 220 }} defaultValue={p.note} placeholder="—"
                           onBlur={(e) => saveField(p, "note", e.target.value)} />
                       : (p.note || <span className="muted">—</span>)}
+                  </td>
+                  <td>
+                    <input className="input" style={{ padding: "3px 6px", width: 200 }} defaultValue={p.adminNote} placeholder="báo Admin (vd: proxy lỗi…)"
+                      onBlur={(e) => saveAdminNote(p, e.target.value)} />
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {p.userName
@@ -122,7 +130,7 @@ export default function Proxy({ currentUser }) {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 5 : 4} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <tr><td colSpan={isAdmin ? 6 : 5} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 {items.length ? "Không khớp tìm kiếm." : (isAdmin ? "Chưa có proxy nào. Thêm ở thanh trên." : "Chưa có proxy nào — Admin thêm.")}
               </td></tr>
             )}
