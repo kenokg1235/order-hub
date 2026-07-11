@@ -793,6 +793,17 @@ app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
 
+// Balance thẻ: khi hàng đạt trạng thái "Đã xử lý" → ghi amount vào sổ (card_ledger).
+// Sổ này KHÔNG bị trừ khi xóa hàng / xóa thẻ (không có cascade, delete purchase không đụng sổ).
+const PROCESSED_STATUS = "Đã xử lý";
+function creditCardLedger(p) {
+  if (!p || !p.card) return;
+  if (String(p.process_status || "").trim() !== PROCESSED_STATUS) return;
+  db.prepare(`INSERT INTO card_ledger (purchase_id,card,amount,created_at) VALUES (?,?,?,?)
+              ON CONFLICT(purchase_id) DO UPDATE SET card=excluded.card, amount=excluded.amount`)
+    .run(p.id, p.card, Number(p.amount) || 0, Date.now());
+}
+
 // Purchases (one per card used on the order).
 app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
@@ -804,6 +815,7 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.name || "", b.orderNumber || "", b.email || "",
          b.tracking || "", b.phone || "", b.zip || "", b.processStatus || "", Date.now());
+  creditCardLedger(db.prepare("SELECT * FROM purchases WHERE id=?").get(id));
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(id)) });
 });
 
@@ -829,6 +841,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   // stamp Time when the Order# value actually changes
   if ("orderNumber" in b && String(b.orderNumber) !== String(p.order_number || "")) { sets.push("order_time=?"); vals.push(Date.now()); }
   if (sets.length) db.prepare(`UPDATE purchases SET ${sets.join(",")} WHERE id=?`).run(...vals, p.id);
+  creditCardLedger(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id));   // ghi Balance nếu đã "Đã xử lý"
   // Notify the store's Lister(s) when an order gets a tracking (process status → "Có Tracking").
   if ("processStatus" in b && b.processStatus === "Có Tracking" && p.process_status !== "Có Tracking") {
     const listers = listersForStore(o.store);
@@ -1025,9 +1038,9 @@ function cardStats(cardValue) {
     SELECT p.amount AS amount, o.id AS oid, o.master_status AS master, o.profit AS profit
     FROM purchases p JOIN orders o ON o.id = p.order_id WHERE p.card = ?`).all(cardValue);
   const byOrder = {};
-  let balance = 0;   // tổng số tiền đã nhập khi dùng thẻ này
+  // Balance = tổng đã ghi sổ khi hàng "Đã xử lý" (không bị trừ khi xóa hàng/xóa thẻ).
+  const balance = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM card_ledger WHERE card=?").get(cardValue).s;
   for (const p of purs) {
-    balance += p.amount || 0;
     if (!byOrder[p.oid]) byOrder[p.oid] = { oid: p.oid, master: p.master, profit: p.profit || 0, mine: 0 };
     byOrder[p.oid].mine += p.amount || 0;
   }

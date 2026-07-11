@@ -219,6 +219,20 @@ CREATE TABLE IF NOT EXISTS proxies (
 `);
 ensureColumn("proxies", "admin_note", "TEXT DEFAULT ''");   // cho DB đã tạo bảng trước đó
 
+// Sổ ghi Balance thẻ — cộng amount khi hàng đạt trạng thái "Đã xử lý"; KHÔNG bị trừ khi xóa hàng/xóa thẻ.
+db.exec(`
+CREATE TABLE IF NOT EXISTS card_ledger (
+  purchase_id TEXT PRIMARY KEY,   -- mỗi hàng ghi 1 dòng khi "Đã xử lý"
+  card        TEXT NOT NULL,
+  amount      REAL DEFAULT 0,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_card_ledger_card ON card_ledger(card);
+`);
+// Backfill: các hàng hiện đang "Đã xử lý" → ghi vào sổ (giữ balance đang có).
+db.exec(`INSERT OR IGNORE INTO card_ledger (purchase_id,card,amount,created_at)
+  SELECT id, card, amount, created_at FROM purchases WHERE card!='' AND trim(process_status)='Đã xử lý'`);
+
 // Audit log — every cell edit on orders & purchases (who, field, old→new, when).
 db.exec(`
 CREATE TABLE IF NOT EXISTS audit_log (
