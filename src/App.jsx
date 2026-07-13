@@ -55,6 +55,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("team");
   const [teams, setTeams] = useState([]);
+  const [navOpen, setNavOpen] = useState(false);   // drawer trên điện thoại
 
   const [proxyHidden, setProxyHidden] = useState([]);
   async function loadTeams() {
@@ -100,9 +101,17 @@ export default function App() {
     .filter((g) => g.items.length);
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      {/* Sidebar */}
-      <aside style={{ width: 220, background: "var(--panel)", borderRight: "1px solid var(--border)",
+    <div className="app-shell" style={{ display: "flex", height: "100vh" }}>
+      {/* Thanh trên (chỉ hiện trên điện thoại) */}
+      <div className="app-topbar">
+        <button className="burger" onClick={() => setNavOpen(true)} aria-label="Menu">☰</button>
+        <span style={{ fontWeight: 800, color: "var(--primary)", fontSize: 18 }}>Order Hub</span>
+        <div style={{ flex: 1 }} />
+        <Notifications />
+      </div>
+      {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
+      {/* Sidebar / Drawer */}
+      <aside className={"app-sidebar" + (navOpen ? " open" : "")} style={{ width: 220, background: "var(--panel)", borderRight: "1px solid var(--border)",
         display: "flex", flexDirection: "column", flexShrink: 0 }}>
         <div style={{ padding: "18px 18px 10px", fontSize: 20, fontWeight: 800, color: "var(--primary)" }}>
           Order Hub
@@ -113,7 +122,7 @@ export default function App() {
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
                 color: "var(--muted)", padding: "4px 8px" }}>{g.group}</div>
               {g.items.map((it) => (
-                <div key={it.id} onClick={() => setPage(it.id)}
+                <div key={it.id} onClick={() => { setPage(it.id); setNavOpen(false); }}
                   style={{
                     display: "flex", alignItems: "center", gap: 9, padding: "8px 10px",
                     borderRadius: 8, cursor: "pointer", fontWeight: page === it.id ? 600 : 500,
@@ -136,7 +145,7 @@ export default function App() {
       </aside>
 
       {/* Content */}
-      <main style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
+      <main className="app-main" style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
         {page === "users"    && <Users teams={teams} />}
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}
