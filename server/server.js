@@ -372,6 +372,10 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
     logChange(req.user, "order", o.id, o.id, "team", o.team, b.team || "");
     sets.push("team=?"); vals.push(b.team || "");
   }
+  // Mốc chốt đơn (cho Leaderboard theo kỳ): khi lên "Đã Up"/"Đã Cancel".
+  if ("masterStatus" in b && b.masterStatus !== o.master_status && ["Đã Up", "Đã Cancel"].includes(b.masterStatus)) {
+    sets.push("finalized_at=?"); vals.push(Date.now());
+  }
   if (sets.length) {
     sets.push("updated_at=?"); vals.push(Date.now());
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
@@ -1470,12 +1474,13 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const usePeriod = !!(from || to);
   const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
   const month = usePeriod ? null : (req.query.month || getActiveMonth());
-  const scopeM = (arr) => usePeriod ? arr.filter((o) => inRange(o.created_at)) : (month && month !== "all") ? arr.filter((o) => o.period === month) : arr;
+  // Theo kỳ: lọc theo THỜI ĐIỂM ĐƠN LÊN Đã Up/Đã Cancel (finalized_at), không phải ngày tạo.
+  const scopeM = (arr) => usePeriod ? arr.filter((o) => inRange(o.finalized_at || o.created_at)) : (month && month !== "all") ? arr.filter((o) => o.period === month) : arr;
 
-  const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
+  const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
   const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
-  const cancels = scopeM(db.prepare("SELECT claimed_by, claimed_name, cancel_reason, period, created_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
+  const cancels = scopeM(db.prepare("SELECT claimed_by, claimed_name, cancel_reason, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
 
   const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0 });
   const byUser = {};
