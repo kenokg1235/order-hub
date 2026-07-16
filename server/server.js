@@ -212,6 +212,9 @@ function orderOut(o) {
   };
 }
 
+// Chuẩn hóa địa chỉ để đối chiếu trùng (gộp khoảng trắng, bỏ hoa/thường).
+const addrNorm = (a) => String(a || "").replace(/\s+/g, " ").trim().toLowerCase();
+
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
 function itemNoOf(o) {
   try { const it = JSON.parse(o.raw || "{}").itemNumber; if (it) return String(it); } catch {}
@@ -251,7 +254,12 @@ app.get("/api/orders", requireAuth, (req, res) => {
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
   const purMap = purchasesByOrders(rows.map((o) => o.id));
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)) })) });
+  // Đếm địa chỉ trên TOÀN BỘ đơn (mọi tháng) để cảnh báo trùng cả với đơn cũ.
+  const addrCount = {};
+  for (const r of db.prepare("SELECT address FROM orders WHERE address!=''").all()) {
+    const k = addrNorm(r.address); if (k) addrCount[k] = (addrCount[k] || 0) + 1;
+  }
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0 })) });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.

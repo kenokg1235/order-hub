@@ -133,13 +133,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
 
   const teamName = (id) => teams.find((t) => t.id === id)?.name || "";
 
-  // Count orders per (normalised) address → highlight when 2+ orders share one.
-  const addrNorm = (a) => String(a || "").replace(/\s+/g, " ").trim().toLowerCase();
-  const addressCounts = useMemo(() => {
-    const m = {};
-    for (const o of orders) { const k = addrNorm(o.address); if (k) m[k] = (m[k] || 0) + 1; }
-    return m;
-  }, [orders]);
+  // Cảnh báo trùng địa chỉ: dùng o.addrCount (server đếm trên TOÀN BỘ đơn, mọi tháng).
 
   const setF = (key, val) => setCf((p) => ({ ...p, [key]: val }));
   const clearFilters = () => { setCf({}); setQ(""); };
@@ -427,7 +421,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                 <td style={{ fontWeight: 600 }}>{o.store}</td>
                 <td title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
                 {(() => {
-                  const cnt = addressCounts[addrNorm(o.address)] || 0;
+                  const cnt = o.addrCount || 0;   // đếm trên TOÀN BỘ đơn (mọi tháng, kể cả đơn cũ)
                   const dup = cnt > 1;
                   const lines = String(o.address || "").split("\n").filter(Boolean);
                   return (
@@ -438,7 +432,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                         <div style={{ fontWeight: 800 }}>{lines[0]}</div>
                         {lines.slice(1).map((l, i) => <div key={i} style={{ fontWeight: 600, color: "var(--text)" }}>{l}</div>)}
                       </>) : <span className="muted">—</span>}
-                      {dup && <div style={{ marginTop: 4 }}><span className="badge amber" style={{ fontSize: 10 }}>⚠ {cnt} đơn chung địa chỉ</span></div>}
+                      {dup && <div style={{ marginTop: 4 }}><span className="badge amber" style={{ fontSize: 10 }} title="Tính trên mọi tháng, kể cả đơn cũ">⚠ {cnt} đơn chung địa chỉ (mọi tháng)</span></div>}
                     </td>
                   );
                 })()}
