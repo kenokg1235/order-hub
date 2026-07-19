@@ -365,9 +365,15 @@ export default function TeamSheet({ currentUser, teams }) {
                     </td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
                     <td rowSpan={span} title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
-                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                    <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)",
+                      background: (o.addrCount || 0) > 1 ? "#fff3cd" : undefined, outline: (o.addrCount || 0) > 1 ? "1px solid #e0a800" : undefined }}>
                       {String(o.address || "").split("\n").filter(Boolean).map((l, i) =>
                         <div key={i} style={{ fontWeight: i === 0 ? 800 : 600, color: "var(--text)" }}>{l}</div>)}
+                      {(o.addrCount || 0) > 1 && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="badge amber" style={{ fontSize: 10 }} title="Tính trên mọi tháng, kể cả đơn cũ">⚠ {o.addrCount} đơn chung địa chỉ (mọi tháng)</span>
+                        </div>
+                      )}
                     </td>
                     <td rowSpan={span}>{o.image
                       ? <a href={o.image} target="_blank" rel="noreferrer"><img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)" }} /></a>
