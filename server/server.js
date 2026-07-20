@@ -1528,7 +1528,10 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
     };
   });
   rows.sort((a, b) => b.orders - a.orders);
-  res.json({ leaderboard: rows });
+  // Tổng để đối chiếu: Leaderboard chỉ tính đơn CÓ người nhận → đơn Đã Up chưa ai nhận không vào bảng.
+  const allUp = scopeM(db.prepare("SELECT claimed_by, period, created_at, finalized_at FROM orders WHERE master_status='Đã Up'").all());
+  const totals = { up: allUp.length, unclaimedUp: allUp.filter((o) => !o.claimed_by).length };
+  res.json({ leaderboard: rows, totals });
 });
 
 // ── Tracking (AfterShip) ──────────────────────────────────────────────────────

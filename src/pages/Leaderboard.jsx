@@ -9,12 +9,15 @@ export default function Leaderboard({ currentUser }) {
   const [openStart, setOpenStart] = useState("");
   const [closedPeriods, setClosedPeriods] = useState([]);
   const [periodSel, setPeriodSel] = useState("current");   // "all" | "current" | "c<idx>"
+  const [totals, setTotals] = useState(null);
   const [err, setErr] = useState("");
 
   const fmtP = (d) => { if (!d) return "đầu"; const [y, m, dd] = String(d).split("-"); return (dd && m && y) ? `${dd}/${m}/${y}` : d; };
   async function loadRows(from, to) {
-    try { setRows((await api.get(`/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}`)).leaderboard); }
-    catch (e) { setErr(e.message); }
+    try {
+      const r = await api.get(`/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}`);
+      setRows(r.leaderboard); setTotals(r.totals || null);
+    } catch (e) { setErr(e.message); }
   }
   async function loadPeriods() {
     try { const r = await api.get("/api/expense-periods"); setOpenStart(r.openStart || ""); setClosedPeriods(r.closed || []); }
@@ -54,6 +57,17 @@ export default function Leaderboard({ currentUser }) {
       <div className="muted" style={{ marginBottom: 14 }}>
         Theo <b>từng kỳ</b> (khoảng ngày, dùng chung với Thống kê chi phí — theo <b>ngày tạo</b>): Số đơn & Profit tính đơn <b>Đã Up</b>; <b>Số thẻ</b> = thẻ NV được cấp ở <b>Mua thẻ</b> có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, tính theo người yêu cầu (không phụ thuộc gán vào Sheet Con). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí.
       </div>
+      {totals && (
+        <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <Badge color="green">✅ Tổng đơn Đã Up trong kỳ: {totals.up}</Badge>
+          <Badge color="blue">Đã tính cho NV: {totals.up - totals.unclaimedUp}</Badge>
+          {totals.unclaimedUp > 0 && (
+            <Badge color="amber" title="Đơn Đã Up nhưng không có người nhận → không tính cho ai trong bảng">
+              ⚠ {totals.unclaimedUp} đơn chưa có người nhận (không vào bảng)
+            </Badge>
+          )}
+        </div>
+      )}
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>

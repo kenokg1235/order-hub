@@ -255,6 +255,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_order ON audit_log(order_id);
 `);
 ensureColumn("audit_log", "undone", "INTEGER DEFAULT 0");   // cho DB cũ
 
+// Sửa mốc chốt đơn (finalized_at) cho CHÍNH XÁC: lấy thời điểm đổi masterStatus sang
+// trạng thái hiện tại từ audit_log. Backfill trước dùng updated_at nên sai khi đơn bị
+// sửa sau lúc chốt → đơn của kỳ trước bị đếm nhầm sang kỳ sau trên Leaderboard.
+if (!db.prepare("SELECT 1 FROM settings WHERE key='finalizedAtFixV2'").get()) {
+  db.exec(`UPDATE orders SET finalized_at = COALESCE((
+      SELECT MAX(a.created_at) FROM audit_log a
+      WHERE a.order_id = orders.id AND a.entity='order' AND a.field='masterStatus'
+        AND a.new_value = orders.master_status
+    ), finalized_at)
+    WHERE master_status IN ('Đã Up','Đã Cancel')`);
+  db.prepare("INSERT INTO settings (key,value) VALUES (?,?)").run("finalizedAtFixV2", "true");
+}
+
 // Xin đơn — thành viên xin nhận đơn của thành viên khác; chủ đơn (hoặc Admin/Leader) duyệt.
 db.exec(`
 CREATE TABLE IF NOT EXISTS claim_requests (
