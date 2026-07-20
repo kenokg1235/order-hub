@@ -10,6 +10,7 @@ export default function Leaderboard({ currentUser }) {
   const [closedPeriods, setClosedPeriods] = useState([]);
   const [periodSel, setPeriodSel] = useState("current");   // "all" | "current" | "c<idx>"
   const [totals, setTotals] = useState(null);
+  const [detail, setDetail] = useState(null);   // { name, upList } — đối chiếu đơn đã tính
   const [err, setErr] = useState("");
 
   const fmtP = (d) => { if (!d) return "đầu"; const [y, m, dd] = String(d).split("-"); return (dd && m && y) ? `${dd}/${m}/${y}` : d; };
@@ -91,7 +92,11 @@ export default function Leaderboard({ currentUser }) {
                 </td>
                 {cols.map((c) => (
                   <td key={c.k} style={{ fontWeight: c.k === sortKey ? 700 : 400,
-                    color: c.k === "failRate" && r.failRate > 0 ? "var(--red)" : undefined }}>
+                    color: c.k === "failRate" && r.failRate > 0 ? "var(--red)" : undefined,
+                    cursor: c.k === "orders" ? "pointer" : undefined,
+                    textDecoration: c.k === "orders" && r.orders > 0 ? "underline dotted" : undefined }}
+                    title={c.k === "orders" ? "Bấm để xem danh sách đơn đã tính trong kỳ" : undefined}
+                    onClick={c.k === "orders" ? () => setDetail({ name: r.name, upList: r.upList || [] }) : undefined}>
                     {c.money ? money(r[c.k]) : c.pct ? `${r[c.k] || 0}%` : r[c.k]}
                   </td>
                 ))}
@@ -105,6 +110,36 @@ export default function Leaderboard({ currentUser }) {
           </tbody>
         </table>
       </div>
+
+      {detail && (
+        <div className="card" style={{ marginTop: 14, padding: 0, overflow: "hidden" }}>
+          <div className="row" style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+            <b>Đơn Đã Up đã tính trong kỳ — {detail.name}</b>
+            <Badge color="blue">{detail.upList.length} đơn</Badge>
+            <div className="spacer" />
+            <button className="btn sm" onClick={() => setDetail(null)}>✕</button>
+          </div>
+          <div style={{ maxHeight: 340, overflow: "auto" }}>
+            <table className="tbl" style={{ minWidth: 480 }}>
+              <thead><tr><th>ID Order</th><th>Ngày chốt (Đã Up)</th><th>Tháng lịch của đơn</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+              <tbody>
+                {detail.upList.map((o) => (
+                  <tr key={o.id}>
+                    <td style={{ fontWeight: 600 }}>{o.id}</td>
+                    <td>{o.at ? new Date(o.at).toLocaleString("vi") : <span className="muted">—</span>}</td>
+                    <td>{o.period || <span className="muted">—</span>}</td>
+                    <td style={{ textAlign: "right" }}>{money(o.profit)}</td>
+                  </tr>
+                ))}
+                {detail.upList.length === 0 && <tr><td colSpan={4} className="muted" style={{ textAlign: "center", padding: 18 }}>Không có đơn nào.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="muted" style={{ fontSize: 12, padding: "8px 14px" }}>
+            💡 So với Sheet Tổng: Sheet Tổng lọc theo <b>tháng lịch</b> của đơn, còn đây tính theo <b>ngày chốt</b> nằm trong kỳ. Đơn có "Tháng lịch" khác tháng bạn đang xem chính là phần chênh lệch.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

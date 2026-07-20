@@ -1495,11 +1495,13 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
   const cancels = scopeM(db.prepare("SELECT claimed_by, claimed_name, cancel_reason, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
 
-  const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0 });
+  const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0, upList: [] });
   const byUser = {};
   for (const o of orders) {
     const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
     u.orders++; u.profit += o.profit || 0;
+    // để đối chiếu: đơn nào được tính, chốt lúc nào, thuộc tháng lịch nào
+    u.upList.push({ id: o.id, at: o.finalized_at || o.created_at, period: o.period || "", profit: o.profit || 0 });
   }
   for (const o of cancels) {
     const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
@@ -1525,6 +1527,7 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
       profitPerCard: cards ? round(u.profit / cards) : 0,
       failCancels: u.failCancels, handled,
       failRate: handled ? round((100 * u.failCancels) / handled) : 0,
+      upList: u.upList.sort((a, b) => (b.at || 0) - (a.at || 0)),
     };
   });
   rows.sort((a, b) => b.orders - a.orders);
