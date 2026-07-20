@@ -1484,11 +1484,13 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
   // KỲ: nếu có from/to → lọc theo NGÀY TẠO trong khoảng (giống Thống kê chi phí). Không thì theo tháng lịch (period).
   const from = String(req.query.from || "").trim(), to = String(req.query.to || "").trim();
-  const usePeriod = !!(from || to);
+  const monthQ = String(req.query.month || "").trim();
+  const isAll = monthQ === "all";
   const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
-  const month = usePeriod ? null : (req.query.month || getActiveMonth());
-  // Theo kỳ: lọc theo THỜI ĐIỂM ĐƠN LÊN Đã Up/Đã Cancel (finalized_at), không phải ngày tạo.
-  const scopeM = (arr) => usePeriod ? arr.filter((o) => inRange(o.finalized_at || o.created_at)) : (month && month !== "all") ? arr.filter((o) => o.period === month) : arr;
+  // ĐƠN (Đã Up / Đã Cancel): tính theo THÁNG LỊCH của đơn → khớp đúng bảng ở Sheet Tổng.
+  // Tháng suy từ ngày bắt đầu kỳ (vd kỳ 06/07/2026 → nay ⇒ tháng 2026-07).
+  const orderMonth = isAll ? "" : (from ? from.slice(0, 7) : (monthQ || getActiveMonth()));
+  const scopeM = (arr) => orderMonth ? arr.filter((o) => o.period === orderMonth) : arr;
 
   const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
@@ -1512,8 +1514,11 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   // tính theo THÁNG CẤP (card_requests.period — cuốn theo chốt tháng đơn). Không phụ thuộc gán vào Sheet Con.
   for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status, period, created_at FROM card_requests WHERE card_value!=''").all()) {
     if (!countSet.has(String(c.status || "").toLowerCase())) continue;
-    if (usePeriod) { if (!inRange(c.created_at)) continue; }
-    else { const cm = c.period || ymOf(c.created_at); if (month !== "all" && cm !== month) continue; }
+    // THẺ: tính theo KHOẢNG NGÀY của kỳ (kể từ ngày chốt kỳ), không theo tháng lịch.
+    if (!isAll) {
+      if (from || to) { if (!inRange(c.created_at)) continue; }
+      else { const cm = c.period || ymOf(c.created_at); if (cm !== orderMonth) continue; }
+    }
     const u = byUser[c.requester_id] || (byUser[c.requester_id] = mkUser(c.requester_id, c.requester_name));
     u.cardSet.add(c.card_value);
   }

@@ -14,9 +14,10 @@ export default function Leaderboard({ currentUser }) {
   const [err, setErr] = useState("");
 
   const fmtP = (d) => { if (!d) return "đầu"; const [y, m, dd] = String(d).split("-"); return (dd && m && y) ? `${dd}/${m}/${y}` : d; };
-  async function loadRows(from, to) {
+  async function loadRows(from, to, all) {
     try {
-      const r = await api.get(`/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}`);
+      const url = `/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}${all ? "&month=all" : ""}`;
+      const r = await api.get(url);
       setRows(r.leaderboard); setTotals(r.totals || null);
     } catch (e) { setErr(e.message); }
   }
@@ -26,7 +27,7 @@ export default function Leaderboard({ currentUser }) {
   }
   useEffect(() => { loadPeriods(); }, []);
   useEffect(() => {
-    if (periodSel === "all") loadRows("", "");
+    if (periodSel === "all") loadRows("", "", true);
     else if (periodSel === "current") loadRows(openStart || "", "");
     else { const p = closedPeriods[Number(String(periodSel).slice(1))]; if (p) loadRows(p.from || "", p.to || ""); }
   }, [periodSel, openStart, closedPeriods]);
@@ -56,7 +57,7 @@ export default function Leaderboard({ currentUser }) {
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Theo <b>từng kỳ</b> (khoảng ngày, dùng chung với Thống kê chi phí — theo <b>ngày tạo</b>): Số đơn & Profit tính đơn <b>Đã Up</b>; <b>Số thẻ</b> = thẻ NV được cấp ở <b>Mua thẻ</b> có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, tính theo người yêu cầu (không phụ thuộc gán vào Sheet Con). <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí.
+        Theo <b>từng kỳ</b> (dùng chung kỳ với Thống kê chi phí). <b>Số đơn (Đã Up) &amp; Profit</b> tính theo <b>tháng lịch của đơn</b> — khớp đúng bảng ở <b>Sheet Tổng</b>. <b>Số thẻ</b> tính theo <b>khoảng ngày của kỳ</b> (kể từ ngày chốt kỳ), là thẻ NV được cấp ở Mua thẻ có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, theo người yêu cầu. <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí; bấm số ở cột Số đơn để xem danh sách đơn đã tính.
       </div>
       {totals && (
         <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
