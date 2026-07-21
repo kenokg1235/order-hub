@@ -34,6 +34,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const tableRef = useRef(null);
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(0);     // remaining auto-refreshes for images
+  const [imgQ, setImgQ] = useState(null);        // tiến độ hàng đợi lấy ảnh
   const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
   const { cellProps, Bar, viewCell } = useFormulaBar();
 
@@ -115,6 +116,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
           return f && f.image && !o.image ? { ...o, image: f.image } : o;
         }));
       } catch {}
+      try { setImgQ(await api.get("/api/image-queue")); } catch {}
       setPolling((p) => p - 1);
     }, 4000);
     return () => clearTimeout(t);
@@ -125,7 +127,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
   }
   async function fetchOneImage(id) {
     try {
-      const { order } = await api.post(`/api/orders/${id}/fetch-image`, {});
+      const r = await api.post(`/api/orders/${id}/fetch-image`, {});
+      const order = r.order;
+      if (r.error) setErr(r.error); else setErr("");
       setOrders((prev) => prev.map((o) => (o.id === id ? order : o)));
     } catch (e) { setErr(e.message); }
   }
@@ -318,7 +322,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
         {activeFilters > 0 && <Button onClick={clearFilters}>✕ Xóa lọc ({activeFilters})</Button>}
         {missingImages > 0 && (
           <Button onClick={fetchAllImages} title="Lấy ảnh bìa eBay cho các đơn còn thiếu">
-            🖼️ Lấy ảnh ({missingImages}){polling > 0 ? " …" : ""}
+            🖼️ Lấy ảnh ({missingImages})
+            {polling > 0 && (imgQ && (imgQ.pending + imgQ.running) > 0 ? ` … còn ${imgQ.pending + imgQ.running}` : " …")}
           </Button>
         )}
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
@@ -335,6 +340,11 @@ export default function Master({ currentUser, teams, refreshUser }) {
         )}
       </div>
 
+      {imgQ && imgQ.blocked && (
+        <div className="card" style={{ padding: "8px 12px", marginBottom: 10, borderColor: "var(--red)", background: "var(--red-bg)", color: "var(--red)" }}>
+          🚫 <b>eBay đang chặn lấy ảnh</b> (trang "Pardon Our Interruption"). Đã tạm dừng hàng đợi ~{Math.ceil((imgQ.blockedSeconds || 0) / 60)} phút để tránh bị chặn nặng hơn — thử lại sau, hoặc dán link ảnh thủ công vào ô Ảnh.
+        </div>
+      )}
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       {isAdmin && sel.size > 0 && (

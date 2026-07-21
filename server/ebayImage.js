@@ -22,15 +22,31 @@ export function extractEbayImage(html) {
   return url;
 }
 
-export async function fetchEbayImage(itemNumber) {
-  if (!itemNumber) return "";
-  try {
-    const r = await fetch(`https://www.ebay.com/itm/${itemNumber}`, {
-      headers: { "User-Agent": UA, "Accept": "text/html" },
-    });
-    if (!r.ok) return "";
-    return extractEbayImage(await r.text());
-  } catch {
-    return "";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// eBay trả trang chặn bot (DataDome) thay vì trang sản phẩm → nhận diện để dừng sớm.
+const BLOCK_RE = /Pardon Our Interruption|datadome|captcha-delivery/i;
+
+// Trả { url, blocked }. Có TIMEOUT (không để 1 request treo làm nghẽn hàng đợi) + 1 lần thử lại.
+export async function fetchEbayImage(itemNumber, { timeoutMs = 12000, retries = 1 } = {}) {
+  if (!itemNumber) return { url: "", blocked: false };
+  let blocked = false;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(`https://www.ebay.com/itm/${itemNumber}`, {
+        headers: { "User-Agent": UA, "Accept": "text/html" },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (r.status === 403 || r.status === 429) blocked = true;
+      else if (r.ok) {
+        const html = await r.text();
+        if (BLOCK_RE.test(html)) blocked = true;
+        else {
+          const img = extractEbayImage(html);
+          if (img) return { url: img, blocked: false };
+        }
+      }
+    } catch (e) { if (e && e.name === "TimeoutError") blocked = true; }
+    if (attempt < retries) await sleep(700);
   }
+  return { url: "", blocked };
 }

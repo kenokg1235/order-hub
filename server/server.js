@@ -230,25 +230,49 @@ function itemNoOf(o) {
   return m ? m[1] : "";
 }
 
-// Background image fetch queue — throttled to avoid eBay rate-limiting.
+// Hàng đợi lấy ảnh — chạy SONG SONG vài luồng (nhanh hơn nhiều so với tuần tự),
+// vẫn giữ delay nhẹ mỗi luồng để tránh bị eBay chặn.
 const imgQueue = [];
-let imgRunning = false;
+const IMG_CONCURRENCY = 3;
+let imgWorkers = 0;
+const imgStats = { ok: 0, fail: 0 };
+let imgBlockedUntil = 0;      // eBay đang chặn → tạm nghỉ, không đốt thời gian vô ích
+let imgConsecBlocked = 0;
+const IMG_BLOCK_COOLDOWN = 10 * 60 * 1000;   // 10 phút
 function enqueueImage(orderId, itemNumber) {
-  if (!itemNumber) return;
+  if (!itemNumber || Date.now() < imgBlockedUntil) return;
   imgQueue.push({ orderId, itemNumber });
-  runImgQueue();
+  while (imgWorkers < IMG_CONCURRENCY && imgQueue.length > imgWorkers) runImgWorker();
 }
-async function runImgQueue() {
-  if (imgRunning) return;
-  imgRunning = true;
-  while (imgQueue.length) {
-    const { orderId, itemNumber } = imgQueue.shift();
-    const url = await fetchEbayImage(itemNumber);
-    if (url) db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), orderId);
-    await new Promise((r) => setTimeout(r, 700));
-  }
-  imgRunning = false;
+async function runImgWorker() {
+  imgWorkers++;
+  try {
+    while (imgQueue.length) {
+      if (Date.now() < imgBlockedUntil) { imgQueue.length = 0; break; }
+      const { orderId, itemNumber } = imgQueue.shift();
+      const { url, blocked } = await fetchEbayImage(itemNumber);
+      if (url) {
+        db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), orderId);
+        imgStats.ok++; imgConsecBlocked = 0;
+      } else {
+        imgStats.fail++;
+        if (blocked) {
+          imgConsecBlocked++;
+          if (imgConsecBlocked >= 5) {   // bị chặn liên tiếp → dừng hẳn, chờ cooldown
+            imgBlockedUntil = Date.now() + IMG_BLOCK_COOLDOWN;
+            imgQueue.length = 0; break;
+          }
+        } else imgConsecBlocked = 0;
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
+  } finally { imgWorkers--; }
 }
+// Tiến độ lấy ảnh (UI hiển thị còn bao nhiêu / bao nhiêu đơn hỏng / eBay có đang chặn không).
+app.get("/api/image-queue", requireAuth, (req, res) => {
+  res.json({ pending: imgQueue.length, running: imgWorkers, ok: imgStats.ok, fail: imgStats.fail,
+    blocked: Date.now() < imgBlockedUntil, blockedSeconds: Math.max(0, Math.round((imgBlockedUntil - Date.now()) / 1000)) });
+});
 
 // Master-sheet read: Admin = all; Lister = assigned stores; others = none here.
 app.get("/api/orders", requireAuth, (req, res) => {
@@ -317,9 +341,10 @@ app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
-  const url = await fetchEbayImage(itemNoOf(o));
+  const { url, blocked } = await fetchEbayImage(itemNoOf(o));
   if (url) db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
-  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)),
+    blocked: !!blocked, error: url ? "" : (blocked ? "eBay đang chặn lấy ảnh — thử lại sau" : "Không tìm thấy ảnh cho đơn này") });
 });
 
 // Queue image fetch for all visible orders missing an image.
