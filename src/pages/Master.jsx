@@ -126,12 +126,17 @@ export default function Master({ currentUser, teams, refreshUser }) {
     try { await api.post("/api/orders/fetch-images", {}); setPolling(15); } catch (e) { setErr(e.message); }
   }
   // Dán link ảnh thủ công (khi eBay chặn lấy tự động).
-  function setImageManual(o) {
+  async function setImageManual(o) {
     const url = prompt("Dán LINK ẢNH của sản phẩm (chuột phải vào ảnh trên eBay → Copy image address):", o.image || "");
     if (url === null) return;
     const v = url.trim();
     if (v && !/^https?:\/\//i.test(v)) { setErr("Link ảnh phải bắt đầu bằng http:// hoặc https://"); return; }
-    setErr(""); patch(o.id, { image: v });
+    setErr("");
+    try {
+      const r = await api.put(`/api/orders/${o.id}`, { image: v });
+      setOrders((prev) => prev.map((x) => (x.id === o.id ? { ...x, ...r.order } : x)));
+      if (r.imageSpread > 0) { setErr(`✓ Đã gán ảnh cho ${r.imageSpread} đơn khác cùng sản phẩm.`); loadOrders(month); }
+    } catch (e) { setErr(e.message); }
   }
   async function fetchOneImage(id) {
     try {

@@ -230,6 +230,27 @@ function itemNoOf(o) {
   return m ? m[1] : "";
 }
 
+// Cùng 1 sản phẩm (cùng eBay item number) đã có ảnh → dùng lại, khỏi scrape.
+function imageOfSameItem(itemNumber, excludeId) {
+  if (!itemNumber) return "";
+  for (const o of db.prepare("SELECT id, image, raw, link FROM orders WHERE image!=''").all()) {
+    if (o.id === excludeId) continue;
+    if (itemNoOf(o) === itemNumber) return o.image;
+  }
+  return "";
+}
+// Vừa có ảnh cho 1 sản phẩm → gán luôn cho các đơn cùng sản phẩm đang thiếu ảnh.
+function propagateImage(itemNumber, url, excludeId) {
+  if (!itemNumber || !url) return 0;
+  let n = 0;
+  const upd = db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?");
+  for (const o of db.prepare("SELECT id, raw, link FROM orders WHERE image=''").all()) {
+    if (o.id === excludeId) continue;
+    if (itemNoOf(o) === itemNumber) { upd.run(url, Date.now(), o.id); n++; }
+  }
+  return n;
+}
+
 // Hàng đợi lấy ảnh — chạy SONG SONG vài luồng (nhanh hơn nhiều so với tuần tự),
 // vẫn giữ delay nhẹ mỗi luồng để tránh bị eBay chặn.
 const imgQueue = [];
@@ -240,7 +261,11 @@ let imgBlockedUntil = 0;      // eBay đang chặn → tạm nghỉ, không đ�
 let imgConsecBlocked = 0;
 const IMG_BLOCK_COOLDOWN = 10 * 60 * 1000;   // 10 phút
 function enqueueImage(orderId, itemNumber) {
-  if (!itemNumber || Date.now() < imgBlockedUntil) return;
+  if (!itemNumber) return;
+  // Cùng sản phẩm đã có ảnh → gán ngay, không cần gọi eBay.
+  const reuse = imageOfSameItem(itemNumber, orderId);
+  if (reuse) { db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), orderId); imgStats.ok++; return; }
+  if (Date.now() < imgBlockedUntil) return;
   imgQueue.push({ orderId, itemNumber });
   while (imgWorkers < IMG_CONCURRENCY && imgQueue.length > imgWorkers) runImgWorker();
 }
@@ -253,6 +278,7 @@ async function runImgWorker() {
       const { url, blocked } = await fetchEbayImage(itemNumber);
       if (url) {
         db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), orderId);
+        propagateImage(itemNumber, url, orderId);   // các đơn cùng sản phẩm cũng có ảnh luôn
         imgStats.ok++; imgConsecBlocked = 0;
       } else {
         imgStats.fail++;
@@ -341,8 +367,18 @@ app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
-  const { url, blocked } = await fetchEbayImage(itemNoOf(o));
-  if (url) db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
+  const itNo = itemNoOf(o);
+  // Cùng sản phẩm đã có ảnh → dùng lại ngay, không gọi eBay.
+  const reuse = imageOfSameItem(itNo, o.id);
+  if (reuse) {
+    db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), o.id);
+    return res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)), blocked: false, error: "" });
+  }
+  const { url, blocked } = await fetchEbayImage(itNo);
+  if (url) {
+    db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
+    propagateImage(itNo, url, o.id);
+  }
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)),
     blocked: !!blocked, error: url ? "" : (blocked ? "eBay đang chặn lấy ảnh — thử lại sau" : "Không tìm thấy ảnh cho đơn này") });
 });
@@ -418,6 +454,9 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
   }
   if ("deadline" in b) db.prepare("UPDATE orders SET overdue_notified=0 WHERE id=?").run(o.id);
+  // Dán link ảnh thủ công → gán luôn cho các đơn CÙNG SẢN PHẨM đang thiếu ảnh.
+  let imageSpread = 0;
+  if ("image" in b && String(b.image || "").trim()) imageSpread = propagateImage(itemNoOf(o), String(b.image).trim(), o.id);
   // Admin/Lister added or changed the master note → ping the order processor(s) to read it.
   if ("masterNote" in b && String(b.masterNote || "").trim() && String(b.masterNote) !== String(o.master_note || "")) {
     let targets = [];
@@ -440,7 +479,7 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
     const nt = String(b.urgentNote ?? o.urgent_note ?? "").slice(0, 100);
     if (targets.length) notify(targets, "urgent", `🚨 ĐƠN GẤP ${o.id} (${o.store})${nt ? ": " + nt : ""} — xử lý ngay!`, "", o.team ? [o.team] : []);
   }
-  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)), imageSpread });
 });
 
 // Divide selected orders to a team (Admin only).
