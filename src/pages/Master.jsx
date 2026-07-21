@@ -125,6 +125,14 @@ export default function Master({ currentUser, teams, refreshUser }) {
   async function fetchAllImages() {
     try { await api.post("/api/orders/fetch-images", {}); setPolling(15); } catch (e) { setErr(e.message); }
   }
+  // Dán link ảnh thủ công (khi eBay chặn lấy tự động).
+  function setImageManual(o) {
+    const url = prompt("Dán LINK ẢNH của sản phẩm (chuột phải vào ảnh trên eBay → Copy image address):", o.image || "");
+    if (url === null) return;
+    const v = url.trim();
+    if (v && !/^https?:\/\//i.test(v)) { setErr("Link ảnh phải bắt đầu bằng http:// hoặc https://"); return; }
+    setErr(""); patch(o.id, { image: v });
+  }
   async function fetchOneImage(id) {
     try {
       const r = await api.post(`/api/orders/${id}/fetch-image`, {});
@@ -453,15 +461,25 @@ export default function Master({ currentUser, teams, refreshUser }) {
                 <td style={{ maxWidth: 240, whiteSpace: "normal" }}>{o.product}</td>
                 <td>
                   {o.image ? (
-                    <a href={o.image} target="_blank" rel="noreferrer" title="Bấm để xem ảnh gốc">
-                      <img src={o.image} alt="" style={{ width: 88, height: 88, objectFit: "contain",
-                        background: "#fff", borderRadius: 8, border: "1px solid var(--border)", display: "block", cursor: "zoom-in" }}
-                        onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
-                        onMouseLeave={() => setPreview(null)} />
-                    </a>
+                    <>
+                      <a href={o.image} target="_blank" rel="noreferrer" title="Bấm để xem ảnh gốc">
+                        <img src={o.image} alt="" style={{ width: 88, height: 88, objectFit: "contain",
+                          background: "#fff", borderRadius: 8, border: "1px solid var(--border)", display: "block", cursor: "zoom-in" }}
+                          onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
+                          onMouseLeave={() => setPreview(null)} />
+                      </a>
+                      <div className="row" style={{ gap: 3, marginTop: 3 }}>
+                        <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Dán link ảnh khác" onClick={() => setImageManual(o)}>✎</button>
+                        <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh" onClick={() => patch(o.id, { image: "" })}>✕</button>
+                      </div>
+                    </>
                   ) : (
-                    <button className="btn sm" title="Lấy ảnh bìa eBay" onClick={() => fetchOneImage(o.id)}
-                      style={{ width: 88, height: 88, padding: 0, fontSize: 22 }}>🖼️</button>
+                    <>
+                      <button className="btn sm" title="Lấy ảnh bìa eBay tự động" onClick={() => fetchOneImage(o.id)}
+                        style={{ width: 88, height: 60, padding: 0, fontSize: 22 }}>🖼️</button>
+                      <button className="btn sm" style={{ width: 88, marginTop: 3, padding: "2px 0", fontSize: 11 }}
+                        title="Dán link ảnh thủ công (khi eBay chặn)" onClick={() => setImageManual(o)}>🔗 Dán link</button>
+                    </>
                   )}
                 </td>
                 <td>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : ""}</td>
