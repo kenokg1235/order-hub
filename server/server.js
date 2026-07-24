@@ -1107,7 +1107,7 @@ const cardCode = (seq) => "MT-" + String(seq || 0).padStart(4, "0");   // human-
 function cardOut(r) {
   return {
     id: r.id, seq: r.seq, code: cardCode(r.seq), requesterId: r.requester_id, requesterName: r.requester_name,
-    content: r.content, card: r.card_value, status: r.status, period: r.period || "",
+    content: r.content, card: r.card_value, status: r.status, period: r.period || "", adminNote: r.admin_note || "",
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -1209,6 +1209,7 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   if ("content" in b && (isOwner || u.role === "Admin")) { sets.push("content=?"); vals.push(b.content); }
   if ("status" in b && (isOwner || isManager)) { sets.push("status=?"); vals.push(b.status); }
   if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
+  if ("adminNote" in b && isManager) { sets.push("admin_note=?"); vals.push(String(b.adminNote || "")); }
   if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); }
   // notify: card issued → requester; status changed → card managers
   if ("card" in b && b.card && !r.card_value)

@@ -15,8 +15,14 @@ export default function Cards({ currentUser }) {
   // Chỉ khóa khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" → chỉ đổi qua lại trong nhóm hợp lệ.
   const restrictedFor = (r) => !isAdmin && isCount(r.status);
   const otherStatuses = cardStatuses.filter((s) => ![...lockStatuses, ...errorStatuses].map((x) => x.toLowerCase()).includes(s.toLowerCase()));
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");   // "" tất cả | "__empty" | tên trạng thái
+  const [cf, setCf] = useState({});                       // bộ lọc theo TỪNG CỘT
+  const setF = (k, v) => setCf((p) => ({ ...p, [k]: v }));
+  const clearFilters = () => setCf({});
+  const activeFilters = Object.values(cf).filter((v) => String(v || "").trim()).length;
+  const fText = (key, w = 90) => (
+    <input className="input" style={{ padding: "3px 5px", width: w, fontSize: 12 }}
+      value={cf[key] || ""} onChange={(e) => setF(key, e.target.value)} placeholder="lọc" />
+  );
   const [month, setMonth] = useState("");                 // tháng Mua thẻ (theo tháng đơn); "" chưa set, "all" = tất cả
   const [activeMonth, setActiveMonth] = useState("");
   const [page, setPage] = useState(1);
@@ -31,18 +37,24 @@ export default function Cards({ currentUser }) {
     if (activeMonth) set.add(activeMonth);
     return [...set].sort().reverse();
   }, [reqs, activeMonth]);
+  const T = (v) => String(v ?? "").toLowerCase();
+  const txt = (val, f) => !f || T(val).includes(T(f));
   const filtered = useMemo(() => reqs.filter((r) => {
     if (month && month !== "all" && (r.period || "") !== month) return false;
-    if (statusFilter === "__empty") { if (r.status) return false; }
-    else if (statusFilter && r.status !== statusFilter) return false;
-    const s = q.trim().toLowerCase();
-    if (s && ![r.card, r.requesterName, r.content, r.code].some((v) => String(v || "").toLowerCase().includes(s))) return false;
+    if (cf.status === "__empty") { if (r.status) return false; }
+    else if (cf.status && r.status !== cf.status) return false;
+    if (!txt(r.code, cf.code)) return false;
+    if (!txt(r.card, cf.card)) return false;
+    if (!txt(r.content, cf.content)) return false;
+    if (!txt(r.requesterName, cf.requesterName)) return false;
+    if (!txt(r.adminNote, cf.adminNote)) return false;
+    if (!txt((r.stats?.orders || []).join(", "), cf.orders)) return false;
     return true;
-  }), [reqs, month, q, statusFilter]);
+  }), [reqs, month, cf]);
 
   // Phân trang 100 hàng/trang.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  useEffect(() => { setPage(1); }, [q, statusFilter, month]);          // đổi bộ lọc → về trang 1
+  useEffect(() => { setPage(1); }, [cf, month]);                       // đổi bộ lọc → về trang 1
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);   // giữ trang hợp lệ
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
@@ -95,25 +107,38 @@ export default function Cards({ currentUser }) {
           <option value="all">📅 Tất cả tháng</option>
           {months.map((m) => <option key={m} value={m}>{m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
         </select>
-        <select className="input" style={{ maxWidth: 170 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">Tất cả trạng thái</option>
-          <option value="__empty">— chưa có trạng thái —</option>
-          {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input className="input" style={{ maxWidth: 220 }} placeholder="🔍 Tìm thẻ / NV / yêu cầu / ID lệnh…"
-          value={q} onChange={(e) => setQ(e.target.value)} />
-        {(q || statusFilter) && <Button sm onClick={() => { setQ(""); setStatusFilter(""); }}>✕ Xóa lọc</Button>}
+        {activeFilters > 0 && <Button sm onClick={clearFilters}>✕ Xóa lọc ({activeFilters})</Button>}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       <Bar />
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-        <table className="tbl" style={{ minWidth: 1000 }}>
-          <thead><tr>
-            <th>ID lệnh</th><th>Thẻ</th><th>Yêu cầu</th><th>NV yêu cầu</th><th>Trạng thái</th>
-            <th>Đơn đã xử lý (ID Order)</th><th>Thống kê</th>
-          </tr></thead>
+        <table className="tbl" style={{ minWidth: 1180 }}>
+          <thead>
+            <tr>
+              <th>ID lệnh</th><th>Thẻ</th><th>Yêu cầu</th><th>NV yêu cầu</th><th>Trạng thái</th>
+              <th>📝 Note (Admin)</th><th>Đơn đã xử lý (ID Order)</th><th>Thống kê</th>
+            </tr>
+            {/* Lọc theo TỪNG CỘT */}
+            <tr style={{ background: "#fbfcfd" }}>
+              <td>{fText("code", 80)}</td>
+              <td>{fText("card", 120)}</td>
+              <td>{fText("content", 130)}</td>
+              <td>{fText("requesterName", 90)}</td>
+              <td>
+                <select className="input" style={{ padding: "3px 5px", fontSize: 12, minWidth: 110 }}
+                  value={cf.status || ""} onChange={(e) => setF("status", e.target.value)}>
+                  <option value="">Tất cả</option>
+                  <option value="__empty">(chưa có)</option>
+                  {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </td>
+              <td>{fText("adminNote", 130)}</td>
+              <td>{fText("orders", 120)}</td>
+              <td></td>
+            </tr>
+          </thead>
           <tbody>
             {paged.map((r) => (
               <tr key={r.id} data-rid={r.id} style={{ background: statusColors[r.status] || undefined }}>
@@ -139,6 +164,10 @@ export default function Cards({ currentUser }) {
                   </select>
                   {restrictedFor(r) && <span title="Đã chốt bill"> 🔒</span>}
                 </td>
+                <td>
+                  <input className="input" style={{ padding: "4px 6px", width: 150 }} defaultValue={r.adminNote}
+                    placeholder="note của admin…" {...cellProps("Note (Admin)", (v) => { if (v !== (r.adminNote || "")) update(r.id, { adminNote: v }); })} />
+                </td>
                 <td style={{ maxWidth: 240, whiteSpace: "normal", fontSize: 12 }}>
                   {r.stats?.orders?.length ? r.stats.orders.join(", ") : <span className="muted">—</span>}
                 </td>
@@ -150,7 +179,7 @@ export default function Cards({ currentUser }) {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: "center", padding: 30 }} className="muted">
+              <tr><td colSpan={8} style={{ textAlign: "center", padding: 30 }} className="muted">
                 {reqs.length ? "Không khớp bộ lọc." : "Chưa có yêu cầu thẻ nào. Nhân viên tạo yêu cầu ở trang “Yêu cầu thẻ”."}
               </td></tr>
             )}

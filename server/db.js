@@ -138,6 +138,7 @@ ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterSh
 ensureColumn("blacklist", "category", "TEXT DEFAULT ''");       // Ngành hàng (dropdown) để lọc user theo loại hàng
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID
 ensureColumn("card_requests", "period", "TEXT DEFAULT ''");    // tháng (YYYY-MM) của yêu cầu thẻ, theo tháng đơn hoạt động
+ensureColumn("card_requests", "admin_note", "TEXT DEFAULT ''"); // note của Admin/người mua thẻ ở mục Mua thẻ
 // Backfill period cho yêu cầu thẻ cũ (từ tháng tạo) để lọc theo tháng ở Mua thẻ.
 db.exec("UPDATE card_requests SET period = strftime('%Y-%m', created_at/1000, 'unixepoch') WHERE (period IS NULL OR period='') AND created_at > 0");
 // Backfill running IDs for card requests that don't have one yet.
