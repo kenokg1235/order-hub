@@ -119,6 +119,10 @@ ensureColumn("orders", "urgent", "INTEGER DEFAULT 0");        // cảnh báo G�
 ensureColumn("orders", "urgent_note", "TEXT DEFAULT ''");     // ghi chú cảnh báo gấp (Lister cung cấp thông tin)
 ensureColumn("orders", "staff_note", "TEXT DEFAULT ''");     // note của NV xử lý (Sheet Con) → Lister theo dõi
 ensureColumn("orders", "finalized_at", "INTEGER DEFAULT 0"); // thời điểm đơn lên "Đã Up"/"Đã Cancel" (cho Leaderboard theo kỳ)
+ensureColumn("orders", "staff_note_at", "INTEGER DEFAULT 0");   // lúc NV ghi note (để cảnh báo tăng dần theo thời gian)
+ensureColumn("orders", "staff_note_done", "INTEGER DEFAULT 0"); // Lister đã xử lý note này chưa
+// Backfill mốc cho các note đã có (xấp xỉ bằng updated_at).
+db.exec("UPDATE orders SET staff_note_at = updated_at WHERE staff_note_at = 0 AND staff_note != '' AND updated_at > 0");
 // Backfill: đơn đã Đã Up/Đã Cancel nhưng chưa có mốc → dùng updated_at (xấp xỉ thời điểm chốt).
 db.exec("UPDATE orders SET finalized_at = updated_at WHERE finalized_at = 0 AND master_status IN ('Đã Up','Đã Cancel') AND updated_at > 0");
 // Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).

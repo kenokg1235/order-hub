@@ -866,8 +866,9 @@ app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
     sets.push("updated_at=?"); vals.push(Date.now());
     db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
   }
-  // NV thêm/sửa "note cho Lister" → báo Lister của store để theo dõi.
+  // NV thêm/sửa "note cho Lister" → đóng dấu giờ + đặt lại "chưa xử lý" + báo Lister của store.
   if ("staffNote" in b && String(b.staffNote || "").trim() && String(b.staffNote) !== String(o.staff_note || "")) {
+    db.prepare("UPDATE orders SET staff_note_at=?, staff_note_done=0 WHERE id=?").run(Date.now(), o.id);
     const lst = listersForStore(o.store);
     if (lst.length) notify(lst, "staff-note", `📌 NV note đơn ${o.id} (${o.store}): ${String(b.staffNote).slice(0, 90)}`, "", o.team ? [o.team] : []);
   }
@@ -1426,6 +1427,36 @@ app.post("/api/expense-periods/set-start", requireAdmin, (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return res.status(400).json({ error: "Ngày không hợp lệ" });
   setSetting("expensePeriodStart", d);
   res.json({ ok: true, openStart: d });
+});
+
+// ── Note của NV xử lý → Lister xử lý với khách (Admin + Lister theo store) ────
+function adminOrListerNote(req, res, next) {
+  if (req.user.role !== "Admin" && req.user.role !== "Lister")
+    return res.status(403).json({ error: "Chỉ Admin/Listing" });
+  next();
+}
+app.get("/api/staff-notes", requireAuth, adminOrListerNote, (req, res) => {
+  const stores = allowedStores(req.user);   // Lister: chỉ store của mình; Admin: tất cả
+  let rows;
+  if (stores === null) rows = db.prepare("SELECT * FROM orders WHERE staff_note!='' ORDER BY staff_note_at DESC").all();
+  else if (!stores.length) rows = [];
+  else {
+    const ph = stores.map(() => "?").join(",");
+    rows = db.prepare(`SELECT * FROM orders WHERE staff_note!='' AND store IN (${ph}) ORDER BY staff_note_at DESC`).all(...stores);
+  }
+  res.json({ notes: rows.map((o) => ({
+    id: o.id, orderNo: o.order_no || o.id, store: o.store, product: o.product, link: o.link,
+    address: o.address, custPhone: o.cust_phone, deadline: o.deadline,
+    masterStatus: o.master_status, claimedName: o.claimed_name,
+    staffNote: o.staff_note, noteAt: o.staff_note_at || 0, done: !!o.staff_note_done,
+  })) });
+});
+app.post("/api/staff-notes/:id/done", requireAuth, adminOrListerNote, (req, res) => {
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
+  if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
+  if (!canTouchStore(req.user, o.store)) return res.status(403).json({ error: "Không có quyền với store này" });
+  db.prepare("UPDATE orders SET staff_note_done=? WHERE id=?").run(req.body && req.body.done === false ? 0 : 1, o.id);
+  res.json({ ok: true });
 });
 
 // ── Blacklist (difficult buyers, eBay usernames) — Admin + Lister ─────────────
