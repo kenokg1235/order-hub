@@ -19,6 +19,19 @@ export default function Cards({ currentUser }) {
   const setF = (k, v) => setCf((p) => ({ ...p, [k]: v }));
   const clearFilters = () => setCf({});
   const activeFilters = Object.values(cf).filter((v) => String(v || "").trim()).length;
+  const [copiedId, setCopiedId] = useState("");
+  async function copyCard(r) {
+    const t = String(r.card || "").trim();
+    if (!t) return;
+    try { await navigator.clipboard.writeText(t); }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand("copy"); } catch {} ta.remove();
+    }
+    setCopiedId(r.id); setTimeout(() => setCopiedId(""), 1500);
+  }
   const fText = (key, w = 90) => (
     <input className="input" style={{ padding: "3px 5px", width: w, fontSize: 12 }}
       value={cf[key] || ""} onChange={(e) => setF(key, e.target.value)} placeholder="lọc" />
@@ -144,8 +157,13 @@ export default function Cards({ currentUser }) {
               <tr key={r.id} data-rid={r.id} style={{ background: statusColors[r.status] || undefined }}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
-                  <input className="input" style={{ padding: "5px 8px", width: 160 }} defaultValue={r.card}
-                    placeholder="Nhập thẻ cấp…" {...cellProps("Thẻ", (v) => { if (v !== r.card) update(r.id, { card: v }); })} />
+                  <div className="row" style={{ gap: 4 }}>
+                    <input className="input" style={{ padding: "5px 8px", width: 160 }} defaultValue={r.card}
+                      placeholder="Nhập thẻ cấp…" {...cellProps("Thẻ", (v) => { if (v !== r.card) update(r.id, { card: v }); })} />
+                    {r.card && <button className="btn sm" title="Copy thẻ" onClick={() => copyCard(r)} style={{ whiteSpace: "nowrap" }}>
+                      {copiedId === r.id ? "✓" : "📋"}
+                    </button>}
+                  </div>
                 </td>
                 <td style={{ maxWidth: 260, whiteSpace: "normal" }}>{r.content || <span className="muted">—</span>}</td>
                 <td>{r.requesterName}</td>
