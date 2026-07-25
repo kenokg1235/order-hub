@@ -580,10 +580,10 @@ export default function Master({ currentUser, teams, refreshUser }) {
         <div style={{
           position: "fixed", zIndex: 200, pointerEvents: "none", background: "#fff", padding: 6,
           border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 50px rgba(0,0,0,.28)",
-          left: Math.min(preview.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 360),
-          top: Math.min(preview.y + 18, (typeof window !== "undefined" ? window.innerHeight : 800) - 360),
+          left: Math.min(preview.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 480),
+          top: Math.min(preview.y + 18, (typeof window !== "undefined" ? window.innerHeight : 800) - 480),
         }}>
-          <img src={preview.url} alt="" style={{ width: 340, height: 340, objectFit: "contain", display: "block" }} />
+          <img src={preview.url} alt="" style={{ width: 460, height: 460, objectFit: "contain", display: "block" }} />
         </div>
       )}
     </div>

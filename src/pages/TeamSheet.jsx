@@ -28,6 +28,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [colLefts, setColLefts] = useState([]);
   const tableRef = useRef(null);
   const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột: { label, text }
+  const [preview, setPreview] = useState(null); // {url,x,y} phóng lớn ảnh khi rê chuột
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -376,7 +377,11 @@ export default function TeamSheet({ currentUser, teams }) {
                       )}
                     </td>
                     <td rowSpan={span}>{o.image
-                      ? <a href={o.image} target="_blank" rel="noreferrer"><img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)" }} /></a>
+                      ? <a href={o.image} target="_blank" rel="noreferrer" title="Rê chuột để phóng lớn · bấm xem gốc">
+                          <img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in" }}
+                            onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
+                            onMouseLeave={() => setPreview(null)} />
+                        </a>
                       : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ maxWidth: 220, whiteSpace: "normal" }}>{o.product}</td>
                     <td rowSpan={span}>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : <span className="muted">—</span>}</td>
@@ -502,6 +507,16 @@ export default function TeamSheet({ currentUser, teams }) {
       </div>
       {historyFor && (
         <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
+      )}
+      {preview && (
+        <div style={{
+          position: "fixed", zIndex: 200, pointerEvents: "none", background: "#fff", padding: 6,
+          border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 50px rgba(0,0,0,.28)",
+          left: Math.min(preview.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 480),
+          top: Math.min(preview.y + 18, (typeof window !== "undefined" ? window.innerHeight : 800) - 480),
+        }}>
+          <img src={preview.url} alt="" style={{ width: 460, height: 460, objectFit: "contain", display: "block" }} />
+        </div>
       )}
     </div>
   );
