@@ -143,7 +143,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       const r = await api.post(`/api/orders/${id}/fetch-image`, {});
       const order = r.order;
       if (r.error) setErr(r.error); else setErr("");
-      setOrders((prev) => prev.map((o) => (o.id === id ? order : o)));
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...order } : o)));
     } catch (e) { setErr(e.message); }
   }
   const missingImages = orders.filter((o) => !o.image && (o.link || "")).length;
@@ -257,7 +257,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
   async function patch(id, body) {
     try {
       const { order } = await api.put(`/api/orders/${id}`, body);
-      setOrders((prev) => prev.map((o) => (o.id === id ? order : o)));
+      // Giữ lại read-back từ NV xử lý (purchases: Name/Tracking/…) + addrCount/multiCount — order trả về không kèm.
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...order } : o)));
     } catch (e) { setErr(e.message); }
   }
   async function divide(teamId) {

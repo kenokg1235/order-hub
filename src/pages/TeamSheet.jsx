@@ -177,7 +177,7 @@ export default function TeamSheet({ currentUser, teams }) {
   }, [pinned, freezeCols, colLefts]);
 
   // local state helpers
-  const replaceOrder = (order) => setOrders((p) => p.map((o) => (o.id === order.id ? order : o)));
+  const replaceOrder = (order) => setOrders((p) => p.map((o) => (o.id === order.id ? { ...o, ...order } : o)));  // giữ addrCount/multiCount
   const setPur = (oid, pur) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: o.purchases.map((x) => x.id === pur.id ? pur : x) } : o));
   const addPur = (oid, pur) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: [...o.purchases, pur] } : o));
   const delPur = (oid, pid) => setOrders((p) => p.map((o) => o.id === oid ? { ...o, purchases: o.purchases.filter((x) => x.id !== pid) } : o));
