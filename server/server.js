@@ -215,12 +215,16 @@ function orderOut(o) {
 // Chuẩn hóa địa chỉ để đối chiếu trùng (gộp khoảng trắng, bỏ hoa/thường).
 const addrNorm = (a) => String(a || "").replace(/\s+/g, " ").trim().toLowerCase();
 // Đếm địa chỉ trên TOÀN BỘ đơn (mọi tháng) → cảnh báo trùng cả với đơn cũ.
+// Đếm theo SỐ ĐƠN (order_no) để đơn nhiều sản phẩm cùng 1 đơn KHÔNG bị báo trùng giả.
 function allAddressCounts() {
-  const m = {};
-  for (const r of db.prepare("SELECT address FROM orders WHERE address!=''").all()) {
-    const k = addrNorm(r.address); if (k) m[k] = (m[k] || 0) + 1;
+  const m = {};   // địa chỉ → Set(order_no)
+  for (const r of db.prepare("SELECT address, order_no, id FROM orders WHERE address!=''").all()) {
+    const k = addrNorm(r.address); if (!k) continue;
+    (m[k] || (m[k] = new Set())).add(r.order_no || r.id);
   }
-  return m;
+  const out = {};
+  for (const k in m) out[k] = m[k].size;
+  return out;
 }
 
 // eBay item number from a stored order (raw.itemNumber or parsed from link).

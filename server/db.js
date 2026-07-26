@@ -241,6 +241,28 @@ CREATE INDEX IF NOT EXISTS idx_card_ledger_card ON card_ledger(card);
 db.exec(`INSERT OR IGNORE INTO card_ledger (purchase_id,card,amount,created_at)
   SELECT id, card, amount, created_at FROM purchases WHERE card!='' AND trim(process_status)='Đã xử lý'`);
 
+// Dọn đơn nhiều sản phẩm cũ: chép địa chỉ/SĐT/thời hạn từ dòng "tổng" sang các dòng sản phẩm,
+// rồi XÓA dòng tổng trống (không sản phẩm & không có thẻ) — đó là dòng orphan không xử lý được.
+if (!db.prepare("SELECT 1 FROM settings WHERE key='mergeMultiItemV1'").get()) {
+  const groups = db.prepare("SELECT store, order_no FROM orders WHERE order_no!='' GROUP BY store, order_no HAVING COUNT(*)>1").all();
+  const updInfo = db.prepare("UPDATE orders SET address=?, cust_phone=?, deadline=? WHERE id=?");
+  const hasPur = db.prepare("SELECT 1 FROM purchases WHERE order_id=?");
+  const delOrd = db.prepare("DELETE FROM orders WHERE id=?");
+  const delAud = db.prepare("DELETE FROM audit_log WHERE order_id=?");
+  db.transaction(() => {
+    for (const g of groups) {
+      const rows = db.prepare("SELECT * FROM orders WHERE store=? AND order_no=?").all(g.store, g.order_no);
+      const products = rows.filter((r) => String(r.product || "").trim());
+      if (!products.length) continue;   // chỉ xử lý cụm có ít nhất 1 dòng sản phẩm thật
+      const pick = (f) => (rows.find((r) => String(r[f] || "").trim()) || {})[f] || "";
+      const addr = pick("address"), phone = pick("cust_phone"), deadline = pick("deadline");
+      for (const r of products) updInfo.run(r.address || addr, r.cust_phone || phone, r.deadline || deadline, r.id);
+      for (const r of rows) if (!String(r.product || "").trim() && !hasPur.get(r.id)) { delOrd.run(r.id); delAud.run(r.id); }
+    }
+  })();
+  db.prepare("INSERT INTO settings (key,value) VALUES (?,?)").run("mergeMultiItemV1", "true");
+}
+
 // Audit log — every cell edit on orders & purchases (who, field, old→new, when).
 db.exec(`
 CREATE TABLE IF NOT EXISTS audit_log (

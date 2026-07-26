@@ -24,6 +24,24 @@ function parseCSV(text) {
 
 const norm = (s) => String(s || "").trim().toLowerCase();
 
+// Đơn nhiều sản phẩm: eBay tách 1 dòng "tổng" (có địa chỉ, KHÔNG sản phẩm) + các dòng sản phẩm
+// (KHÔNG địa chỉ). → chép địa chỉ/SĐT/thời hạn sang dòng sản phẩm, bỏ dòng tổng trống.
+function mergeMultiItem(rows) {
+  const by = {};
+  for (const r of rows) (by[r.orderNumber] || (by[r.orderNumber] = [])).push(r);
+  const out = [];
+  for (const group of Object.values(by)) {
+    if (group.length === 1) { out.push(group[0]); continue; }
+    const pick = (f) => (group.find((g) => String(g[f] || "").trim()) || {})[f] || "";
+    const addr = pick("address"), phone = pick("custPhone"), deadline = pick("deadline");
+    const products = group.filter((g) => String(g.product || "").trim() || g.itemNumber);
+    const keep = products.length ? products : group;   // không tách được thì giữ nguyên
+    for (const it of keep)
+      out.push({ ...it, address: it.address || addr, custPhone: it.custPhone || phone, deadline: it.deadline || deadline });
+  }
+  return out;
+}
+
 // Chuyển ngày eBay (vd "Jun-24-2026", "06/24/2026", "2026-06-24") → "DD/MM".
 function toDDMM(s) {
   s = String(s || "").trim();
@@ -94,7 +112,8 @@ export function parseEbayCsv(text) {
       },
     });
   }
-  return { rows: out, count: out.length };
+  const merged = mergeMultiItem(out);
+  return { rows: merged, count: merged.length };
 }
 
 // Parse mẫu nhập CHUẨN của OrderHub (người dùng tự điền). Cột tiếng Việt thân thiện.
@@ -148,5 +167,6 @@ export function parseOrderHubCsv(text) {
       raw: { itemNumber: itemNo },
     });
   }
-  return { rows: out, count: out.length };
+  const merged = mergeMultiItem(out);
+  return { rows: merged, count: merged.length };
 }
