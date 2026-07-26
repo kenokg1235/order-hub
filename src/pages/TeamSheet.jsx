@@ -365,7 +365,15 @@ export default function TeamSheet({ currentUser, teams }) {
                       )}
                     </td>
                     <td rowSpan={span} style={{ fontWeight: 600 }}>{o.store}</td>
-                    <td rowSpan={span} title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
+                    <td rowSpan={span} style={{ background: o.multiCount > 1 ? "#eef2ff" : undefined }}>
+                      <div>{o.orderNo}</div>
+                      {o.multiCount > 1 && (
+                        <button className="badge" style={{ marginTop: 3, cursor: "pointer", border: "none", background: "#6366f1", color: "#fff", fontSize: 10 }}
+                          title="Đơn nhiều sản phẩm — bấm để gom tất cả sản phẩm cùng đơn này" onClick={() => setF("id", o.orderNo)}>
+                          📦 {o.multiCount} SP
+                        </button>
+                      )}
+                    </td>
                     <td rowSpan={span} style={{ minWidth: 170, maxWidth: 240, whiteSpace: "normal", fontSize: 13, fontWeight: 600, color: "var(--text)",
                       background: (o.addrCount || 0) > 1 ? "#fff3cd" : undefined, outline: (o.addrCount || 0) > 1 ? "1px solid #e0a800" : undefined }}>
                       {String(o.address || "").split("\n").filter(Boolean).map((l, i) =>

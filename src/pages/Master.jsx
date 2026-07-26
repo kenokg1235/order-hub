@@ -442,7 +442,15 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   : (o.team ? <Badge color="amber">{teamName(o.team)}</Badge> : <span className="muted">—</span>)}
                 </td>
                 <td style={{ fontWeight: 600 }}>{o.store}</td>
-                <td title={o.id !== o.orderNo ? "Sản phẩm trong đơn nhiều món" : ""}>{o.orderNo}</td>
+                <td style={{ background: o.multiCount > 1 ? "#eef2ff" : undefined }}>
+                  <div>{o.orderNo}</div>
+                  {o.multiCount > 1 && (
+                    <button className="badge" style={{ marginTop: 3, cursor: "pointer", border: "none", background: "#6366f1", color: "#fff", fontSize: 10 }}
+                      title="Đơn nhiều sản phẩm — bấm để gom tất cả sản phẩm cùng đơn này" onClick={() => setF("id", o.orderNo)}>
+                      📦 {o.multiCount} SP
+                    </button>
+                  )}
+                </td>
                 {(() => {
                   const cnt = o.addrCount || 0;   // đếm trên TOÀN BỘ đơn (mọi tháng, kể cả đơn cũ)
                   const dup = cnt > 1;

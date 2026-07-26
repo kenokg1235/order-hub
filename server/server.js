@@ -226,6 +226,13 @@ function allAddressCounts() {
   for (const k in m) out[k] = m[k].size;
   return out;
 }
+// Đếm số dòng (sản phẩm) theo order_no → đánh dấu đơn nhiều sản phẩm.
+function orderNoCounts() {
+  const m = {};
+  for (const r of db.prepare("SELECT order_no FROM orders WHERE order_no!=''").all())
+    m[r.order_no] = (m[r.order_no] || 0) + 1;
+  return m;
+}
 
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
 function itemNoOf(o) {
@@ -317,7 +324,8 @@ app.get("/api/orders", requireAuth, (req, res) => {
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const addrCount = allAddressCounts();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0 })) });
+  const onCount = orderNoCounts();
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })) });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
@@ -754,7 +762,8 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
   const addrCount = allAddressCounts();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0 })) });
+  const onCount = orderNoCounts();
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })) });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
