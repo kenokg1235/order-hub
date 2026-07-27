@@ -1442,6 +1442,58 @@ app.post("/api/expense-periods/set-start", requireAdmin, (req, res) => {
   res.json({ ok: true, openStart: d });
 });
 
+// ── Task — Lister báo hạng mục cần Admin kiểm tra; Admin theo dõi/xử lý case ────
+function adminOrListerTask(req, res, next) {
+  if (req.user.role !== "Admin" && req.user.role !== "Lister")
+    return res.status(403).json({ error: "Chỉ Admin/Listing" });
+  next();
+}
+const taskOut = (t) => ({
+  id: t.id, title: t.title, note: t.note || "", priority: t.priority || "normal",
+  createdBy: t.created_by, createdByName: t.created_by_name || "—",
+  done: !!t.done, doneByName: t.done_by_name || "", doneAt: t.done_at || 0, createdAt: t.created_at,
+});
+app.get("/api/tasks", requireAuth, adminOrListerTask, (req, res) => {
+  res.json({ tasks: db.prepare("SELECT * FROM tasks ORDER BY done ASC, created_at DESC").all().map(taskOut) });
+});
+app.post("/api/tasks", requireAuth, adminOrListerTask, (req, res) => {
+  const title = String(req.body.title || "").trim();
+  if (!title) return res.status(400).json({ error: "Thiếu nội dung task" });
+  const id = newId("tsk");
+  db.prepare(`INSERT INTO tasks (id,title,note,priority,created_by,created_by_name,created_at) VALUES (?,?,?,?,?,?,?)`)
+    .run(id, title, String(req.body.note || ""), req.body.priority === "high" ? "high" : "normal", req.user.id, req.user.name, Date.now());
+  // Lister tạo task → báo Admin; Admin tạo → báo các Lister để cùng theo dõi.
+  const targets = req.user.role === "Admin" ? [] : adminIds();
+  if (targets.length) notify(targets, "task", `✅ Task mới từ ${req.user.name}: ${title.slice(0, 90)}`);
+  res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(id)) });
+});
+app.put("/api/tasks/:id", requireAuth, adminOrListerTask, (req, res) => {
+  const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
+  if (!t) return res.status(404).json({ error: "Không tìm thấy task" });
+  if (req.user.role !== "Admin" && t.created_by !== req.user.id) return res.status(403).json({ error: "Chỉ người tạo hoặc Admin sửa" });
+  const b = req.body || {};
+  const sets = [], vals = [];
+  if ("title" in b) { const v = String(b.title || "").trim(); if (!v) return res.status(400).json({ error: "Nội dung trống" }); sets.push("title=?"); vals.push(v); }
+  if ("note" in b) { sets.push("note=?"); vals.push(String(b.note || "")); }
+  if ("priority" in b) { sets.push("priority=?"); vals.push(b.priority === "high" ? "high" : "normal"); }
+  if (sets.length) db.prepare(`UPDATE tasks SET ${sets.join(",")} WHERE id=?`).run(...vals, t.id);
+  res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
+});
+app.post("/api/tasks/:id/done", requireAuth, adminOrListerTask, (req, res) => {
+  const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
+  if (!t) return res.status(404).json({ error: "Không tìm thấy task" });
+  const done = req.body && req.body.done === false ? 0 : 1;
+  db.prepare("UPDATE tasks SET done=?, done_by_name=?, done_at=? WHERE id=?")
+    .run(done, done ? req.user.name : "", done ? Date.now() : 0, t.id);
+  res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
+});
+app.delete("/api/tasks/:id", requireAuth, adminOrListerTask, (req, res) => {
+  const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
+  if (t && req.user.role !== "Admin" && t.created_by !== req.user.id) return res.status(403).json({ error: "Chỉ người tạo hoặc Admin xóa" });
+  db.prepare("DELETE FROM tasks WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ── Note của NV xử lý → Lister xử lý với khách (Admin + Lister theo store) ────
 function adminOrListerNote(req, res, next) {
   if (req.user.role !== "Admin" && req.user.role !== "Lister")

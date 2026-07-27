@@ -212,6 +212,23 @@ CREATE TABLE IF NOT EXISTS blacklist (
 CREATE INDEX IF NOT EXISTS idx_blacklist_username ON blacklist(username);
 `);
 
+// Task — Lister thêm hạng mục cần Admin kiểm tra; Admin thêm task theo dõi/xử lý case.
+db.exec(`
+CREATE TABLE IF NOT EXISTS tasks (
+  id             TEXT PRIMARY KEY,
+  title          TEXT NOT NULL,
+  note           TEXT DEFAULT '',
+  priority       TEXT DEFAULT 'normal',   -- normal | high
+  created_by     TEXT DEFAULT '',
+  created_by_name TEXT DEFAULT '',
+  done           INTEGER DEFAULT 0,
+  done_by_name   TEXT DEFAULT '',
+  done_at        INTEGER DEFAULT 0,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+`);
+
 // Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng", hiện tên cho mọi người.
 db.exec(`
 CREATE TABLE IF NOT EXISTS proxies (
