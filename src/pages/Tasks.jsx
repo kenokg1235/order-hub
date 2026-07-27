@@ -9,10 +9,19 @@ export default function Tasks({ currentUser }) {
   const [na, setNa] = useState({ title: "", note: "", priority: "normal" });
   const [tab, setTab] = useState("open");   // open | done | all
   const [q, setQ] = useState("");
+  const [adminNote, setAdminNote] = useState("");
+  const [noteEdit, setNoteEdit] = useState(false);
   const [err, setErr] = useState("");
 
   async function load() {
-    try { setTasks((await api.get("/api/tasks")).tasks); } catch (e) { setErr(e.message); }
+    try {
+      setTasks((await api.get("/api/tasks")).tasks);
+      setAdminNote((await api.get("/api/settings")).settings?.adminNoteForLister || "");
+    } catch (e) { setErr(e.message); }
+  }
+  async function saveAdminNote(text) {
+    try { await api.put("/api/settings/adminNoteForLister", { value: text }); setAdminNote(text); setNoteEdit(false); }
+    catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
   useEffect(() => { const t = setInterval(load, 20000); return () => clearInterval(t); }, []);
@@ -68,6 +77,30 @@ export default function Tasks({ currentUser }) {
         Listing thêm hạng mục cần Admin kiểm tra · Admin thêm task theo dõi/xử lý case. Xong thì bấm <b>✓</b>. Đánh dấu <b>⚑</b> để ưu tiên cao.
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {/* Ghi chú của Admin cho Lister xem (dùng chung với Sheet Tổng) */}
+      {(adminNote || isAdmin) && (
+        <div className="card" style={{ marginBottom: 12, padding: "10px 14px", background: "#fffbea", borderColor: "#eab308" }}>
+          {noteEdit ? (
+            <div>
+              <textarea className="input" rows={3} defaultValue={adminNote} id="adminNoteDraftTask"
+                placeholder="Ghi chú / thông báo cho Listing…" style={{ width: "100%", resize: "vertical" }} />
+              <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                <Button sm variant="primary" onClick={() => saveAdminNote(document.getElementById("adminNoteDraftTask").value)}>Lưu</Button>
+                <Button sm onClick={() => setNoteEdit(false)}>Hủy</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 18 }}>📢</span>
+              <div style={{ flex: 1, whiteSpace: "pre-wrap", fontWeight: 500 }}>
+                {adminNote || <span className="muted">(Chưa có ghi chú — bấm Sửa để thêm thông báo cho Listing)</span>}
+              </div>
+              {isAdmin && <Button sm onClick={() => setNoteEdit(true)}>✎ Sửa</Button>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 12, marginBottom: 16 }}>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
