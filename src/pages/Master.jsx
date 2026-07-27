@@ -35,6 +35,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const [err, setErr] = useState("");
   const [polling, setPolling] = useState(0);     // remaining auto-refreshes for images
   const [imgQ, setImgQ] = useState(null);        // tiến độ hàng đợi lấy ảnh
+  const [adminNote, setAdminNote] = useState(""); // ghi chú Admin cho Lister xem
+  const [noteEdit, setNoteEdit] = useState(false);
   const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
   const { cellProps, Bar, viewCell } = useFormulaBar();
 
@@ -49,6 +51,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       setProcStatuses(s.processStatuses || []);
       setStatusColors(s.statusColors || {});
       setCancelReasons(s.cancelReasons || []);
+      setAdminNote(s.adminNoteForLister || "");
       const mo = await api.get("/api/months");
       setMonths(mo.months); setActiveMonth(mo.activeMonth); setLastClose(mo.lastClose);
       setMonth((cur) => cur || mo.activeMonth);
@@ -254,6 +257,10 @@ export default function Master({ currentUser, teams, refreshUser }) {
       loadOrders(month);
     } catch (e) { setErr(e.message); }
   }
+  async function saveAdminNote(text) {
+    try { await api.put("/api/settings/adminNoteForLister", { value: text }); setAdminNote(text); setNoteEdit(false); }
+    catch (e) { setErr(e.message); }
+  }
   async function patch(id, body) {
     try {
       const { order } = await api.put(`/api/orders/${id}`, body);
@@ -320,6 +327,29 @@ export default function Master({ currentUser, teams, refreshUser }) {
 
   return (
     <div>
+      {/* Ghi chú của Admin cho Lister xem */}
+      {(adminNote || isAdmin) && (
+        <div className="card" style={{ marginBottom: 12, padding: "10px 14px", background: "#fffbea", borderColor: "#eab308" }}>
+          {noteEdit ? (
+            <div>
+              <textarea className="input" rows={3} defaultValue={adminNote} id="adminNoteDraft"
+                placeholder="Ghi chú / thông báo cho Listing…" style={{ width: "100%", resize: "vertical" }} />
+              <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                <Button sm variant="primary" onClick={() => saveAdminNote(document.getElementById("adminNoteDraft").value)}>Lưu</Button>
+                <Button sm onClick={() => setNoteEdit(false)}>Hủy</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="row" style={{ gap: 10, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 18 }}>📢</span>
+              <div style={{ flex: 1, whiteSpace: "pre-wrap", fontWeight: 500 }}>
+                {adminNote || <span className="muted">(Chưa có ghi chú — bấm Sửa để thêm thông báo cho Listing)</span>}
+              </div>
+              {isAdmin && <Button sm onClick={() => setNoteEdit(true)}>✎ Sửa</Button>}
+            </div>
+          )}
+        </div>
+      )}
       <div className="row" style={{ marginBottom: 14 }}>
         <h2 style={{ margin: 0 }}>Sheet Tổng</h2>
         <Badge color="blue">{filtered.length} đơn</Badge>
