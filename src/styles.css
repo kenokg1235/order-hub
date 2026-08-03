@@ -127,8 +127,30 @@ table.tbl tr:hover td { background: rgba(0,0,0,.035); }   /* translucent → row
     display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.42);
   }
   .app-main { padding: 12px 10px 48px !important; }
-  /* nút/ô nhập dễ bấm hơn, chữ bảng nhỏ gọn */
-  .btn { padding: 7px 11px; }
-  .tbl th, .tbl td { padding: 7px 8px; }
-  h2 { font-size: 18px; }
+
+  /* iOS KHÔNG tự phóng khi bấm ô nhập: mọi input/select/textarea ≥ 16px */
+  input, select, textarea, .input { font-size: 16px !important; }
+  /* vùng chạm đủ lớn cho ngón tay */
+  .input, select.input, textarea.input { min-height: 40px; }
+  .btn { min-height: 40px; padding: 9px 14px; font-size: 15px; }
+  .btn.sm { min-height: 34px; padding: 6px 11px; font-size: 14px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  input[type="date"] { min-width: 140px; }
+
+  /* bảng: chữ to hơn, ô thoáng hơn để dễ đọc/chạm */
+  .tbl { font-size: 15px; }
+  .tbl th, .tbl td { padding: 10px 10px; }
+  .badge { font-size: 12px; padding: 3px 8px; }
+
+  h2 { font-size: 20px; }
+  h3 { font-size: 17px; }
+  .label { font-size: 13px; }
+  /* cuộn ngang mượt hơn cho bảng rộng */
+  .card[style*="overflow"] , .pinwrap { -webkit-overflow-scrolling: touch; }
+  /* modal chiếm gần trọn màn, dễ thao tác */
+  .modal { width: 96vw !important; max-height: 92vh; }
+  .modal-body { padding: 14px; }
+  /* thanh cuộn ngang dày hơn để dễ kéo trên mobile */
+  .pinwrap::-webkit-scrollbar, .card::-webkit-scrollbar { height: 10px; }
+  .pinwrap::-webkit-scrollbar-thumb, .card::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
 }
