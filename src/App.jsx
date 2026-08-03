@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, getToken, setToken } from "./api.js";
 import { Button } from "./ui.jsx";
 import Notifications from "./Notifications.jsx";
@@ -85,9 +85,13 @@ export default function App() {
 
   useEffect(() => { if (user) { loadTeams(); loadProxyHidden(); } }, [user]);
 
-  // Pick a sensible default landing page per role once logged in.
+  // Đặt trang mặc định CHỈ 1 LẦN khi đăng nhập — không reset khi user được refresh (vd sau khi thêm payout).
+  const didLand = useRef(false);
   useEffect(() => {
-    if (user) setPage(["Admin", "Lister"].includes(user.role) ? "master" : user.role === "Buyer" ? "requests" : "team");
+    if (!user) { didLand.current = false; return; }
+    if (didLand.current) return;
+    didLand.current = true;
+    setPage(["Admin", "Lister"].includes(user.role) ? "master" : user.role === "Buyer" ? "requests" : "team");
   }, [user]);
 
   async function logout() {
