@@ -311,21 +311,22 @@ app.get("/api/image-queue", requireAuth, (req, res) => {
     blocked: Date.now() < imgBlockedUntil, blockedSeconds: Math.max(0, Math.round((imgBlockedUntil - Date.now()) / 1000)) });
 });
 
-// Master-sheet read: Admin = all; Lister = assigned stores; others = none here.
+// Master-sheet read: Admin/Lister/Leader-master → XEM TẤT CẢ đơn (mọi store);
+// nhưng chỉ SỬA được store mình quản lý (canEdit cho từng đơn). Vai trò khác → không thấy.
 app.get("/api/orders", requireAuth, (req, res) => {
-  const stores = allowedStores(req.user);
-  if (stores !== null && stores.length === 0) return res.json({ orders: [] });
+  const role = req.user.role;
+  const canReadMaster = role === "Admin" || role === "Lister" || (role === "Leader" && req.user.canMaster);
+  if (!canReadMaster) return res.json({ orders: [] });
   const month = req.query.month || getActiveMonth();
   const conds = [], params = [];
   if (month && month !== "all") { conds.push("period=?"); params.push(month); }
-  if (stores !== null) { conds.push(`store IN (${stores.map(() => "?").join(",")})`); params.push(...stores); }
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const addrCount = allAddressCounts();
   const onCount = orderNoCounts();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })) });
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })) });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.

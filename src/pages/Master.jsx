@@ -461,6 +461,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
               // "Có tracking": khi MỌI hàng (thẻ) trong đơn đều có TRẠNG THÁI XỬ LÝ = "Có Tracking".
               const purs = o.purchases || [];
               const allTracked = purs.length > 0 && purs.every((p) => String(p.processStatus || "").trim().toLowerCase() === "có tracking");
+              const ro = o.canEdit === false;   // Lister: đơn không thuộc store mình quản lý → chỉ xem
+              const roBg = ro ? "#f8fafc" : undefined;
               return (
               <tr key={o.id} data-oid={o.id} style={{ background: rowColor || undefined, "--rowbg": rowColor || "#fff", boxShadow: o.urgent ? "inset 4px 0 0 0 var(--red)" : undefined }}>
                 {isAdmin && <td><input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} /></td>}
@@ -472,7 +474,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                     </select>
                   : (o.team ? <Badge color="amber">{teamName(o.team)}</Badge> : <span className="muted">—</span>)}
                 </td>
-                <td style={{ fontWeight: 600 }}>{o.store}</td>
+                <td style={{ fontWeight: 600 }}>{o.store}{ro && <span title="Không thuộc store bạn quản lý — chỉ xem" style={{ marginLeft: 4 }}>🔒</span>}</td>
                 <td style={{ background: o.multiCount > 1 ? "#eef2ff" : undefined }}>
                   <div>{o.orderNo}</div>
                   {o.multiCount > 1 && (
@@ -512,12 +514,12 @@ export default function Master({ currentUser, teams, refreshUser }) {
                           onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
                           onMouseLeave={() => setPreview(null)} />
                       </a>
-                      <div className="row" style={{ gap: 3, marginTop: 3 }}>
+                      {!ro && <div className="row" style={{ gap: 3, marginTop: 3 }}>
                         <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Dán link ảnh khác" onClick={() => setImageManual(o)}>✎</button>
                         <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh" onClick={() => patch(o.id, { image: "" })}>✕</button>
-                      </div>
+                      </div>}
                     </>
-                  ) : (
+                  ) : (ro ? <span className="muted">—</span> :
                     <>
                       <button className="btn sm" title="Lấy ảnh bìa eBay tự động" onClick={() => fetchOneImage(o.id)}
                         style={{ width: 88, height: 60, padding: 0, fontSize: 22 }}>🖼️</button>
@@ -528,45 +530,46 @@ export default function Master({ currentUser, teams, refreshUser }) {
                 </td>
                 <td>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : ""}</td>
                 <td>
-                  <input className="input" style={{ padding: "4px 6px", width: 90 }} defaultValue={o.size}
+                  <input className="input" style={{ padding: "4px 6px", width: 90, background: roBg }} defaultValue={o.size} readOnly={ro}
                     placeholder="nhập…" {...cellProps("Size", (v) => { if (v !== o.size) patch(o.id, { size: v }); })} />
                 </td>
                 <td>
-                  <input className="input" style={{ padding: "4px 6px", width: 90 }} defaultValue={o.color}
+                  <input className="input" style={{ padding: "4px 6px", width: 90, background: roBg }} defaultValue={o.color} readOnly={ro}
                     placeholder="nhập…" {...cellProps("Màu", (v) => { if (v !== o.color) patch(o.id, { color: v }); })} />
                 </td>
                 <td>
-                  <input className="input" style={{ padding: "4px 6px", width: 80 }} type="number" defaultValue={o.profit}
+                  <input className="input" style={{ padding: "4px 6px", width: 80, background: roBg }} type="number" defaultValue={o.profit} readOnly={ro}
                     {...cellProps("Profit", (v) => { const n = Number(v) || 0; if (n !== o.profit) patch(o.id, { profit: n }); })} />
                 </td>
                 <td>
-                  <DeadlineCell value={o.deadline}
-                    bind={cellProps("Thời hạn", (v) => { if (v !== o.deadline) patch(o.id, { deadline: v }); })}
-                    onPick={(v) => patch(o.id, { deadline: v })} />
+                  {ro ? (o.deadline || <span className="muted">—</span>)
+                    : <DeadlineCell value={o.deadline}
+                        bind={cellProps("Thời hạn", (v) => { if (v !== o.deadline) patch(o.id, { deadline: v }); })}
+                        onPick={(v) => patch(o.id, { deadline: v })} />}
                 </td>
                 <td>
-                  <input className="input" style={{ padding: "4px 6px", width: 150 }} defaultValue={o.masterNote} placeholder="ghi chú…"
+                  <input className="input" style={{ padding: "4px 6px", width: 150, background: roBg }} defaultValue={o.masterNote} readOnly={ro} placeholder="ghi chú…"
                     {...cellProps("Note", (v) => { if (v !== o.masterNote) patch(o.id, { masterNote: v }); })} />
                 </td>
                 <td style={{ background: o.urgent ? "var(--red-bg)" : undefined, minWidth: 150 }}>
-                  <label className="row" style={{ gap: 5, cursor: "pointer", fontWeight: 700, color: o.urgent ? "var(--red)" : undefined }}>
-                    <input type="checkbox" checked={!!o.urgent} onChange={(e) => patch(o.id, { urgent: e.target.checked })} /> 🚨 Gấp
+                  <label className="row" style={{ gap: 5, cursor: ro ? "default" : "pointer", fontWeight: 700, color: o.urgent ? "var(--red)" : undefined }}>
+                    <input type="checkbox" checked={!!o.urgent} disabled={ro} onChange={(e) => patch(o.id, { urgent: e.target.checked })} /> 🚨 Gấp
                   </label>
                   {o.urgent && (
-                    <input className="input" style={{ padding: "4px 6px", width: 150, marginTop: 4, borderColor: "var(--red)" }}
-                      defaultValue={o.urgentNote} placeholder="lý do gấp / thông tin…"
+                    <input className="input" style={{ padding: "4px 6px", width: 150, marginTop: 4, borderColor: "var(--red)", background: roBg }}
+                      defaultValue={o.urgentNote} readOnly={ro} placeholder="lý do gấp / thông tin…"
                       {...cellProps("Cảnh báo gấp", (v) => { if (v !== o.urgentNote) patch(o.id, { urgentNote: v }); })} />
                   )}
                 </td>
                 <td style={{ fontSize: 12, maxWidth: 170, whiteSpace: "normal" }}>{o.staffNote || <span className="muted">—</span>}</td>
                 <td>
-                  <select className="input" style={{ padding: "4px 6px", minWidth: 110 }} value={o.masterStatus}
+                  <select className="input" style={{ padding: "4px 6px", minWidth: 110, background: roBg }} value={o.masterStatus} disabled={ro}
                     onChange={(e) => patch(o.id, { masterStatus: e.target.value })}>
                     <option value="">— trống —</option>
                     {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                   {o.masterStatus === "Đã Cancel" && (
-                    <select className="input" style={{ padding: "3px 6px", minWidth: 110, marginTop: 4, fontSize: 12 }}
+                    <select className="input" style={{ padding: "3px 6px", minWidth: 110, marginTop: 4, fontSize: 12, background: roBg }} disabled={ro}
                       value={o.cancelReason || ""} onChange={(e) => patch(o.id, { cancelReason: e.target.value })} title="Lý do Cancel">
                       <option value="">— lý do cancel —</option>
                       {cancelReasons.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -588,8 +591,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   ? o.purchases.map((p, i) => p.processStatus ? <div key={i}><Badge>{p.processStatus}</Badge></div> : <div key={i} className="muted">·</div>)
                   : <span className="muted">—</span>}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <Button sm onClick={() => setEditing(o)}>Sửa</Button>
-                  <Button sm onClick={() => setHistoryFor(o)} title="Lịch sử chỉnh sửa" style={{ marginLeft: 4 }}>🕘</Button>
+                  {!ro && <Button sm onClick={() => setEditing(o)}>Sửa</Button>}
+                  <Button sm onClick={() => setHistoryFor(o)} title="Lịch sử chỉnh sửa" style={{ marginLeft: ro ? 0 : 4 }}>🕘</Button>
                 </td>
               </tr>
               );
