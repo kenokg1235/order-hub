@@ -5,8 +5,9 @@ import { Button, Badge } from "../ui.jsx";
 // Task — Lister thêm hạng mục cần Admin kiểm tra; Admin thêm task theo dõi/xử lý case.
 export default function Tasks({ currentUser }) {
   const isAdmin = currentUser.role === "Admin";
+  const isManager = isAdmin || currentUser.role === "Lister";   // tạo/sửa/đánh dấu xong task
   const [tasks, setTasks] = useState([]);
-  const [na, setNa] = useState({ title: "", note: "", priority: "normal" });
+  const [na, setNa] = useState({ title: "", note: "", orderNo: "", priority: "normal" });
   const [tab, setTab] = useState("open");   // open | done | all
   const [q, setQ] = useState("");
   const [adminNote, setAdminNote] = useState("");
@@ -33,13 +34,18 @@ export default function Tasks({ currentUser }) {
     const s = q.trim().toLowerCase();
     return tasks
       .filter((t) => (tab === "all" ? true : tab === "done" ? t.done : !t.done))
-      .filter((t) => !s || [t.title, t.note, t.createdByName].some((v) => String(v || "").toLowerCase().includes(s)));
+      .filter((t) => !s || [t.title, t.note, t.orderNo, t.createdByName, t.response].some((v) => String(v || "").toLowerCase().includes(s)));
   }, [tasks, tab, q]);
   const openCount = tasks.filter((t) => !t.done).length;
 
   async function add() {
     if (!na.title.trim()) { setErr("Nhập nội dung task"); return; }
-    try { await api.post("/api/tasks", na); setNa({ title: "", note: "", priority: "normal" }); setErr(""); load(); }
+    try { await api.post("/api/tasks", na); setNa({ title: "", note: "", orderNo: "", priority: "normal" }); setErr(""); load(); }
+    catch (e) { setErr(e.message); }
+  }
+  async function respond(t, text) {
+    if (String(text) === String(t.response ?? "")) return;
+    try { const { task } = await api.post(`/api/tasks/${t.id}/respond`, { response: text }); setTasks((p) => p.map((x) => x.id === t.id ? task : x)); }
     catch (e) { setErr(e.message); }
   }
   async function setDone(t, done) {
@@ -74,12 +80,14 @@ export default function Tasks({ currentUser }) {
         <input className="input" style={{ maxWidth: 200 }} placeholder="🔍 Tìm task…" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Listing thêm hạng mục cần Admin kiểm tra · Admin thêm task theo dõi/xử lý case. Xong thì bấm <b>✓</b>. Đánh dấu <b>⚑</b> để ưu tiên cao.
+        {isManager
+          ? <>Admin/Listing tạo task (gắn <b>mã order</b> hoặc để trống nếu là task tài khoản). Task gắn đơn → nhân viên nhận đơn sẽ thấy & <b>phản hồi</b>. Xong bấm <b>✓</b>, <b>⚑</b> để ưu tiên cao.</>
+          : <>Đây là các task liên quan đến <b>đơn bạn đang nhận</b>. Bấm vào ô <b>Phản hồi</b> để trả lời cho Admin/Listing.</>}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       {/* Ghi chú của Admin cho Lister xem (dùng chung với Sheet Tổng) */}
-      {(adminNote || isAdmin) && (
+      {isManager && (adminNote || isAdmin) && (
         <div className="card" style={{ marginBottom: 12, padding: "10px 14px", background: "#fffbea", borderColor: "#eab308" }}>
           {noteEdit ? (
             <div>
@@ -102,24 +110,32 @@ export default function Tasks({ currentUser }) {
         </div>
       )}
 
-      <div className="card" style={{ padding: 12, marginBottom: 16 }}>
-        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label className="label">Task mới</label>
-            <input className="input" style={{ width: "100%" }} placeholder="Nội dung cần kiểm tra / theo dõi…" value={na.title}
-              onChange={(e) => setNa((p) => ({ ...p, title: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+      {isManager && (
+        <div className="card" style={{ padding: 12, marginBottom: 16 }}>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label className="label">Task mới</label>
+              <input className="input" style={{ width: "100%" }} placeholder="Nội dung cần kiểm tra / theo dõi…" value={na.title}
+                onChange={(e) => setNa((p) => ({ ...p, title: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+            </div>
+            <div style={{ width: 150 }}>
+              <label className="label">Mã order (tùy chọn)</label>
+              <input className="input" style={{ width: "100%" }} placeholder="để trống nếu là TK" value={na.orderNo}
+                title="Gắn mã order để nhân viên nhận đơn thấy & phản hồi. Task tài khoản thì để trống."
+                onChange={(e) => setNa((p) => ({ ...p, orderNo: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 160 }}>
+              <label className="label">Ghi chú (tùy chọn)</label>
+              <input className="input" style={{ width: "100%" }} placeholder="chi tiết…" value={na.note}
+                onChange={(e) => setNa((p) => ({ ...p, note: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
+            </div>
+            <label className="row" style={{ gap: 5, cursor: "pointer", paddingBottom: 6 }}>
+              <input type="checkbox" checked={na.priority === "high"} onChange={(e) => setNa((p) => ({ ...p, priority: e.target.checked ? "high" : "normal" }))} /> ⚑ Ưu tiên
+            </label>
+            <Button variant="primary" onClick={add}>＋ Thêm task</Button>
           </div>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <label className="label">Ghi chú (tùy chọn)</label>
-            <input className="input" style={{ width: "100%" }} placeholder="chi tiết…" value={na.note}
-              onChange={(e) => setNa((p) => ({ ...p, note: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") add(); }} />
-          </div>
-          <label className="row" style={{ gap: 5, cursor: "pointer", paddingBottom: 6 }}>
-            <input type="checkbox" checked={na.priority === "high"} onChange={(e) => setNa((p) => ({ ...p, priority: e.target.checked ? "high" : "normal" }))} /> ⚑ Ưu tiên
-          </label>
-          <Button variant="primary" onClick={add}>＋ Thêm task</Button>
         </div>
-      </div>
+      )}
 
       {list.length === 0 && <div className="card" style={{ padding: 24, textAlign: "center" }}><span className="muted">{tab === "open" ? "🎉 Không còn task nào chưa xong." : "Không có task nào."}</span></div>}
 
@@ -130,9 +146,16 @@ export default function Tasks({ currentUser }) {
             borderColor: high ? "var(--red)" : undefined, boxShadow: high ? "inset 4px 0 0 0 var(--red)" : undefined,
             opacity: t.done ? 0.6 : 1 }}>
             <div className="row" style={{ gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <button className="btn sm" title={t.done ? "Mở lại" : "Đánh dấu xong"} onClick={() => setDone(t, !t.done)}
-                style={{ fontSize: 16, padding: "2px 9px", background: t.done ? "var(--green-bg)" : undefined }}>{t.done ? "✓" : "○"}</button>
+              {isManager && <button className="btn sm" title={t.done ? "Mở lại" : "Đánh dấu xong"} onClick={() => setDone(t, !t.done)}
+                style={{ fontSize: 16, padding: "2px 9px", background: t.done ? "var(--green-bg)" : undefined }}>{t.done ? "✓" : "○"}</button>}
               <div style={{ flex: 1, minWidth: 200 }}>
+                <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+                  {t.orderNo
+                    ? <span className="badge blue" style={{ fontSize: 11 }}>📦 Đơn {t.orderNo}</span>
+                    : <span className="badge" style={{ fontSize: 11 }}>💳 Task tài khoản</span>}
+                  {high && <span className="badge red" style={{ fontSize: 10 }}>⚑ Ưu tiên</span>}
+                  {t.done && <span className="badge green" style={{ fontSize: 10 }}>✓ Xong</span>}
+                </div>
                 {canEdit(t) ? (
                   <input className="input" style={{ width: "100%", fontWeight: 600, textDecoration: t.done ? "line-through" : undefined }}
                     defaultValue={t.title} onBlur={(e) => save(t, "title", e.target.value)} />
@@ -141,8 +164,16 @@ export default function Tasks({ currentUser }) {
                   ? <input className="input" style={{ width: "100%", marginTop: 4, fontSize: 13 }} defaultValue={t.note} placeholder="ghi chú…"
                       onBlur={(e) => save(t, "note", e.target.value)} />
                   : <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{t.note}</div>)}
+
+                {/* Phản hồi của nhân viên xử lý đơn (chỉ với task gắn đơn) */}
+                {t.orderNo && (
+                  <div style={{ marginTop: 6, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
+                    <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>💬 Phản hồi của NV xử lý{t.responseByName ? ` — ${t.responseByName} · ${fmt(t.responseAt)}` : ""}:</div>
+                    <input className="input" style={{ width: "100%", fontSize: 13 }} defaultValue={t.response} placeholder="nhân viên nhận đơn phản hồi ở đây…"
+                      onBlur={(e) => respond(t, e.target.value)} />
+                  </div>
+                )}
                 <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                  {high && <span className="badge red" style={{ fontSize: 10, marginRight: 6 }}>⚑ Ưu tiên</span>}
                   Tạo bởi <b>{t.createdByName}</b> · {fmt(t.createdAt)}
                   {t.done && <> · ✓ {t.doneByName} {fmt(t.doneAt)}</>}
                 </div>

@@ -219,16 +219,25 @@ CREATE TABLE IF NOT EXISTS tasks (
   id             TEXT PRIMARY KEY,
   title          TEXT NOT NULL,
   note           TEXT DEFAULT '',
+  order_no       TEXT DEFAULT '',         -- mã order liên quan (rỗng = task tài khoản, không gắn đơn)
   priority       TEXT DEFAULT 'normal',   -- normal | high
   created_by     TEXT DEFAULT '',
   created_by_name TEXT DEFAULT '',
+  response       TEXT DEFAULT '',         -- phản hồi của nhân viên xử lý đơn
+  response_by_name TEXT DEFAULT '',
+  response_at    INTEGER DEFAULT 0,
   done           INTEGER DEFAULT 0,
   done_by_name   TEXT DEFAULT '',
   done_at        INTEGER DEFAULT 0,
   created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+CREATE INDEX IF NOT EXISTS idx_tasks_orderno ON tasks(order_no);
 `);
+ensureColumn("tasks", "order_no", "TEXT DEFAULT ''");
+ensureColumn("tasks", "response", "TEXT DEFAULT ''");
+ensureColumn("tasks", "response_by_name", "TEXT DEFAULT ''");
+ensureColumn("tasks", "response_at", "INTEGER DEFAULT 0");
 
 // Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng", hiện tên cho mọi người.
 db.exec(`
