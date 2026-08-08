@@ -23,6 +23,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [q, setQ] = useState(SAVED.q || "");
   const [cf, setCf] = useState(SAVED.cf || {});                // per-column filters
   const [deadlineSort, setDeadlineSort] = useState(SAVED.deadlineSort || "");   // "" | "asc" | "desc"
+  const [amountSort, setAmountSort] = useState(SAVED.amountSort || "");         // "" | "asc" | "desc"
   const [historyFor, setHistoryFor] = useState(null);
   const [pinned, setPinned] = useState(SAVED.pinned !== false);
   const [freezeCols, setFreezeCols] = useState(Number.isFinite(SAVED.freezeCols) ? SAVED.freezeCols : 3);   // số cột ghim từ trái
@@ -39,8 +40,8 @@ export default function TeamSheet({ currentUser, teams }) {
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
-    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, pinned, freezeCols })); } catch {}
-  }, [filter, teamFilter, q, cf, deadlineSort, pinned, freezeCols]);
+    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols })); } catch {}
+  }, [filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols]);
 
   async function loadOrders(m) {
     try { setOrders((await api.get(`/api/team-orders?month=${encodeURIComponent(m || month)}`)).orders); } catch (e) { setErr(e.message); }
@@ -134,7 +135,9 @@ export default function TeamSheet({ currentUser, teams }) {
 
   // Optional sort by deadline (DD/MM). Empty deadlines always go last.
   const deadlineKey = (d) => { const m = String(d || "").match(/(\d{1,2})\s*\/\s*(\d{1,2})/); return m ? (+m[2]) * 100 + (+m[1]) : Infinity; };
+  const amountOf = (o) => (o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);   // tổng số tiền của đơn
   const displayed = useMemo(() => {
+    if (amountSort) return [...list].sort((a, b) => amountSort === "asc" ? amountOf(a) - amountOf(b) : amountOf(b) - amountOf(a));
     if (!deadlineSort) return list;
     return [...list].sort((a, b) => {
       const va = deadlineKey(a.deadline), vb = deadlineKey(b.deadline);
@@ -143,7 +146,7 @@ export default function TeamSheet({ currentUser, teams }) {
       if (vb === Infinity) return -1;
       return deadlineSort === "asc" ? va - vb : vb - va;
     });
-  }, [list, deadlineSort]);
+  }, [list, deadlineSort, amountSort]);
 
   // Đo độ rộng cột (từ hàng tiêu đề) để ghim N cột đầu đúng vị trí khi cuộn ngang.
   useLayoutEffect(() => {
@@ -332,14 +335,19 @@ export default function TeamSheet({ currentUser, teams }) {
             <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th>
             <th>SL <SumBtn label="SL" text={() => round2(displayed.reduce((s, o) => s + (Number(o.qty) || 0), 0))} /></th>
             <th>Profit <SumBtn label="Profit" text={() => "$" + round2(displayed.reduce((s, o) => s + (Number(o.profit) || 0), 0))} /></th>
-            <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
+            <th onClick={() => { setAmountSort(""); setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
             </th>
             <th>Note tổng</th><th title="Nhân viên xử lý ghi chú để Lister theo dõi">Note gửi Lister</th><th>Nhận đơn</th>
             <th>Thẻ</th>
-            <th>Số tiền <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} /></th>
+            <th style={{ whiteSpace: "nowrap" }}>
+              <span onClick={() => { setDeadlineSort(""); setAmountSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
+                style={{ cursor: "pointer", color: amountSort ? "var(--primary)" : undefined }} title="Sắp xếp theo số tiền">
+                Số tiền {amountSort === "asc" ? "↑" : amountSort === "desc" ? "↓" : "⇅"}
+              </span> <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} />
+            </th>
             <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
             <th>Note 1</th><th>Note 2</th><th>Note 3</th><th>Note 4</th>
           </tr>
