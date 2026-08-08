@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import path from "path";
+import fs from "fs";
 import db from "./db.js";
 import { fetchEbayImage } from "./ebayImage.js";
 import {
@@ -19,7 +20,13 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(compression());                    // nén gzip cho JSON API + file tĩnh
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json({ limit: "12mb" }));  // đủ cho ảnh deli dán vào (đã nén phía client)
+
+// Thư mục lưu ảnh deli (upload) — phục vụ tĩnh, tồn tại qua các lần deploy (ngoài git).
+const uploadsDir = path.join(__dirname, "uploads");
+const deliDir = path.join(uploadsDir, "deli");
+try { fs.mkdirSync(deliDir, { recursive: true }); } catch {}
+app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
 const PORT = process.env.PORT || 4000;
 
@@ -697,12 +704,14 @@ function purchaseOut(p, masked = false) {
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
     orderTime: p.order_time, card: null, hidden: true,   // hidden=true: chỉ-đọc + ẩn số thẻ
+    deliImage: p.deli_image || "",
   };
   return {
     id: p.id, orderId: p.order_id, card: p.card, amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
     cardValid: !p.card || cardExists(p.card), orderTime: p.order_time, hidden: false,
+    deliImage: p.deli_image || "",
   };
 }
 const purchasesOf = (orderId, masked = false) =>
@@ -952,8 +961,40 @@ app.delete("/api/purchases/:pid", requireAuth, (req, res) => {
   if (!p) return res.json({ ok: true });
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới xóa thẻ" });
+  removeDeliFiles(p.id);
   db.prepare("DELETE FROM purchases WHERE id=?").run(p.id);
   res.json({ ok: true });
+});
+
+// Ảnh deli: dán ảnh (data URL) → lưu file, phục vụ cho Lister gửi khách. NV (chủ đơn) hoặc Lister store/Admin.
+function removeDeliFiles(pid) {
+  try { for (const f of fs.readdirSync(deliDir)) if (f.startsWith(pid + ".")) fs.unlinkSync(path.join(deliDir, f)); } catch {}
+}
+app.post("/api/purchases/:pid/deli-image", requireAuth, (req, res) => {
+  const p = db.prepare("SELECT * FROM purchases WHERE id=?").get(req.params.pid);
+  if (!p) return res.status(404).json({ error: "Không tìm thấy thẻ/hàng" });
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
+  if (!canSeePurchases(req.user, o) && !canEditMasterOrder(req.user, o))
+    return res.status(403).json({ error: "Không có quyền thêm ảnh cho đơn này" });
+  const m = String(req.body.dataUrl || "").match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return res.status(400).json({ error: "Ảnh không hợp lệ" });
+  const ext = m[1] === "jpeg" ? "jpg" : m[1];
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: "Ảnh quá lớn" });
+  removeDeliFiles(p.id);
+  fs.writeFileSync(path.join(deliDir, `${p.id}.${ext}`), buf);
+  const url = `/uploads/deli/${p.id}.${ext}?v=${Date.now()}`;
+  db.prepare("UPDATE purchases SET deli_image=? WHERE id=?").run(url, p.id);
+  res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id), !canSeePurchases(req.user, o)) });
+});
+app.delete("/api/purchases/:pid/deli-image", requireAuth, (req, res) => {
+  const p = db.prepare("SELECT * FROM purchases WHERE id=?").get(req.params.pid);
+  if (!p) return res.json({ ok: true });
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
+  if (!canSeePurchases(req.user, o) && !canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
+  removeDeliFiles(p.id);
+  db.prepare("UPDATE purchases SET deli_image='' WHERE id=?").run(p.id);
+  res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id), !canSeePurchases(req.user, o)) });
 });
 
 // ── Notifications + Telegram ──────────────────────────────────────────────────

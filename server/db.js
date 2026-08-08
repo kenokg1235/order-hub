@@ -138,6 +138,7 @@ db.exec("UPDATE orders SET finalized_at = updated_at WHERE finalized_at = 0 AND 
 }
 ensureColumn("purchases", "order_time", "INTEGER DEFAULT 0");   // when Order# last changed
 ensureColumn("purchases", "name", "TEXT DEFAULT ''");          // Name tự nhập (trước cột Tracking)
+ensureColumn("purchases", "deli_image", "TEXT DEFAULT ''");   // ảnh deli (dán ảnh) cho Lister gửi khách
 ensureColumn("shipments", "account", "TEXT DEFAULT ''");        // which AfterShip key registered it
 ensureColumn("blacklist", "category", "TEXT DEFAULT ''");       // Ngành hàng (dropdown) để lọc user theo loại hàng
 ensureColumn("card_requests", "seq", "INTEGER DEFAULT 0");      // human-readable running ID

@@ -5,6 +5,7 @@ import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
+import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
 
 // Sheet Con — team members process their divided orders. One order groups 1+ card
 // rows (purchases); order-level cells use rowSpan. Master status drives row colour.
@@ -209,6 +210,40 @@ export default function TeamSheet({ currentUser, teams }) {
     if (!confirm("Xóa thẻ/hàng này?")) return;
     try { await api.del(`/api/purchases/${p.id}`); delPur(p.orderId, p.id); } catch (e) { setErr(e.message); }
   }
+
+  // Ảnh deli: dán ảnh (Ctrl+V) hoặc chọn file → upload; Lister lấy để gửi khách.
+  async function uploadDeli(p, file) {
+    if (!file) return;
+    try {
+      const dataUrl = await fileToResizedDataUrl(file);
+      setPur(p.orderId, (await api.post(`/api/purchases/${p.id}/deli-image`, { dataUrl })).purchase);
+    } catch (e) { setErr(e.message); }
+  }
+  async function removeDeli(p) {
+    try { setPur(p.orderId, (await api.del(`/api/purchases/${p.id}/deli-image`)).purchase); } catch (e) { setErr(e.message); }
+  }
+  const deliImageCell = (p, canEdit) => {
+    if (p.deliImage) return (
+      <div style={{ marginTop: 3 }}>
+        <img src={p.deliImage} alt="deli" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in", verticalAlign: "middle" }}
+          onMouseMove={(e) => setPreview({ url: p.deliImage, x: e.clientX, y: e.clientY })} onMouseLeave={() => setPreview(null)}
+          onClick={() => window.open(p.deliImage, "_blank")} title="Bấm mở ảnh · rê chuột để phóng to" />
+        <a className="btn sm" href={p.deliImage} download style={{ marginLeft: 4, padding: "1px 6px", fontSize: 11 }} title="Tải ảnh về">⬇</a>
+        {canEdit && <button className="btn sm" onClick={() => removeDeli(p)} style={{ marginLeft: 3, padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh">✕</button>}
+      </div>
+    );
+    if (!canEdit) return null;
+    return (
+      <div tabIndex={0} onPaste={(e) => { const f = imageFromPaste(e); if (f) { e.preventDefault(); uploadDeli(p, f); } }}
+        title="Bấm vào ô rồi Ctrl+V để dán ảnh deli, hoặc 📁 chọn file"
+        style={{ marginTop: 3, border: "1px dashed var(--border)", borderRadius: 6, padding: "2px 6px", fontSize: 11, color: "var(--muted)", cursor: "text", display: "inline-flex", gap: 4, alignItems: "center" }}>
+        📋 Dán ảnh deli
+        <label className="btn sm" style={{ padding: "0 5px", fontSize: 11, cursor: "pointer" }}>📁
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { uploadDeli(p, e.target.files[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+    );
+  };
 
   // per-card editable cell (wired to the formula bar)
   const pin = (p, field, { type = "text", w = 100, label, disabled = false, required = false } = {}) => {
@@ -457,7 +492,7 @@ export default function TeamSheet({ currentUser, teams }) {
                       <td className="muted" style={{ fontStyle: "italic", fontSize: 12 }} title="Số thẻ của người nhận được ẩn">🔒 ẩn</td>
                       <td>{roCell("Số tiền", p.amount, 80)}</td>
                       <td>{roCell("Name", p.name, 120)}</td>
-                      <td>{roCell("Tracking", p.tracking, 150)}</td>
+                      <td>{roCell("Tracking", p.tracking, 150)}{deliImageCell(p, false)}</td>
                       <td>{roCell("Order#", p.orderNumber, 120)}</td>
                       <td>{roCell("Email", p.email, 150)}</td>
                       <td>{roCell("Phone", p.phone, 110)}</td>
@@ -478,7 +513,7 @@ export default function TeamSheet({ currentUser, teams }) {
                     </td>
                     <td>{pin(p, "amount", { type: "number", w: 80, label: "Số tiền", disabled: locked, required: o.purchases.length >= 2 })}</td>
                     <td>{pin(p, "name", { w: 120, label: "Name", disabled: locked })}</td>
-                    <td>{pin(p, "tracking", { w: 150, label: "Tracking number", disabled: locked })}</td>
+                    <td>{pin(p, "tracking", { w: 150, label: "Tracking number", disabled: locked })}{deliImageCell(p, canEdit)}</td>
                     <td>{pin(p, "orderNumber", { w: 120, label: "Order number", disabled: locked })}</td>
                     <td>{pin(p, "email", { w: 150, label: "Email", disabled: locked })}</td>
                     <td>{pin(p, "phone", { w: 110, label: "Phone", disabled: locked })}</td>

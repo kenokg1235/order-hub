@@ -9,3 +9,5 @@ _*.csv
 server/data.db.bak-*
 *.bak-*
 *.output
+
+server/uploads/

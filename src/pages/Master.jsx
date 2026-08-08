@@ -6,6 +6,7 @@ import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
+import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
 
 // Sheet Tổng — Admin sees all + divides to teams; Lister sees only assigned stores.
 export default function Master({ currentUser, teams, refreshUser }) {
@@ -257,6 +258,45 @@ export default function Master({ currentUser, teams, refreshUser }) {
       loadOrders(month);
     } catch (e) { setErr(e.message); }
   }
+  // Ảnh deli trong cột Tracking — Lister lấy để gửi khách; dán/tải/xóa.
+  const setPurImg = (orderId, purchase) => setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, purchases: (o.purchases || []).map((x) => x.id === purchase.id ? purchase : x) } : o));
+  async function uploadDeli(p, file) {
+    if (!file) return;
+    try { const dataUrl = await fileToResizedDataUrl(file); setPurImg(p.orderId, (await api.post(`/api/purchases/${p.id}/deli-image`, { dataUrl })).purchase); }
+    catch (e) { setErr(e.message); }
+  }
+  async function removeDeli(p) { try { setPurImg(p.orderId, (await api.del(`/api/purchases/${p.id}/deli-image`)).purchase); } catch (e) { setErr(e.message); } }
+  const deliImageCell = (p, canEdit) => {
+    if (p.deliImage) return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <img src={p.deliImage} alt="deli" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in", verticalAlign: "middle" }}
+          onMouseMove={(e) => setPreview({ url: p.deliImage, x: e.clientX, y: e.clientY })} onMouseLeave={() => setPreview(null)}
+          onClick={() => window.open(p.deliImage, "_blank")} title="Bấm mở · rê chuột phóng to" />
+        <a className="btn sm" href={p.deliImage} download style={{ marginLeft: 4, padding: "1px 6px", fontSize: 11 }} title="Tải ảnh về gửi khách">⬇</a>
+        {canEdit && <button className="btn sm" onClick={() => removeDeli(p)} style={{ marginLeft: 3, padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh">✕</button>}
+      </span>
+    );
+    if (!canEdit) return null;
+    return (
+      <span tabIndex={0} onPaste={(e) => { const f = imageFromPaste(e); if (f) { e.preventDefault(); uploadDeli(p, f); } }}
+        title="Bấm vào ô rồi Ctrl+V dán ảnh deli, hoặc 📁 chọn file"
+        style={{ border: "1px dashed var(--border)", borderRadius: 6, padding: "1px 6px", fontSize: 11, color: "var(--muted)", cursor: "text" }}>
+        📋 Dán ảnh
+        <label className="btn sm" style={{ padding: "0 5px", fontSize: 11, marginLeft: 3, cursor: "pointer" }}>📁
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { uploadDeli(p, e.target.files[0]); e.target.value = ""; }} />
+        </label>
+      </span>
+    );
+  };
+  const trackingCell = (o, ro) => o.purchases && o.purchases.length
+    ? o.purchases.map((p, i) => (
+        <div key={i} style={{ marginBottom: 5 }}>
+          <TruncCell text={p.tracking != null && p.tracking !== "" ? String(p.tracking) : ""} w={150} onShow={(t) => viewCell("Tracking", t)} />
+          <div style={{ marginTop: 2 }}>{deliImageCell(p, !ro)}</div>
+        </div>
+      ))
+    : <span className="muted">—</span>;
+
   async function saveAdminNote(text) {
     try { await api.put("/api/settings/adminNoteForLister", { value: text }); setAdminNote(text); setNoteEdit(false); }
     catch (e) { setErr(e.message); }
@@ -581,7 +621,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                 <td style={{ fontSize: 12, background: allTracked ? "var(--green-bg)" : undefined }}
                     title={allTracked ? "Tất cả hàng trong đơn đều ở trạng thái 'Có Tracking'" : ""}>
                   {allTracked && <div style={{ marginBottom: 3 }}><Badge color="green">✓ Có tracking</Badge></div>}
-                  {stack(o, "tracking", 150, "Tracking")}
+                  {trackingCell(o, ro)}
                 </td>
                 <td style={{ fontSize: 12 }}>{stackOrderNo(o)}</td>
                 <td style={{ fontSize: 12 }}>{stack(o, "email", 160, "Email")}</td>
