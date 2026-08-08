@@ -232,12 +232,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
-CREATE INDEX IF NOT EXISTS idx_tasks_orderno ON tasks(order_no);
 `);
 ensureColumn("tasks", "order_no", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response_by_name", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response_at", "INTEGER DEFAULT 0");
+db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_orderno ON tasks(order_no)");   // sau khi chắc chắn có cột order_no
 
 // Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng", hiện tên cho mọi người.
 db.exec(`
