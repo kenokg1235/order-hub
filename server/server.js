@@ -503,6 +503,28 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
 });
 
 // Divide selected orders to a team (Admin only).
+// Đẩy 1 đơn tháng cũ sang THÁNG HIỆN TẠI để xử lý lại (Admin / Lister theo store).
+app.post("/api/orders/:id/to-current", requireAuth, (req, res) => {
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
+  if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
+  if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền với đơn này" });
+  const to = getActiveMonth();
+  if (o.period !== to) {
+    logChange(req.user, "order", o.id, o.id, "period", o.period, to);
+    db.prepare("UPDATE orders SET period=?, updated_at=? WHERE id=?").run(to, Date.now(), o.id);
+  }
+  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)) });
+});
+// Đẩy nhiều đơn đã chọn sang tháng hiện tại (Admin).
+app.post("/api/orders/move-current", requireAdmin, (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+  const to = getActiveMonth(), now = Date.now();
+  let moved = 0;
+  const upd = db.prepare("UPDATE orders SET period=?, updated_at=? WHERE id=? AND period!=?");
+  db.transaction(() => { for (const id of ids) moved += upd.run(to, now, id, to).changes; })();
+  res.json({ ok: true, to, moved });
+});
+
 app.post("/api/orders/divide", requireAdmin, (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   const team = String(req.body.team || "");

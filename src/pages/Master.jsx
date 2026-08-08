@@ -301,6 +301,18 @@ export default function Master({ currentUser, teams, refreshUser }) {
     try { await api.put("/api/settings/adminNoteForLister", { value: text }); setAdminNote(text); setNoteEdit(false); }
     catch (e) { setErr(e.message); }
   }
+  // Đẩy đơn tháng cũ sang tháng hiện tại để xử lý lại.
+  async function moveToCurrent(o) {
+    if (!confirm(`Đẩy đơn ${o.orderNo} sang tháng hiện tại (${activeMonth}) để xử lý lại?`)) return;
+    try { await api.post(`/api/orders/${o.id}/to-current`, {}); loadOrders(month); }
+    catch (e) { setErr(e.message); }
+  }
+  async function moveSelectedToCurrent() {
+    if (!sel.size) return;
+    if (!confirm(`Đẩy ${sel.size} đơn đã chọn sang tháng hiện tại (${activeMonth})?`)) return;
+    try { const r = await api.post("/api/orders/move-current", { ids: [...sel] }); setSel(new Set()); loadOrders(month); setErr(`✓ Đã đẩy ${r.moved} đơn sang ${r.to}.`); setTimeout(() => setErr(""), 3000); }
+    catch (e) { setErr(e.message); }
+  }
   async function patch(id, body) {
     try {
       const { order } = await api.put(`/api/orders/${id}`, body);
@@ -438,6 +450,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
             <Button key={t.id} sm variant="primary" onClick={() => divide(t.id)}>{t.name}</Button>
           ))}
           <Button sm onClick={() => divide("")}>Bỏ chia</Button>
+          <Button sm onClick={moveSelectedToCurrent} title="Chuyển đơn tháng cũ sang tháng hiện tại để xử lý lại">📅 Đẩy sang {activeMonth}</Button>
           <div className="spacer" />
           <Button sm variant="danger" onClick={bulkDelete}>🗑 Xóa đã chọn ({sel.size})</Button>
           <Button sm onClick={() => setSel(new Set())}>Bỏ chọn</Button>
@@ -521,6 +534,12 @@ export default function Master({ currentUser, teams, refreshUser }) {
                     <button className="badge" style={{ marginTop: 3, cursor: "pointer", border: "none", background: "#6366f1", color: "#fff", fontSize: 10 }}
                       title="Đơn nhiều sản phẩm — bấm để gom tất cả sản phẩm cùng đơn này" onClick={() => setF("id", o.orderNo)}>
                       📦 {o.multiCount} SP
+                    </button>
+                  )}
+                  {!ro && o.period && activeMonth && o.period !== activeMonth && (
+                    <button className="badge" style={{ marginTop: 3, cursor: "pointer", border: "1px solid #0ea5e9", background: "#e0f2fe", color: "#0369a1", fontSize: 10, display: "block" }}
+                      title={`Đơn tháng ${o.period} — đẩy sang tháng hiện tại (${activeMonth}) để xử lý lại`} onClick={() => moveToCurrent(o)}>
+                      📅 Đẩy sang {activeMonth}
                     </button>
                   )}
                 </td>
