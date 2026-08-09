@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { Button, Input, Modal, Badge } from "../ui.jsx";
+import MultiFilter from "../MultiFilter.jsx";
 
 // Payout per eBay account (store). Listing enters for own stores; Admin sees all.
 // Grouped by store with per-store totals + a date-range filter for grand totals.
@@ -11,6 +12,7 @@ export default function Payout({ currentUser, refreshUser }) {
   const [stores, setStores] = useState([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [storeSel, setStoreSel] = useState([]);   // gom/cộng payout theo store đã chọn ("" = tất cả)
   const [editing, setEditing] = useState(null);
   const [qa, setQa] = useState({ store: "", username: "", bank: "", bankName: "", amount: "", date: "", note: "" });
   const [err, setErr] = useState("");
@@ -30,8 +32,9 @@ export default function Payout({ currentUser, refreshUser }) {
   const filtered = useMemo(() => payouts.filter((p) => {
     if (from && (p.date || "") < from) return false;
     if (to && (p.date || "") > to) return false;
+    if (storeSel.length && !storeSel.includes(p.store)) return false;
     return true;
-  }), [payouts, from, to]);
+  }), [payouts, from, to, storeSel]);
 
   const groups = useMemo(() => {
     const m = {};
@@ -39,6 +42,10 @@ export default function Payout({ currentUser, refreshUser }) {
     return m;
   }, [filtered]);
   const grand = filtered.reduce((s, p) => s + (p.amount || 0), 0);
+  // Tổng hợp: cộng payout gom theo từng store (theo bộ lọc hiện tại), sắp theo tổng giảm dần.
+  const storeSummary = useMemo(() => Object.entries(groups)
+    .map(([store, list]) => ({ store, count: list.length, total: list.reduce((s, p) => s + (p.amount || 0), 0) }))
+    .sort((a, b) => b.total - a.total), [groups]);
 
   async function del(id) {
     if (!confirm("Xóa payout này?")) return;
@@ -68,9 +75,38 @@ export default function Payout({ currentUser, refreshUser }) {
         <input type="date" className="input" style={{ maxWidth: 150 }} value={from} onChange={(e) => setFrom(e.target.value)} />
         <span className="muted" style={{ fontSize: 13 }}>đến</span>
         <input type="date" className="input" style={{ maxWidth: 150 }} value={to} onChange={(e) => setTo(e.target.value)} />
-        {(from || to) && <Button sm onClick={() => { setFrom(""); setTo(""); }}>✕ Xóa ngày</Button>}
+        <span className="muted" style={{ fontSize: 13 }}>🏪</span>
+        <MultiFilter options={[...new Set(payouts.map((p) => p.store).filter(Boolean))].sort().map((s) => ({ v: s, l: s }))}
+          value={storeSel} onChange={setStoreSel} searchable />
+        {(from || to || storeSel.length) && <Button sm onClick={() => { setFrom(""); setTo(""); setStoreSel([]); }}>✕ Xóa lọc</Button>}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {/* Tổng hợp: cộng payout gom theo store (theo bộ lọc hiện tại) */}
+      {storeSummary.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ padding: "10px 14px", fontWeight: 700, borderBottom: "1px solid var(--border)" }}>
+            📊 Tổng hợp payout theo store ({storeSummary.length} store)
+          </div>
+          <table className="tbl" style={{ width: "100%" }}>
+            <thead><tr><th>Store</th><th style={{ textAlign: "right" }}>Số dòng</th><th style={{ textAlign: "right" }}>Tổng payout</th></tr></thead>
+            <tbody>
+              {storeSummary.map((s) => (
+                <tr key={s.store} style={{ cursor: "pointer" }} onClick={() => setStoreSel([s.store])} title="Bấm để lọc riêng store này">
+                  <td style={{ fontWeight: 600 }}>🏪 {s.store || "(không store)"}</td>
+                  <td style={{ textAlign: "right" }}>{s.count}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700 }}>{money(s.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr style={{ fontWeight: 800, borderTop: "2px solid var(--border)", background: "var(--green-bg)" }}>
+              <td>TỔNG CỘNG{storeSel.length ? ` (${storeSel.length} store đã chọn)` : ""}</td>
+              <td style={{ textAlign: "right" }}>{filtered.length}</td>
+              <td style={{ textAlign: "right", color: "#16a34a" }}>{money(grand)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      )}
 
       {/* Quick-add bar: chọn store + bank + ngày một lần, gõ số tiền → Enter để thêm liên tục */}
       <div className="card" style={{ marginBottom: 16 }}>
