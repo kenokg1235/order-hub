@@ -54,6 +54,35 @@ const NAV = [
   ]},
 ];
 
+// Đếm số hàng khi "quét" (bôi đen) trên bảng — giống thanh trạng thái của Excel/Sheet.
+function SelectionCounter() {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const update = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setN(0); return; }
+      const anc = sel.getRangeAt(0).commonAncestorContainer;
+      const el = anc.nodeType === 1 ? anc : anc.parentNode;
+      const table = el && el.closest ? el.closest("table.tbl") : null;
+      if (!table) { setN(0); return; }
+      let c = 0;
+      for (const tr of table.querySelectorAll("tbody tr")) { try { if (sel.containsNode(tr, true)) c++; } catch {} }
+      setN(c);
+    };
+    document.addEventListener("mouseup", update);
+    document.addEventListener("keyup", update);
+    document.addEventListener("selectionchange", update);
+    return () => { document.removeEventListener("mouseup", update); document.removeEventListener("keyup", update); document.removeEventListener("selectionchange", update); };
+  }, []);
+  if (n < 1) return null;
+  return (
+    <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 300, background: "#111827", color: "#fff",
+      padding: "8px 14px", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.3)", fontWeight: 700, fontSize: 14 }}>
+      🔢 Đã quét: {n} hàng
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -172,6 +201,7 @@ export default function App() {
         {page === "cards"    && <Cards currentUser={user} />}
         {page === "card-stats" && <CardStats />}
       </main>
+      <SelectionCounter />
     </div>
   );
 }
