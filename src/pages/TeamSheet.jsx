@@ -237,13 +237,15 @@ export default function TeamSheet({ currentUser, teams }) {
     );
     if (!canEdit) return null;
     return (
-      <div tabIndex={0} onPaste={(e) => { const f = imageFromPaste(e); if (f) { e.preventDefault(); uploadDeli(p, f); } }}
-        title="Bấm vào ô rồi Ctrl+V để dán ảnh deli, hoặc 📁 chọn file"
-        style={{ marginTop: 3, border: "1px dashed var(--border)", borderRadius: 6, padding: "2px 6px", fontSize: 11, color: "var(--muted)", cursor: "text", display: "inline-flex", gap: 4, alignItems: "center" }}>
-        📋 Dán ảnh deli
-        <label className="btn sm" style={{ padding: "0 5px", fontSize: 11, cursor: "pointer" }}>📁
-          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { uploadDeli(p, e.target.files[0]); e.target.value = ""; }} />
-        </label>
+      <div style={{ marginTop: 3 }}>
+        <span tabIndex={0} onPaste={(e) => { const f = imageFromPaste(e); if (f) { e.preventDefault(); uploadDeli(p, f); } }}
+          title="Bấm vào ô rồi Ctrl+V để dán ảnh deli, hoặc 📁 chọn file"
+          style={{ border: "1px dashed var(--border)", borderRadius: 6, padding: "2px 6px", fontSize: 11, color: "var(--muted)", cursor: "text", display: "inline-flex", gap: 4, alignItems: "center" }}>
+          📋 Dán ảnh deli
+          <label className="btn sm" style={{ padding: "0 5px", fontSize: 11, cursor: "pointer" }}>📁
+            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { uploadDeli(p, e.target.files[0]); e.target.value = ""; }} />
+          </label>
+        </span>
       </div>
     );
   };
