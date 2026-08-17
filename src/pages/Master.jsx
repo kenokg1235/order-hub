@@ -852,13 +852,11 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
           <Input label="ID Order" value={f.id} onChange={(e) => up("id", e.target.value)} />
           <div className="field">
             <label className="label">Store</label>
-            <select className="input" value={f.store} onChange={(e) => up("store", e.target.value)}>
-              {(isAdmin ? stores : myStores).map((s) => <option key={s} value={s}>{s}</option>)}
-              {(isAdmin || isLister) && <option value="__new">+ store mới…</option>}
-            </select>
-            {(isAdmin || isLister) && f.store === "__new" &&
-              <input className="input" style={{ marginTop: 6 }} placeholder="Tên store mới"
-                onChange={(e) => up("store", e.target.value)} />}
+            <input className="input" list="ordermodal-stores" value={f.store} onChange={(e) => up("store", e.target.value)}
+              placeholder="Gõ để tìm store, hoặc gõ tên store MỚI…" autoComplete="off" />
+            <datalist id="ordermodal-stores">
+              {(isAdmin ? stores : myStores).map((s) => <option key={s} value={s} />)}
+            </datalist>
           </div>
         </>
       )}
