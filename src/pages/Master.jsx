@@ -728,6 +728,21 @@ function DeadlineCell({ value, bind, onPick }) {
   );
 }
 
+// Ô Thời hạn (controlled) có lịch — dùng trong modal Thêm/Sửa đơn, đồng bộ định dạng DD/MM với sheet.
+function DeadlinePicker({ value, onChange }) {
+  const dateRef = useRef(null);
+  const openPicker = () => { const el = dateRef.current; if (!el) return; try { el.showPicker(); } catch { el.focus(); } };
+  const onDate = (e) => { const d = e.target.value; if (!d) return; const [, m, day] = d.split("-"); onChange(`${day}/${m}`); };
+  return (
+    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      <input type="text" className="input" style={{ flex: 1 }} value={value || ""} placeholder="DD/MM" onChange={(e) => onChange(e.target.value)} />
+      <input ref={dateRef} type="date" tabIndex={-1} aria-hidden="true"
+        style={{ width: 1, height: 1, opacity: 0, padding: 0, border: 0, pointerEvents: "none" }} onChange={onDate} />
+      <button type="button" className="btn" style={{ padding: "6px 10px" }} title="Chọn từ lịch" onClick={openPicker}>📅</button>
+    </div>
+  );
+}
+
 function ImportModal({ currentUser, stores, onClose, onDone }) {
   const isAdmin = currentUser.role === "Admin";
   const myStores = isAdmin ? stores : (currentUser.storeNames || []);
@@ -876,7 +891,10 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
       </div>
       <div className="row" style={{ gap: 10 }}>
         <div style={{ flex: 1 }}><Input label="Profit (ròng)" type="number" value={f.profit} onChange={(e) => up("profit", e.target.value)} /></div>
-        <div style={{ flex: 1 }}><Input label="Thời hạn" value={f.deadline} onChange={(e) => up("deadline", e.target.value)} /></div>
+        <div style={{ flex: 1 }}>
+          <label className="label">Thời hạn</label>
+          <DeadlinePicker value={f.deadline} onChange={(v) => up("deadline", v)} />
+        </div>
       </div>
       {err && <div style={{ color: "var(--red)" }}>{err}</div>}
     </Modal>
