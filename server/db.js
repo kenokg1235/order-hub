@@ -213,6 +213,18 @@ CREATE TABLE IF NOT EXISTS blacklist (
 CREATE INDEX IF NOT EXISTS idx_blacklist_username ON blacklist(username);
 `);
 
+// Buổi làm việc — Admin bấm bắt đầu/kết thúc; thống kê thẻ + đơn xử lý trong khoảng đó.
+db.exec(`
+CREATE TABLE IF NOT EXISTS work_sessions (
+  id             TEXT PRIMARY KEY,
+  started_at     INTEGER NOT NULL,
+  ended_at       INTEGER DEFAULT 0,
+  started_by_name TEXT DEFAULT '',
+  note           TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_worksessions_start ON work_sessions(started_at);
+`);
+
 // Task — Lister thêm hạng mục cần Admin kiểm tra; Admin thêm task theo dõi/xử lý case.
 db.exec(`
 CREATE TABLE IF NOT EXISTS tasks (

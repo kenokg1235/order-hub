@@ -1735,6 +1735,45 @@ app.post("/api/proxies/:id/use", requireAuth, requireOrderStaff, requireProxyAcc
   res.json({ proxy: proxyOut(db.prepare("SELECT * FROM proxies WHERE id=?").get(p.id)) });
 });
 
+// ── Buổi làm việc — Admin bấm bắt đầu/kết thúc; thống kê thẻ + đơn trong buổi ───
+function sessionStats(s, e) {
+  const end = e || Date.now();
+  const up = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Up' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
+  const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
+  const cards = db.prepare("SELECT COUNT(*) c FROM purchases WHERE card!='' AND created_at>=? AND created_at<=?").get(s, end).c;
+  const byUser = {};
+  for (const r of db.prepare("SELECT claimed_by, claimed_name, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
+    byUser[r.claimed_by] = { name: r.claimed_name, up: r.c, cards: 0 };
+  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(*) c FROM purchases p JOIN orders o ON o.id=p.order_id WHERE p.card!='' AND o.claimed_by!='' AND p.created_at>=? AND p.created_at<=? GROUP BY o.claimed_by").all(s, end))
+    (byUser[r.cb] || (byUser[r.cb] = { name: r.cn, up: 0, cards: 0 })).cards = r.c;
+  return { up, cancel, cards, byUser: Object.values(byUser).sort((a, b) => b.up - a.up || b.cards - a.cards) };
+}
+app.get("/api/work-sessions", requireAuth, requireAdmin, (req, res) => {
+  const rows = db.prepare("SELECT * FROM work_sessions ORDER BY started_at DESC LIMIT 40").all();
+  const active = rows.find((r) => !r.ended_at) || null;
+  res.json({
+    active: active ? { id: active.id, startedAt: active.started_at, startedByName: active.started_by_name, stats: sessionStats(active.started_at, 0) } : null,
+    sessions: rows.filter((r) => r.ended_at).map((r) => ({ id: r.id, startedAt: r.started_at, endedAt: r.ended_at, startedByName: r.started_by_name, note: r.note || "", stats: sessionStats(r.started_at, r.ended_at) })),
+  });
+});
+app.post("/api/work-sessions/start", requireAdmin, (req, res) => {
+  const open = db.prepare("SELECT id FROM work_sessions WHERE ended_at=0").get();
+  if (open) return res.status(400).json({ error: "Đang có buổi mở — kết thúc buổi hiện tại trước" });
+  const id = newId("ws");
+  db.prepare("INSERT INTO work_sessions (id,started_at,started_by_name) VALUES (?,?,?)").run(id, Date.now(), req.user.name);
+  res.json({ ok: true, id });
+});
+app.post("/api/work-sessions/end", requireAdmin, (req, res) => {
+  const open = db.prepare("SELECT * FROM work_sessions WHERE ended_at=0 ORDER BY started_at DESC").get();
+  if (!open) return res.status(400).json({ error: "Không có buổi nào đang mở" });
+  db.prepare("UPDATE work_sessions SET ended_at=?, note=? WHERE id=?").run(Date.now(), String(req.body.note || ""), open.id);
+  res.json({ ok: true });
+});
+app.delete("/api/work-sessions/:id", requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM work_sessions WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
 // profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.

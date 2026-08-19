@@ -19,6 +19,7 @@ import Blacklist from "./pages/Blacklist.jsx";
 import Proxy from "./pages/Proxy.jsx";
 import StaffNotes from "./pages/StaffNotes.jsx";
 import Tasks from "./pages/Tasks.jsx";
+import WorkSessions from "./pages/WorkSessions.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import Tracking from "./pages/Tracking.jsx";
 import Placeholder from "./pages/Placeholder.jsx";
@@ -34,6 +35,7 @@ const NAV = [
     { id: "team",    icon: "📄", label: "Sheet Con",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "tracking",    icon: "🚚", label: "Tracking",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "leaderboard", icon: "🏆", label: "Leaderboard", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
+    { id: "work-sessions", icon: "⏱️", label: "Buổi làm việc", access: (u) => u.role === "Admin" },
     { id: "proxy",   icon: "🌐", label: "Proxy",         access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "FINANCE", items: [
