@@ -194,15 +194,20 @@ app.put("/api/stores/:name", requireAdmin, (req, res) => {
   })();
   res.json({ ok: true });
 });
-// Chi tiết store kèm trạng thái acc + ghi chú (dùng cho trang Quản lý Store, Admin).
-app.get("/api/stores/detail", requireAuth, requireAdmin, (req, res) => {
-  const rows = db.prepare("SELECT name, status, note, died_at, created_at FROM stores ORDER BY name").all();
+// Chi tiết store kèm trạng thái acc + ghi chú. Admin: tất cả; Lister: store của mình.
+app.get("/api/stores/detail", requireAuth, (req, res) => {
+  const stores = allowedStores(req.user);   // null = tất cả
+  let rows;
+  if (stores === null) rows = db.prepare("SELECT name, status, note, died_at, created_at FROM stores ORDER BY name").all();
+  else if (!stores.length) rows = [];
+  else { const ph = stores.map(() => "?").join(","); rows = db.prepare(`SELECT name, status, note, died_at, created_at FROM stores WHERE name IN (${ph}) ORDER BY name`).all(...stores); }
   res.json({ stores: rows.map((s) => ({ name: s.name, status: s.status || "active", note: s.note || "", diedAt: s.died_at || "", createdAt: s.created_at })) });
 });
-// Cập nhật trạng thái acc + ghi chú (vd đánh dấu die kèm ngày die).
-app.put("/api/stores/:name/status", requireAdmin, (req, res) => {
+// Cập nhật trạng thái acc + ghi chú (vd đánh dấu die kèm ngày die). Lister sửa store của mình.
+app.put("/api/stores/:name/status", requireAuth, (req, res) => {
   const name = String(req.params.name || "").trim();
   if (!db.prepare("SELECT 1 FROM stores WHERE name=?").get(name)) return res.status(404).json({ error: "Không tìm thấy store" });
+  if (!canTouchStore(req.user, name)) return res.status(403).json({ error: "Không có quyền với store này" });
   const b = req.body || {};
   const status = b.status === "die" ? "die" : "active";
   const diedAt = status === "die" ? String(b.diedAt || "") : "";

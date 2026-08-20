@@ -12,6 +12,8 @@ export default function Payout({ currentUser, refreshUser }) {
   const [stores, setStores] = useState([]);
   const [holds, setHolds] = useState([]);          // tiền còn hold trong tài khoản eBay
   const [holdDraft, setHoldDraft] = useState({});  // chỉnh tại chỗ trong bảng tổng hợp: {store:{amount,note}}
+  const [storeInfo, setStoreInfo] = useState([]);  // trạng thái acc + ghi chú die (theo quyền store)
+  const [accNoteDraft, setAccNoteDraft] = useState({});  // sửa ghi chú acc tại chỗ: {store:note}
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [storeSel, setStoreSel] = useState([]);   // gom/cộng payout theo store đã chọn ("" = tất cả)
@@ -24,6 +26,7 @@ export default function Payout({ currentUser, refreshUser }) {
       setPayouts((await api.get("/api/payouts")).payouts);
       setStores((await api.get("/api/stores")).stores);
       setHolds((await api.get("/api/store-holds")).holds);
+      setStoreInfo((await api.get("/api/stores/detail")).stores);
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -83,6 +86,26 @@ export default function Payout({ currentUser, refreshUser }) {
     try { await api.del(`/api/store-holds/${encodeURIComponent(store)}`); clearDraft(store); load(); } catch (e) { setErr(e.message); }
   }
 
+  // Trạng thái acc + ghi chú die — sửa ngay trên trang Payout (Lister sửa store của mình).
+  const infoMap = useMemo(() => Object.fromEntries(storeInfo.map((s) => [s.name, s])), [storeInfo]);
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const accNoteVal = (store) => { const d = accNoteDraft[store]; if (d !== undefined) return d; const i = infoMap[store]; return i ? (i.note || "") : ""; };
+  const setAccNote = (store, v) => setAccNoteDraft((p) => ({ ...p, [store]: v }));
+  async function saveStatus(store, { status, diedAt, note }) {
+    try { await api.put(`/api/stores/${encodeURIComponent(store)}/status`, { status, diedAt, note }); setAccNoteDraft((p) => { const n = { ...p }; delete n[store]; return n; }); setErr(""); load(); }
+    catch (e) { setErr(e.message); }
+  }
+  function setStatus(store, status) {
+    const i = infoMap[store]; if (!i) return;
+    const diedAt = status === "die" ? (i.diedAt || todayStr()) : "";
+    saveStatus(store, { status, diedAt, note: accNoteVal(store) });
+  }
+  async function commitAccNote(store) {
+    const i = infoMap[store]; if (!i || accNoteDraft[store] === undefined) return;
+    if ((accNoteDraft[store] || "") === (i.note || "")) { setAccNoteDraft((p) => { const n = { ...p }; delete n[store]; return n; }); return; }
+    saveStatus(store, { status: i.status || "active", diedAt: i.diedAt || "", note: accNoteDraft[store] });
+  }
+
   const upQa = (k, v) => setQa((p) => ({ ...p, [k]: v }));
   async function quickAdd() {
     if (!qa.store) { setErr("Chọn store trước"); return; }
@@ -122,19 +145,24 @@ export default function Payout({ currentUser, refreshUser }) {
             <div style={{ flex: 1 }} />
             <span className="badge blue" title="Tổng tiền còn hold của các store hiển thị">⏳ Tổng hold: {money(shownHold)}</span>
           </div>
-          <table className="tbl" style={{ width: "100%" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ width: "100%", minWidth: 900 }}>
             <thead><tr>
               <th>Store</th><th style={{ textAlign: "right" }}>Số dòng</th><th style={{ textAlign: "right" }}>Tổng payout</th>
-              <th style={{ width: 130 }}>💵 Tiền hold</th><th>📝 Ghi chú hold</th>
+              <th style={{ width: 120 }}>💵 Tiền hold</th><th>📝 Ghi chú hold</th>
+              <th style={{ width: 140 }}>⚡ Trạng thái acc</th><th>📝 Ghi chú acc</th>
             </tr></thead>
             <tbody>
-              {summaryRows.map((s) => (
-                <tr key={s.store}>
+              {summaryRows.map((s) => {
+                const info = infoMap[s.store];
+                const die = info && info.status === "die";
+                return (
+                <tr key={s.store} style={die ? { background: "var(--red-bg)" } : undefined}>
                   <td style={{ fontWeight: 600, cursor: "pointer" }} onClick={() => setStoreSel([s.store])} title="Bấm để lọc riêng store này">🏪 {s.store || "(không store)"}</td>
                   <td style={{ textAlign: "right", cursor: "pointer" }} onClick={() => setStoreSel([s.store])}>{s.count}</td>
                   <td style={{ textAlign: "right", fontWeight: 700, cursor: "pointer" }} onClick={() => setStoreSel([s.store])}>{money(s.total)}</td>
                   <td>
-                    <input className="input" type="number" placeholder="0" style={{ width: 110, textAlign: "right", padding: "4px 6px" }}
+                    <input className="input" type="number" placeholder="0" style={{ width: 100, textAlign: "right", padding: "4px 6px" }}
                       value={holdVal(s.store, "amount")}
                       onChange={(e) => setHoldVal(s.store, "amount", e.target.value)}
                       onBlur={() => commitHold(s.store)}
@@ -150,17 +178,39 @@ export default function Payout({ currentUser, refreshUser }) {
                       {holdMap[s.store] && <span title="Xóa hold" onClick={() => delHold(s.store)} style={{ cursor: "pointer", color: "var(--red)", padding: "0 4px" }}>✕</span>}
                     </div>
                   </td>
+                  <td>
+                    {info ? (
+                      <>
+                        <select className="input" style={{ padding: "4px 6px", color: die ? "var(--red)" : "var(--green)", fontWeight: 700 }}
+                          value={info.status || "active"} onChange={(e) => setStatus(s.store, e.target.value)}>
+                          <option value="active">🟢 Hoạt động</option>
+                          <option value="die">💀 Die</option>
+                        </select>
+                        {die && info.diedAt && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>Die: {fmtDate(info.diedAt)}</div>}
+                      </>
+                    ) : <span className="muted" style={{ fontSize: 12 }}>—</span>}
+                  </td>
+                  <td>
+                    {info ? (
+                      <input className="input" placeholder={die ? "Lý do die…" : "Ghi chú acc…"} style={{ width: "100%", padding: "4px 6px" }}
+                        value={accNoteVal(s.store)}
+                        onChange={(e) => setAccNote(s.store, e.target.value)}
+                        onBlur={() => commitAccNote(s.store)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                    ) : <span className="muted" style={{ fontSize: 12 }}>—</span>}
+                  </td>
                 </tr>
-              ))}
+              ); })}
             </tbody>
             <tfoot><tr style={{ fontWeight: 800, borderTop: "2px solid var(--border)", background: "var(--green-bg)" }}>
               <td>TỔNG CỘNG{storeSel.length ? ` (${storeSel.length} store đã chọn)` : ""}</td>
               <td style={{ textAlign: "right" }}>{filtered.length}</td>
               <td style={{ textAlign: "right", color: "#16a34a" }}>{money(grand)}</td>
               <td style={{ textAlign: "right", color: "var(--primary)" }}>{money(shownHold)}</td>
-              <td></td>
+              <td></td><td></td><td></td>
             </tr></tfoot>
           </table>
+          </div>
           <div className="muted" style={{ fontSize: 12, padding: "8px 14px" }}>
             💵 Gõ trực tiếp <b>Tiền hold</b> / <b>Ghi chú</b> của từng store rồi bấm ra ngoài (hoặc Enter) để lưu. Đây là số tiền eBay còn giữ lại, nhập tay.
           </div>
