@@ -1,21 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
-import { Button } from "../ui.jsx";
+import { Button, Badge } from "../ui.jsx";
 
-// Admin: manage the store list + assign stores to Listing employees.
+// Admin: manage the store list (trạng thái acc + ghi chú die) + assign stores to Listing.
 export default function Stores() {
-  const [stores, setStores] = useState([]);
+  const [details, setDetails] = useState([]);   // [{name,status,note,diedAt,...}]
   const [listers, setListers] = useState([]);
   const [newStore, setNewStore] = useState("");
+  const [editing, setEditing] = useState(null);  // store đang sửa trạng thái
   const [err, setErr] = useState("");
+
+  const stores = details.map((d) => d.name);
 
   async function load() {
     try {
-      setStores((await api.get("/api/stores")).stores);
+      setDetails((await api.get("/api/stores/detail")).stores);
       setListers(((await api.get("/api/users")).users).filter((u) => u.role === "Lister"));
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
+
+  const fmtDate = (d) => { if (!d) return ""; const [y, m, dd] = String(d).split("-"); return (dd && m && y) ? `${dd}/${m}/${y}` : d; };
 
   async function addStore() {
     const n = newStore.trim(); if (!n) return;
@@ -43,6 +48,8 @@ export default function Stores() {
     } catch (e) { setErr(e.message); }
   }
 
+  const dieCount = details.filter((d) => d.status === "die").length;
+
   return (
     <div>
       <h2 style={{ margin: "0 0 14px" }}>Quản lý Store</h2>
@@ -55,16 +62,37 @@ export default function Stores() {
             onChange={(e) => setNewStore(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addStore(); }} />
           <Button variant="primary" onClick={addStore}>＋ Thêm store</Button>
         </div>
-        <div className="row" style={{ flexWrap: "wrap", marginTop: 14, gap: 8 }}>
-          {stores.map((s) => (
-            <span key={s} className="badge" style={{ gap: 6, fontSize: 13 }}>
-              🏪 {s}
-              <span style={{ cursor: "pointer" }} title="Đổi tên" onClick={() => renameStore(s)}>✎</span>
-              <span style={{ cursor: "pointer", color: "var(--red)" }} title="Xóa" onClick={() => delStore(s)}>✕</span>
-            </span>
-          ))}
-          {stores.length === 0 && <span className="muted">Chưa có store nào</span>}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <b>Danh sách tài khoản eBay</b>
+          <Badge color="blue">{details.length} store</Badge>
+          {dieCount > 0 && <Badge color="red">{dieCount} die</Badge>}
         </div>
+        <table className="tbl">
+          <thead><tr><th>Store</th><th>Trạng thái</th><th>Ngày die</th><th>Ghi chú</th><th></th></tr></thead>
+          <tbody>
+            {details.map((d) => (
+              <tr key={d.name} style={d.status === "die" ? { background: "var(--red-bg)" } : undefined}>
+                <td style={{ fontWeight: 600 }}>🏪 {d.name}</td>
+                <td>{d.status === "die"
+                  ? <span className="badge red">💀 Die</span>
+                  : <span className="badge green">🟢 Hoạt động</span>}</td>
+                <td>{d.status === "die" ? (fmtDate(d.diedAt) || <span className="muted">—</span>) : <span className="muted">—</span>}</td>
+                <td style={{ maxWidth: 260, whiteSpace: "normal" }}>{d.note}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <Button sm onClick={() => setEditing(d)}>Trạng thái</Button>
+                  <Button sm onClick={() => renameStore(d.name)} style={{ marginLeft: 4 }}>Đổi tên</Button>
+                  <Button sm variant="danger" onClick={() => delStore(d.name)} style={{ marginLeft: 4 }}>✕</Button>
+                </td>
+              </tr>
+            ))}
+            {details.length === 0 && (
+              <tr><td colSpan={5} className="muted" style={{ textAlign: "center", padding: 20 }}>Chưa có store nào</td></tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -97,6 +125,50 @@ export default function Stores() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {editing && <StatusModal store={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+    </div>
+  );
+}
+
+function StatusModal({ store, onClose, onSaved }) {
+  const [status, setStatus] = useState(store.status || "active");
+  const [note, setNote] = useState(store.note || "");
+  const [diedAt, setDiedAt] = useState(store.diedAt || "");
+  const [err, setErr] = useState("");
+  // Chuyển sang die mà chưa có ngày → mặc định hôm nay để nhập nhanh.
+  const setDie = (v) => { setStatus(v); if (v === "die" && !diedAt) { const d = new Date(); setDiedAt(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); } };
+  async function save() {
+    try { await api.put(`/api/stores/${encodeURIComponent(store.name)}/status`, { status, note, diedAt }); onSaved(); }
+    catch (e) { setErr(e.message); }
+  }
+  return (
+    <div className="overlay" onMouseDown={onClose}>
+      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head"><h3>Trạng thái — {store.name}</h3><div className="spacer" /><Button sm onClick={onClose}>✕</Button></div>
+        <div className="modal-body">
+          <div className="field">
+            <label className="label">Trạng thái acc</label>
+            <select className="input" value={status} onChange={(e) => setDie(e.target.value)}>
+              <option value="active">🟢 Hoạt động</option>
+              <option value="die">💀 Die</option>
+            </select>
+          </div>
+          {status === "die" && (
+            <div className="field">
+              <label className="label">Ngày acc die</label>
+              <input type="date" className="input" value={diedAt} onChange={(e) => setDiedAt(e.target.value)} />
+            </div>
+          )}
+          <div className="field">
+            <label className="label">Ghi chú</label>
+            <textarea className="input" rows={3} value={note} placeholder={status === "die" ? "Lý do die, ghi chú xử lý…" : "Ghi chú (tùy chọn)"}
+              onChange={(e) => setNote(e.target.value)} style={{ resize: "vertical" }} />
+          </div>
+          {err && <div style={{ color: "var(--red)" }}>{err}</div>}
+        </div>
+        <div className="modal-foot"><Button onClick={onClose}>Hủy</Button><Button variant="primary" onClick={save}>Lưu</Button></div>
       </div>
     </div>
   );

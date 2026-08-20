@@ -104,6 +104,9 @@ function ensureColumn(table, col, decl) {
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 ensureColumn("users", "store_names", "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn("stores", "status", "TEXT DEFAULT 'active'");   // trạng thái acc: active | die
+ensureColumn("stores", "note", "TEXT DEFAULT ''");           // ghi chú (vd lý do die)
+ensureColumn("stores", "died_at", "TEXT DEFAULT ''");        // ngày acc die "YYYY-MM-DD"
 ensureColumn("orders", "listed_by", "TEXT DEFAULT ''");
 ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note on Sheet Tổng
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");

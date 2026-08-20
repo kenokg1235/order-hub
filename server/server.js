@@ -194,6 +194,21 @@ app.put("/api/stores/:name", requireAdmin, (req, res) => {
   })();
   res.json({ ok: true });
 });
+// Chi tiết store kèm trạng thái acc + ghi chú (dùng cho trang Quản lý Store, Admin).
+app.get("/api/stores/detail", requireAuth, requireAdmin, (req, res) => {
+  const rows = db.prepare("SELECT name, status, note, died_at, created_at FROM stores ORDER BY name").all();
+  res.json({ stores: rows.map((s) => ({ name: s.name, status: s.status || "active", note: s.note || "", diedAt: s.died_at || "", createdAt: s.created_at })) });
+});
+// Cập nhật trạng thái acc + ghi chú (vd đánh dấu die kèm ngày die).
+app.put("/api/stores/:name/status", requireAdmin, (req, res) => {
+  const name = String(req.params.name || "").trim();
+  if (!db.prepare("SELECT 1 FROM stores WHERE name=?").get(name)) return res.status(404).json({ error: "Không tìm thấy store" });
+  const b = req.body || {};
+  const status = b.status === "die" ? "die" : "active";
+  const diedAt = status === "die" ? String(b.diedAt || "") : "";
+  db.prepare("UPDATE stores SET status=?, note=?, died_at=? WHERE name=?").run(status, String(b.note || ""), diedAt, name);
+  res.json({ ok: true });
+});
 
 // ── Monthly periods ───────────────────────────────────────────────────────────
 function getSetting(key, def) { const r = db.prepare("SELECT value FROM settings WHERE key=?").get(key); try { return r ? JSON.parse(r.value) : def; } catch { return def; } }
