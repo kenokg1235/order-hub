@@ -10,6 +10,8 @@ export default function Payout({ currentUser, refreshUser }) {
   const isLister = currentUser.role === "Lister";
   const [payouts, setPayouts] = useState([]);
   const [stores, setStores] = useState([]);
+  const [holds, setHolds] = useState([]);          // tiền còn hold trong tài khoản eBay
+  const [hd, setHd] = useState({ store: "", amount: "", note: "" });
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [storeSel, setStoreSel] = useState([]);   // gom/cộng payout theo store đã chọn ("" = tất cả)
@@ -21,6 +23,7 @@ export default function Payout({ currentUser, refreshUser }) {
     try {
       setPayouts((await api.get("/api/payouts")).payouts);
       setStores((await api.get("/api/stores")).stores);
+      setHolds((await api.get("/api/store-holds")).holds);
     } catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
@@ -51,6 +54,27 @@ export default function Payout({ currentUser, refreshUser }) {
     if (!confirm("Xóa payout này?")) return;
     try { await api.del(`/api/payouts/${id}`); load(); } catch (e) { setErr(e.message); }
   }
+  const totalHold = holds.reduce((s, h) => s + (h.amount || 0), 0);
+  const fmtTime = (t) => { if (!t) return ""; const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const upHd = (k, v) => setHd((p) => ({ ...p, [k]: v }));
+  async function saveHold() {
+    const store = (hd.store || "").trim();
+    if (!store) { setErr("Chọn store trước"); return; }
+    if (hd.amount === "") { setErr("Nhập số tiền hold"); return; }
+    try {
+      await api.put(`/api/store-holds/${encodeURIComponent(store)}`, { amount: hd.amount, note: hd.note });
+      setHd({ store: "", amount: "", note: "" });
+      setErr("");
+      load();
+      refreshUser?.();
+    } catch (e) { setErr(e.message); }
+  }
+  async function delHold(store) {
+    if (!confirm(`Xóa dòng hold của store "${store}"?`)) return;
+    try { await api.del(`/api/store-holds/${encodeURIComponent(store)}`); load(); } catch (e) { setErr(e.message); }
+  }
+  function editHold(h) { setHd({ store: h.store, amount: h.amount, note: h.note || "" }); }
+
   const upQa = (k, v) => setQa((p) => ({ ...p, [k]: v }));
   async function quickAdd() {
     if (!qa.store) { setErr("Chọn store trước"); return; }
@@ -81,6 +105,56 @@ export default function Payout({ currentUser, refreshUser }) {
         {(from || to || storeSel.length) && <Button sm onClick={() => { setFrom(""); setTo(""); setStoreSel([]); }}>✕ Xóa lọc</Button>}
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {/* Tiền còn hold trong tài khoản eBay — nhập tay */}
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <b>⏳ Tiền còn hold trong tài khoản eBay</b>
+          <Badge color="blue">{holds.length} store</Badge>
+          <div style={{ flex: 1 }} />
+          <span className="badge green">Tổng hold: {money(totalHold)}</span>
+        </div>
+        {holds.length > 0 && (
+          <table className="tbl">
+            <thead><tr><th>Store</th><th style={{ textAlign: "right" }}>Số tiền hold</th><th>Ghi chú</th><th>Cập nhật</th><th></th></tr></thead>
+            <tbody>
+              {holds.map((h) => (
+                <tr key={h.store}>
+                  <td style={{ fontWeight: 600 }}>🏪 {h.store}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, color: "var(--primary)" }}>{money(h.amount)}</td>
+                  <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{h.note}</td>
+                  <td className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{h.updatedByName}{h.updatedAt ? ` · ${fmtTime(h.updatedAt)}` : ""}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <Button sm onClick={() => editHold(h)}>Sửa</Button>
+                    <Button sm variant="danger" onClick={() => delHold(h.store)} style={{ marginLeft: 4 }}>✕</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end", padding: "10px 14px", borderTop: holds.length ? "1px solid var(--border)" : "none" }}>
+          <div><div className="label">Store</div>
+            {isAdmin ? (
+              <select className="input" style={{ minWidth: 130 }} value={hd.store} onChange={(e) => upHd("store", e.target.value)}>
+                <option value="">— chọn —</option>
+                {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input className="input" list="payout-my-stores" style={{ minWidth: 130 }} value={hd.store}
+                placeholder="Chọn store" onChange={(e) => upHd("store", e.target.value)} />
+            )}
+          </div>
+          <div><div className="label">Số tiền hold</div><input className="input" type="number" style={{ width: 120 }} value={hd.amount}
+            onChange={(e) => upHd("amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveHold(); }} /></div>
+          <div style={{ flex: 1, minWidth: 140 }}><div className="label">Ghi chú</div><input className="input" style={{ width: "100%" }} value={hd.note}
+            onChange={(e) => upHd("note", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveHold(); }} /></div>
+          <Button variant="primary" onClick={saveHold}>💾 Lưu hold</Button>
+        </div>
+        <div className="muted" style={{ fontSize: 12, padding: "0 14px 10px" }}>
+          Nhập số tiền còn bị eBay giữ lại của từng store. Chọn store đã có sẵn để <b>ghi đè</b> giá trị mới (mỗi store 1 dòng).
+        </div>
+      </div>
 
       {/* Tổng hợp: cộng payout gom theo store (theo bộ lọc hiện tại) */}
       {storeSummary.length > 0 && (

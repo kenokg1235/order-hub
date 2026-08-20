@@ -225,6 +225,17 @@ CREATE TABLE IF NOT EXISTS work_sessions (
 CREATE INDEX IF NOT EXISTS idx_worksessions_start ON work_sessions(started_at);
 `);
 
+// Số tiền còn hold trong tài khoản eBay — nhập tay, 1 dòng / store.
+db.exec(`
+CREATE TABLE IF NOT EXISTS store_holds (
+  store           TEXT PRIMARY KEY,
+  amount          REAL DEFAULT 0,
+  note            TEXT DEFAULT '',
+  updated_by_name TEXT DEFAULT '',
+  updated_at      INTEGER DEFAULT 0
+);
+`);
+
 // Task — Lister thêm hạng mục cần Admin kiểm tra; Admin thêm task theo dõi/xử lý case.
 db.exec(`
 CREATE TABLE IF NOT EXISTS tasks (

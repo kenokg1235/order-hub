@@ -1387,6 +1387,38 @@ app.delete("/api/payouts/:id", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Số tiền còn hold trong tài khoản eBay (nhập tay, 1 dòng / store) ───────────
+function holdOut(h) {
+  return { store: h.store, amount: h.amount || 0, note: h.note || "", updatedByName: h.updated_by_name || "", updatedAt: h.updated_at || 0 };
+}
+app.get("/api/store-holds", requireAuth, (req, res) => {
+  const stores = allowedStores(req.user);
+  let rows;
+  if (stores === null) rows = db.prepare("SELECT * FROM store_holds ORDER BY store").all();
+  else if (!stores.length) rows = [];
+  else {
+    const ph = stores.map(() => "?").join(",");
+    rows = db.prepare(`SELECT * FROM store_holds WHERE store IN (${ph}) ORDER BY store`).all(...stores);
+  }
+  res.json({ holds: rows.map(holdOut) });
+});
+app.put("/api/store-holds/:store", requireAuth, (req, res) => {
+  const store = String(req.params.store || "").trim();
+  if (!store) return res.status(400).json({ error: "Thiếu store" });
+  if (!ensureStoreForUser(req.user, store)) return res.status(403).json({ error: "Store này đã tồn tại, nhờ Admin gán cho bạn" });
+  const b = req.body || {};
+  db.prepare(`INSERT INTO store_holds (store,amount,note,updated_by_name,updated_at) VALUES (?,?,?,?,?)
+              ON CONFLICT(store) DO UPDATE SET amount=excluded.amount, note=excluded.note, updated_by_name=excluded.updated_by_name, updated_at=excluded.updated_at`)
+    .run(store, Number(b.amount) || 0, String(b.note || ""), req.user.name, Date.now());
+  res.json({ hold: holdOut(db.prepare("SELECT * FROM store_holds WHERE store=?").get(store)) });
+});
+app.delete("/api/store-holds/:store", requireAuth, (req, res) => {
+  const store = String(req.params.store || "").trim();
+  if (!canTouchStore(req.user, store)) return res.status(403).json({ error: "Không có quyền" });
+  db.prepare("DELETE FROM store_holds WHERE store=?").run(store);
+  res.json({ ok: true });
+});
+
 // ── Expenses (manual cost entries, Admin only) ────────────────────────────────
 // Two currencies kept separate: VND | USDT. Categories are free text (suggested
 // from teams + a few defaults on the client).
