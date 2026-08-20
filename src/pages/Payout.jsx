@@ -11,7 +11,7 @@ export default function Payout({ currentUser, refreshUser }) {
   const [payouts, setPayouts] = useState([]);
   const [stores, setStores] = useState([]);
   const [holds, setHolds] = useState([]);          // tiền còn hold trong tài khoản eBay
-  const [hd, setHd] = useState({ store: "", amount: "", note: "" });
+  const [holdDraft, setHoldDraft] = useState({});  // chỉnh tại chỗ trong bảng tổng hợp: {store:{amount,note}}
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [storeSel, setStoreSel] = useState([]);   // gom/cộng payout theo store đã chọn ("" = tất cả)
@@ -54,26 +54,34 @@ export default function Payout({ currentUser, refreshUser }) {
     if (!confirm("Xóa payout này?")) return;
     try { await api.del(`/api/payouts/${id}`); load(); } catch (e) { setErr(e.message); }
   }
-  const totalHold = holds.reduce((s, h) => s + (h.amount || 0), 0);
-  const fmtTime = (t) => { if (!t) return ""; const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  const upHd = (k, v) => setHd((p) => ({ ...p, [k]: v }));
-  async function saveHold() {
-    const store = (hd.store || "").trim();
-    if (!store) { setErr("Chọn store trước"); return; }
-    if (hd.amount === "") { setErr("Nhập số tiền hold"); return; }
-    try {
-      await api.put(`/api/store-holds/${encodeURIComponent(store)}`, { amount: hd.amount, note: hd.note });
-      setHd({ store: "", amount: "", note: "" });
-      setErr("");
-      load();
-      refreshUser?.();
-    } catch (e) { setErr(e.message); }
+  // Hold hiển thị & sửa ngay trong bảng tổng hợp payout theo store.
+  const holdMap = useMemo(() => Object.fromEntries(holds.map((h) => [h.store, h])), [holds]);
+  // Gộp store có payout + store chỉ có hold (theo bộ lọc store hiện tại).
+  const summaryRows = useMemo(() => {
+    const m = new Map();
+    for (const s of storeSummary) m.set(s.store, { ...s });
+    for (const h of holds) { if (storeSel.length && !storeSel.includes(h.store)) continue; if (!m.has(h.store)) m.set(h.store, { store: h.store, count: 0, total: 0 }); }
+    return [...m.values()].sort((a, b) => b.total - a.total || (holdMap[b.store]?.amount || 0) - (holdMap[a.store]?.amount || 0));
+  }, [storeSummary, holds, storeSel, holdMap]);
+  const shownHold = summaryRows.reduce((s, r) => s + (holdMap[r.store]?.amount || 0), 0);
+
+  const holdVal = (store, k) => { const d = holdDraft[store]; if (d && k in d) return d[k]; const h = holdMap[store]; return h ? (k === "amount" ? (h.amount ?? "") : (h.note || "")) : ""; };
+  const setHoldVal = (store, k, v) => setHoldDraft((p) => ({ ...p, [store]: { ...(p[store] || {}), [k]: v } }));
+  const clearDraft = (store) => setHoldDraft((p) => { const n = { ...p }; delete n[store]; return n; });
+  async function commitHold(store) {
+    if (!holdDraft[store]) return;                       // không có thay đổi
+    const amount = holdVal(store, "amount"), note = holdVal(store, "note");
+    const h = holdMap[store] || {};
+    const unchanged = String(amount === "" ? "" : amount) === String(h.amount ?? "") && (note || "") === (h.note || "");
+    if (unchanged) { clearDraft(store); return; }
+    if (amount === "" && !note && !holdMap[store]) { clearDraft(store); return; }   // không có gì để lưu
+    try { await api.put(`/api/store-holds/${encodeURIComponent(store)}`, { amount: amount === "" ? 0 : amount, note }); clearDraft(store); setErr(""); load(); }
+    catch (e) { setErr(e.message); }
   }
   async function delHold(store) {
-    if (!confirm(`Xóa dòng hold của store "${store}"?`)) return;
-    try { await api.del(`/api/store-holds/${encodeURIComponent(store)}`); load(); } catch (e) { setErr(e.message); }
+    if (!confirm(`Xóa số tiền hold của store "${store}"?`)) return;
+    try { await api.del(`/api/store-holds/${encodeURIComponent(store)}`); clearDraft(store); load(); } catch (e) { setErr(e.message); }
   }
-  function editHold(h) { setHd({ store: h.store, amount: h.amount, note: h.note || "" }); }
 
   const upQa = (k, v) => setQa((p) => ({ ...p, [k]: v }));
   async function quickAdd() {
@@ -106,70 +114,42 @@ export default function Payout({ currentUser, refreshUser }) {
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
-      {/* Tiền còn hold trong tài khoản eBay — nhập tay */}
-      <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <b>⏳ Tiền còn hold trong tài khoản eBay</b>
-          <Badge color="blue">{holds.length} store</Badge>
-          <div style={{ flex: 1 }} />
-          <span className="badge green">Tổng hold: {money(totalHold)}</span>
-        </div>
-        {holds.length > 0 && (
-          <table className="tbl">
-            <thead><tr><th>Store</th><th style={{ textAlign: "right" }}>Số tiền hold</th><th>Ghi chú</th><th>Cập nhật</th><th></th></tr></thead>
-            <tbody>
-              {holds.map((h) => (
-                <tr key={h.store}>
-                  <td style={{ fontWeight: 600 }}>🏪 {h.store}</td>
-                  <td style={{ textAlign: "right", fontWeight: 700, color: "var(--primary)" }}>{money(h.amount)}</td>
-                  <td style={{ maxWidth: 220, whiteSpace: "normal" }}>{h.note}</td>
-                  <td className="muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{h.updatedByName}{h.updatedAt ? ` · ${fmtTime(h.updatedAt)}` : ""}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <Button sm onClick={() => editHold(h)}>Sửa</Button>
-                    <Button sm variant="danger" onClick={() => delHold(h.store)} style={{ marginLeft: 4 }}>✕</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end", padding: "10px 14px", borderTop: holds.length ? "1px solid var(--border)" : "none" }}>
-          <div><div className="label">Store</div>
-            {isAdmin ? (
-              <select className="input" style={{ minWidth: 130 }} value={hd.store} onChange={(e) => upHd("store", e.target.value)}>
-                <option value="">— chọn —</option>
-                {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            ) : (
-              <input className="input" list="payout-my-stores" style={{ minWidth: 130 }} value={hd.store}
-                placeholder="Chọn store" onChange={(e) => upHd("store", e.target.value)} />
-            )}
-          </div>
-          <div><div className="label">Số tiền hold</div><input className="input" type="number" style={{ width: 120 }} value={hd.amount}
-            onChange={(e) => upHd("amount", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveHold(); }} /></div>
-          <div style={{ flex: 1, minWidth: 140 }}><div className="label">Ghi chú</div><input className="input" style={{ width: "100%" }} value={hd.note}
-            onChange={(e) => upHd("note", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveHold(); }} /></div>
-          <Button variant="primary" onClick={saveHold}>💾 Lưu hold</Button>
-        </div>
-        <div className="muted" style={{ fontSize: 12, padding: "0 14px 10px" }}>
-          Nhập số tiền còn bị eBay giữ lại của từng store. Chọn store đã có sẵn để <b>ghi đè</b> giá trị mới (mỗi store 1 dòng).
-        </div>
-      </div>
-
-      {/* Tổng hợp: cộng payout gom theo store (theo bộ lọc hiện tại) */}
-      {storeSummary.length > 0 && (
+      {/* Tổng hợp payout theo store + số tiền hold (nhập tay) ngay trong bảng */}
+      {summaryRows.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
-          <div style={{ padding: "10px 14px", fontWeight: 700, borderBottom: "1px solid var(--border)" }}>
-            📊 Tổng hợp payout theo store ({storeSummary.length} store)
+          <div style={{ padding: "10px 14px", fontWeight: 700, borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            📊 Tổng hợp payout theo store ({summaryRows.length} store)
+            <div style={{ flex: 1 }} />
+            <span className="badge blue" title="Tổng tiền còn hold của các store hiển thị">⏳ Tổng hold: {money(shownHold)}</span>
           </div>
           <table className="tbl" style={{ width: "100%" }}>
-            <thead><tr><th>Store</th><th style={{ textAlign: "right" }}>Số dòng</th><th style={{ textAlign: "right" }}>Tổng payout</th></tr></thead>
+            <thead><tr>
+              <th>Store</th><th style={{ textAlign: "right" }}>Số dòng</th><th style={{ textAlign: "right" }}>Tổng payout</th>
+              <th style={{ width: 130 }}>💵 Tiền hold</th><th>📝 Ghi chú hold</th>
+            </tr></thead>
             <tbody>
-              {storeSummary.map((s) => (
-                <tr key={s.store} style={{ cursor: "pointer" }} onClick={() => setStoreSel([s.store])} title="Bấm để lọc riêng store này">
-                  <td style={{ fontWeight: 600 }}>🏪 {s.store || "(không store)"}</td>
-                  <td style={{ textAlign: "right" }}>{s.count}</td>
-                  <td style={{ textAlign: "right", fontWeight: 700 }}>{money(s.total)}</td>
+              {summaryRows.map((s) => (
+                <tr key={s.store}>
+                  <td style={{ fontWeight: 600, cursor: "pointer" }} onClick={() => setStoreSel([s.store])} title="Bấm để lọc riêng store này">🏪 {s.store || "(không store)"}</td>
+                  <td style={{ textAlign: "right", cursor: "pointer" }} onClick={() => setStoreSel([s.store])}>{s.count}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, cursor: "pointer" }} onClick={() => setStoreSel([s.store])}>{money(s.total)}</td>
+                  <td>
+                    <input className="input" type="number" placeholder="0" style={{ width: 110, textAlign: "right", padding: "4px 6px" }}
+                      value={holdVal(s.store, "amount")}
+                      onChange={(e) => setHoldVal(s.store, "amount", e.target.value)}
+                      onBlur={() => commitHold(s.store)}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: 4, alignItems: "center" }}>
+                      <input className="input" placeholder="Ghi chú…" style={{ flex: 1, padding: "4px 6px" }}
+                        value={holdVal(s.store, "note")}
+                        onChange={(e) => setHoldVal(s.store, "note", e.target.value)}
+                        onBlur={() => commitHold(s.store)}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                      {holdMap[s.store] && <span title="Xóa hold" onClick={() => delHold(s.store)} style={{ cursor: "pointer", color: "var(--red)", padding: "0 4px" }}>✕</span>}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -177,8 +157,13 @@ export default function Payout({ currentUser, refreshUser }) {
               <td>TỔNG CỘNG{storeSel.length ? ` (${storeSel.length} store đã chọn)` : ""}</td>
               <td style={{ textAlign: "right" }}>{filtered.length}</td>
               <td style={{ textAlign: "right", color: "#16a34a" }}>{money(grand)}</td>
+              <td style={{ textAlign: "right", color: "var(--primary)" }}>{money(shownHold)}</td>
+              <td></td>
             </tr></tfoot>
           </table>
+          <div className="muted" style={{ fontSize: 12, padding: "8px 14px" }}>
+            💵 Gõ trực tiếp <b>Tiền hold</b> / <b>Ghi chú</b> của từng store rồi bấm ra ngoài (hoặc Enter) để lưu. Đây là số tiền eBay còn giữ lại, nhập tay.
+          </div>
         </div>
       )}
 
