@@ -195,6 +195,7 @@ export default function App() {
         {page === "blacklist" && <Blacklist />}
         {page === "proxy" && proxyOk && <Proxy currentUser={user} teams={teams} onHiddenChange={loadProxyHidden} />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
+        {page === "work-sessions" && <WorkSessions />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}
         {page === "master"   && <Master currentUser={user} teams={teams} refreshUser={refreshUser} />}
