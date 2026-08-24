@@ -1574,15 +1574,32 @@ const taskOut = (t) => ({
 function myClaimedOrderNos(userId) {
   return new Set(db.prepare("SELECT DISTINCT order_no FROM orders WHERE claimed_by=? AND order_no!=''").all(userId).map((r) => r.order_no));
 }
+// Gắn cờ task dính đơn của Admin (đơn có người nhận là Admin) + tên người nhận.
+function enrichTasks(rows) {
+  const adminSet = new Set(adminIds());
+  const claims = {};   // order_no -> { names:Set, admin:bool }
+  for (const r of db.prepare("SELECT order_no, claimed_by, claimed_name FROM orders WHERE order_no!='' AND claimed_by!=''").all()) {
+    const c = claims[r.order_no] || (claims[r.order_no] = { names: new Set(), admin: false });
+    if (r.claimed_name) c.names.add(r.claimed_name);
+    if (adminSet.has(r.claimed_by)) c.admin = true;
+  }
+  return rows.map((t) => {
+    const o = taskOut(t);
+    const c = t.order_no ? claims[t.order_no] : null;
+    o.claimedByAdmin = !!(c && c.admin);
+    o.claimedName = c ? [...c.names].join(", ") : "";
+    return o;
+  });
+}
 app.get("/api/tasks", requireAuth, (req, res) => {
   const u = req.user;
   const isMgr = u.role === "Admin" || u.role === "Lister";
-  if (isMgr) return res.json({ tasks: db.prepare("SELECT * FROM tasks ORDER BY done ASC, created_at DESC").all().map(taskOut), manager: true });
+  if (isMgr) return res.json({ tasks: enrichTasks(db.prepare("SELECT * FROM tasks ORDER BY done ASC, created_at DESC").all()), manager: true });
   if (u.role === "Leader" || u.role === "Member") {   // NV xử lý: chỉ task GẮN ĐƠN mình đang nhận
     const mine = myClaimedOrderNos(u.id);
     if (!mine.size) return res.json({ tasks: [], manager: false });
     const rows = db.prepare("SELECT * FROM tasks WHERE order_no!='' ORDER BY done ASC, created_at DESC").all().filter((t) => mine.has(t.order_no));
-    return res.json({ tasks: rows.map(taskOut), manager: false });
+    return res.json({ tasks: enrichTasks(rows), manager: false });
   }
   res.json({ tasks: [], manager: false });
 });

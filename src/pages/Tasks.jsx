@@ -9,6 +9,7 @@ export default function Tasks({ currentUser }) {
   const [tasks, setTasks] = useState([]);
   const [na, setNa] = useState({ title: "", note: "", orderNo: "", priority: "normal" });
   const [tab, setTab] = useState("open");   // open | done | all
+  const [cat, setCat] = useState("all");    // all | admin | other — phân loại theo đơn của Admin
   const [q, setQ] = useState("");
   const [adminNote, setAdminNote] = useState("");
   const [noteEdit, setNoteEdit] = useState(false);
@@ -34,9 +35,14 @@ export default function Tasks({ currentUser }) {
     const s = q.trim().toLowerCase();
     return tasks
       .filter((t) => (tab === "all" ? true : tab === "done" ? t.done : !t.done))
-      .filter((t) => !s || [t.title, t.note, t.orderNo, t.createdByName, t.response].some((v) => String(v || "").toLowerCase().includes(s)));
-  }, [tasks, tab, q]);
+      .filter((t) => (cat === "all" ? true : cat === "admin" ? t.claimedByAdmin : !t.claimedByAdmin))
+      .filter((t) => !s || [t.title, t.note, t.orderNo, t.createdByName, t.response, t.claimedName].some((v) => String(v || "").toLowerCase().includes(s)));
+  }, [tasks, tab, cat, q]);
   const openCount = tasks.filter((t) => !t.done).length;
+  const adminOpenCount = tasks.filter((t) => !t.done && t.claimedByAdmin).length;
+  // Chia list theo nhóm đơn Admin để hiển thị tách section (khi đang xem "Tất cả loại").
+  const adminList = list.filter((t) => t.claimedByAdmin);
+  const otherList = list.filter((t) => !t.claimedByAdmin);
 
   async function add() {
     if (!na.title.trim()) { setErr("Nhập nội dung task"); return; }
@@ -78,6 +84,13 @@ export default function Tasks({ currentUser }) {
           <Button key={k} sm variant={tab === k ? "primary" : ""} onClick={() => setTab(k)}>{label}</Button>
         ))}
         <input className="input" style={{ maxWidth: 200 }} placeholder="🔍 Tìm task…" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {/* Phân loại theo đơn của Admin để dễ nhìn */}
+      <div className="row" style={{ marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+        <span className="muted" style={{ fontSize: 13, alignSelf: "center" }}>Phân loại:</span>
+        {[["all", "Tất cả loại"], ["admin", `👑 Đơn của Admin${adminOpenCount ? ` (${adminOpenCount})` : ""}`], ["other", "Đơn khác / TK"]].map(([k, label]) => (
+          <Button key={k} sm variant={cat === k ? "primary" : ""} onClick={() => setCat(k)}>{label}</Button>
+        ))}
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
         {isManager
@@ -139,51 +152,76 @@ export default function Tasks({ currentUser }) {
 
       {list.length === 0 && <div className="card" style={{ padding: 24, textAlign: "center" }}><span className="muted">{tab === "open" ? "🎉 Không còn task nào chưa xong." : "Không có task nào."}</span></div>}
 
-      {list.map((t) => {
-        const high = t.priority === "high" && !t.done;
-        return (
-          <div key={t.id} className="card" style={{ marginBottom: 8, padding: "10px 14px",
-            borderColor: high ? "var(--red)" : undefined, boxShadow: high ? "inset 4px 0 0 0 var(--red)" : undefined,
-            opacity: t.done ? 0.6 : 1 }}>
-            <div className="row" style={{ gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              {isManager && <button className="btn sm" title={t.done ? "Mở lại" : "Đánh dấu xong"} onClick={() => setDone(t, !t.done)}
-                style={{ fontSize: 16, padding: "2px 9px", background: t.done ? "var(--green-bg)" : undefined }}>{t.done ? "✓" : "○"}</button>}
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
-                  {t.orderNo
-                    ? <span className="badge blue" style={{ fontSize: 11 }}>📦 Đơn {t.orderNo}</span>
-                    : <span className="badge" style={{ fontSize: 11 }}>💳 Task tài khoản</span>}
-                  {high && <span className="badge red" style={{ fontSize: 10 }}>⚑ Ưu tiên</span>}
-                  {t.done && <span className="badge green" style={{ fontSize: 10 }}>✓ Xong</span>}
-                </div>
-                {canEdit(t) ? (
-                  <input className="input" style={{ width: "100%", fontWeight: 600, textDecoration: t.done ? "line-through" : undefined }}
-                    defaultValue={t.title} onBlur={(e) => save(t, "title", e.target.value)} />
-                ) : <div style={{ fontWeight: 600, textDecoration: t.done ? "line-through" : undefined }}>{t.title}</div>}
-                {(t.note || canEdit(t)) && (canEdit(t)
-                  ? <input className="input" style={{ width: "100%", marginTop: 4, fontSize: 13 }} defaultValue={t.note} placeholder="ghi chú…"
-                      onBlur={(e) => save(t, "note", e.target.value)} />
-                  : <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{t.note}</div>)}
-
-                {/* Phản hồi của nhân viên xử lý đơn (chỉ với task gắn đơn) */}
-                {t.orderNo && (
-                  <div style={{ marginTop: 6, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
-                    <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>💬 Phản hồi của NV xử lý{t.responseByName ? ` — ${t.responseByName} · ${fmt(t.responseAt)}` : ""}:</div>
-                    <input className="input" style={{ width: "100%", fontSize: 13 }} defaultValue={t.response} placeholder="nhân viên nhận đơn phản hồi ở đây…"
-                      onBlur={(e) => respond(t, e.target.value)} />
-                  </div>
-                )}
-                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                  Tạo bởi <b>{t.createdByName}</b> · {fmt(t.createdAt)}
-                  {t.done && <> · ✓ {t.doneByName} {fmt(t.doneAt)}</>}
-                </div>
+      {/* Khi xem "Tất cả loại": tách section đơn Admin lên trên cho dễ nhìn */}
+      {cat === "all" ? (
+        <>
+          {adminList.length > 0 && (
+            <>
+              <div className="row" style={{ gap: 8, alignItems: "center", margin: "6px 0 8px" }}>
+                <span className="badge" style={{ background: "#fef3c7", color: "#92400e", fontWeight: 700 }}>👑 Task dính đơn của Admin ({adminList.length})</span>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
               </div>
-              {canEdit(t) && <button className="btn sm" title="Đổi ưu tiên" onClick={() => togglePriority(t)}>{t.priority === "high" ? "⚑" : "⚐"}</button>}
-              {canEdit(t) && <button className="btn sm" title="Xóa" onClick={() => remove(t)} style={{ color: "var(--red)" }}>✕</button>}
-            </div>
-          </div>
-        );
-      })}
+              {adminList.map(taskCard)}
+              <div style={{ height: 10 }} />
+              {otherList.length > 0 && (
+                <div className="row" style={{ gap: 8, alignItems: "center", margin: "6px 0 8px" }}>
+                  <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Task khác</span>
+                  <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                </div>
+              )}
+            </>
+          )}
+          {otherList.map(taskCard)}
+        </>
+      ) : list.map(taskCard)}
     </div>
   );
+
+  function taskCard(t) {
+    const high = t.priority === "high" && !t.done;
+    return (
+      <div key={t.id} className="card" style={{ marginBottom: 8, padding: "10px 14px",
+        borderColor: high ? "var(--red)" : t.claimedByAdmin ? "#eab308" : undefined,
+        boxShadow: high ? "inset 4px 0 0 0 var(--red)" : t.claimedByAdmin ? "inset 4px 0 0 0 #eab308" : undefined,
+        opacity: t.done ? 0.6 : 1 }}>
+        <div className="row" style={{ gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+          {isManager && <button className="btn sm" title={t.done ? "Mở lại" : "Đánh dấu xong"} onClick={() => setDone(t, !t.done)}
+            style={{ fontSize: 16, padding: "2px 9px", background: t.done ? "var(--green-bg)" : undefined }}>{t.done ? "✓" : "○"}</button>}
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+              {t.orderNo
+                ? <span className="badge blue" style={{ fontSize: 11 }}>📦 Đơn {t.orderNo}</span>
+                : <span className="badge" style={{ fontSize: 11 }}>💳 Task tài khoản</span>}
+              {t.claimedByAdmin && <span className="badge" style={{ fontSize: 10, background: "#fef3c7", color: "#92400e", fontWeight: 700 }}>👑 Đơn Admin{t.claimedName ? ` · ${t.claimedName}` : ""}</span>}
+              {high && <span className="badge red" style={{ fontSize: 10 }}>⚑ Ưu tiên</span>}
+              {t.done && <span className="badge green" style={{ fontSize: 10 }}>✓ Xong</span>}
+            </div>
+            {canEdit(t) ? (
+              <input className="input" style={{ width: "100%", fontWeight: 600, textDecoration: t.done ? "line-through" : undefined }}
+                defaultValue={t.title} onBlur={(e) => save(t, "title", e.target.value)} />
+            ) : <div style={{ fontWeight: 600, textDecoration: t.done ? "line-through" : undefined }}>{t.title}</div>}
+            {(t.note || canEdit(t)) && (canEdit(t)
+              ? <input className="input" style={{ width: "100%", marginTop: 4, fontSize: 13 }} defaultValue={t.note} placeholder="ghi chú…"
+                  onBlur={(e) => save(t, "note", e.target.value)} />
+              : <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{t.note}</div>)}
+
+            {/* Phản hồi của nhân viên xử lý đơn (chỉ với task gắn đơn) */}
+            {t.orderNo && (
+              <div style={{ marginTop: 6, borderTop: "1px dashed var(--border)", paddingTop: 6 }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 3 }}>💬 Phản hồi của NV xử lý{t.responseByName ? ` — ${t.responseByName} · ${fmt(t.responseAt)}` : ""}:</div>
+                <input className="input" style={{ width: "100%", fontSize: 13 }} defaultValue={t.response} placeholder="nhân viên nhận đơn phản hồi ở đây…"
+                  onBlur={(e) => respond(t, e.target.value)} />
+              </div>
+            )}
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Tạo bởi <b>{t.createdByName}</b> · {fmt(t.createdAt)}
+              {t.done && <> · ✓ {t.doneByName} {fmt(t.doneAt)}</>}
+            </div>
+          </div>
+          {canEdit(t) && <button className="btn sm" title="Đổi ưu tiên" onClick={() => togglePriority(t)}>{t.priority === "high" ? "⚑" : "⚐"}</button>}
+          {canEdit(t) && <button className="btn sm" title="Xóa" onClick={() => remove(t)} style={{ color: "var(--red)" }}>✕</button>}
+        </div>
+      </div>
+    );
+  }
 }
