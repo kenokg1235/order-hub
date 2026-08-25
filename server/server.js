@@ -1809,21 +1809,27 @@ function sessionStats(s, e) {
   const end = e || Date.now();
   const up = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Up' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
   const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
-  const cards = db.prepare("SELECT COUNT(*) c FROM purchases WHERE card!='' AND created_at>=? AND created_at<=?").get(s, end).c;
   // Đơn được chuyển sang "Đã xử lý" trong buổi (theo audit_log — thời điểm & người đổi trạng thái).
   const processed = db.prepare("SELECT COUNT(DISTINCT order_id) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
   const byUser = {};
   const ensure = (id, name) => byUser[id] || (byUser[id] = { name: name || "—", processed: 0, cards: 0, up: 0 });
-  // Số thẻ nhận: thẻ nhập vào đơn của thành viên trong buổi.
-  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(*) c FROM purchases p JOIN orders o ON o.id=p.order_id WHERE p.card!='' AND o.claimed_by!='' AND p.created_at>=? AND p.created_at<=? GROUP BY o.claimed_by").all(s, end))
-    ensure(r.cb, r.cn).cards = r.c;
+  // Thẻ nhận: thẻ được cấp cho NV (Mua thẻ) có trạng thái HỢP LỆ (cardCountStatuses), tính theo ngày cấp trong buổi.
+  const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((x) => String(x).toLowerCase()));
+  const allCards = new Set();
+  for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status FROM card_requests WHERE card_value!='' AND created_at>=? AND created_at<=?").all(s, end)) {
+    if (!countSet.has(String(c.status || "").toLowerCase())) continue;   // chỉ đếm thẻ trạng thái hợp lệ
+    const u = ensure(c.requester_id, c.requester_name);
+    (u._cards || (u._cards = new Set())).add(c.card_value);
+    allCards.add(c.card_value);
+  }
+  for (const u of Object.values(byUser)) { if (u._cards) { u.cards = u._cards.size; delete u._cards; } }
   // Số đơn chuyển "Đã xử lý": nhóm theo người nhận đơn (thành viên xử lý).
   for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=? GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end))
     ensure(r.cb, r.cn).processed = r.c;
   // Đơn Đã Up (Lister/Admin chốt) — vẫn hiển thị tham khảo.
   for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
     ensure(r.cb, r.cn).up = r.c;
-  return { up, cancel, cards, processed, byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
+  return { up, cancel, cards: allCards.size, processed, byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
 }
 app.get("/api/work-sessions", requireAuth, requireAdmin, (req, res) => {
   const rows = db.prepare("SELECT * FROM work_sessions ORDER BY started_at DESC LIMIT 40").all();

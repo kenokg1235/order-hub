@@ -30,7 +30,7 @@ export default function WorkSessions() {
         <div style={{ fontSize: 26, fontWeight: 800, color: "#2563eb" }}>{st.processed ?? 0}</div>
       </div>
       <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
-        <div className="muted" style={{ fontSize: 12 }}>🎴 Số thẻ đã nhập</div>
+        <div className="muted" style={{ fontSize: 12 }}>🎴 Thẻ nhận (hợp lệ)</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: "var(--primary)" }}>{st.cards}</div>
       </div>
       <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
