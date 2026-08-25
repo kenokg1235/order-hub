@@ -1810,12 +1810,20 @@ function sessionStats(s, e) {
   const up = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Up' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
   const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
   const cards = db.prepare("SELECT COUNT(*) c FROM purchases WHERE card!='' AND created_at>=? AND created_at<=?").get(s, end).c;
+  // Đơn được chuyển sang "Đã xử lý" trong buổi (theo audit_log — thời điểm & người đổi trạng thái).
+  const processed = db.prepare("SELECT COUNT(DISTINCT order_id) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
   const byUser = {};
-  for (const r of db.prepare("SELECT claimed_by, claimed_name, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
-    byUser[r.claimed_by] = { name: r.claimed_name, up: r.c, cards: 0 };
+  const ensure = (id, name) => byUser[id] || (byUser[id] = { name: name || "—", processed: 0, cards: 0, up: 0 });
+  // Số thẻ nhận: thẻ nhập vào đơn của thành viên trong buổi.
   for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(*) c FROM purchases p JOIN orders o ON o.id=p.order_id WHERE p.card!='' AND o.claimed_by!='' AND p.created_at>=? AND p.created_at<=? GROUP BY o.claimed_by").all(s, end))
-    (byUser[r.cb] || (byUser[r.cb] = { name: r.cn, up: 0, cards: 0 })).cards = r.c;
-  return { up, cancel, cards, byUser: Object.values(byUser).sort((a, b) => b.up - a.up || b.cards - a.cards) };
+    ensure(r.cb, r.cn).cards = r.c;
+  // Số đơn chuyển "Đã xử lý": nhóm theo người nhận đơn (thành viên xử lý).
+  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=? GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end))
+    ensure(r.cb, r.cn).processed = r.c;
+  // Đơn Đã Up (Lister/Admin chốt) — vẫn hiển thị tham khảo.
+  for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
+    ensure(r.cb, r.cn).up = r.c;
+  return { up, cancel, cards, processed, byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
 }
 app.get("/api/work-sessions", requireAuth, requireAdmin, (req, res) => {
   const rows = db.prepare("SELECT * FROM work_sessions ORDER BY started_at DESC LIMIT 40").all();

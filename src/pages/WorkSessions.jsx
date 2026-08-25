@@ -25,26 +25,40 @@ export default function WorkSessions() {
 
   const StatCards = ({ st }) => (
     <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 10 }}>
-      <div className="card" style={{ padding: "10px 18px", minWidth: 140 }}>
-        <div className="muted" style={{ fontSize: 12 }}>✅ Đơn Đã Up</div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: "#16a34a" }}>{st.up}</div>
+      <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
+        <div className="muted" style={{ fontSize: 12 }}>🛠️ Đơn đã xử lý</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: "#2563eb" }}>{st.processed ?? 0}</div>
       </div>
-      <div className="card" style={{ padding: "10px 18px", minWidth: 140 }}>
+      <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
         <div className="muted" style={{ fontSize: 12 }}>🎴 Số thẻ đã nhập</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: "var(--primary)" }}>{st.cards}</div>
       </div>
-      <div className="card" style={{ padding: "10px 18px", minWidth: 140 }}>
+      <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
+        <div className="muted" style={{ fontSize: 12 }}>✅ Đơn Đã Up</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: "#16a34a" }}>{st.up}</div>
+      </div>
+      <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
         <div className="muted" style={{ fontSize: 12 }}>✕ Đơn Đã Cancel</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: "var(--red)" }}>{st.cancel}</div>
       </div>
     </div>
   );
   const ByUser = ({ st }) => st.byUser && st.byUser.length ? (
-    <table className="tbl" style={{ marginTop: 10, minWidth: 320 }}>
-      <thead><tr><th>Nhân viên</th><th style={{ textAlign: "right" }}>Đơn Đã Up</th><th style={{ textAlign: "right" }}>Số thẻ</th></tr></thead>
+    <table className="tbl" style={{ marginTop: 10, minWidth: 380 }}>
+      <thead><tr>
+        <th>Nhân viên xử lý</th>
+        <th style={{ textAlign: "right" }}>🛠️ Đơn đã xử lý</th>
+        <th style={{ textAlign: "right" }}>🎴 Thẻ nhận</th>
+        <th style={{ textAlign: "right" }}>✅ Đã Up</th>
+      </tr></thead>
       <tbody>
         {st.byUser.map((u, i) => (
-          <tr key={i}><td>{u.name || "—"}</td><td style={{ textAlign: "right", fontWeight: 600 }}>{u.up}</td><td style={{ textAlign: "right" }}>{u.cards}</td></tr>
+          <tr key={i}>
+            <td style={{ fontWeight: 600 }}>{u.name || "—"}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb" }}>{u.processed ?? 0}</td>
+            <td style={{ textAlign: "right" }}>{u.cards}</td>
+            <td style={{ textAlign: "right", color: "#16a34a" }}>{u.up}</td>
+          </tr>
         ))}
       </tbody>
     </table>
@@ -88,12 +102,12 @@ export default function WorkSessions() {
             <Badge color="blue">{dur(s.startedAt, s.endedAt)}</Badge>
             <span className="muted" style={{ fontSize: 12 }}>mở bởi {s.startedByName}</span>
             <div className="spacer" />
-            <span>✅ <b>{s.stats.up}</b> đơn · 🎴 <b>{s.stats.cards}</b> thẻ{s.stats.cancel ? ` · ✕ ${s.stats.cancel} cancel` : ""}</span>
+            <span>🛠️ <b>{s.stats.processed ?? 0}</b> xử lý · 🎴 <b>{s.stats.cards}</b> thẻ · ✅ <b>{s.stats.up}</b> up{s.stats.cancel ? ` · ✕ ${s.stats.cancel} cancel` : ""}</span>
             <Button sm variant="danger" onClick={() => remove(s)} style={{ marginLeft: 6 }}>✕</Button>
           </div>
           {s.stats.byUser && s.stats.byUser.length > 0 && (
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              {s.stats.byUser.map((u) => `${u.name}: ${u.up} đơn / ${u.cards} thẻ`).join(" · ")}
+              {s.stats.byUser.map((u) => `${u.name}: ${u.processed ?? 0} xử lý / ${u.cards} thẻ`).join(" · ")}
             </div>
           )}
         </div>
