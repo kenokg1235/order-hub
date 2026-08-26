@@ -1229,8 +1229,15 @@ function cardStats(cardValue) {
     orders.push(info.oid);
     if (info.master === COMPLETED_STATUS) {
       completed++;
-      const total = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM purchases WHERE order_id=?").get(info.oid).s;
-      profit += info.profit * (total > 0 ? info.mine / total : 1);
+      // Chia profit theo TỶ LỆ SỐ TIỀN của các thẻ (chỉ purchases CÓ thẻ) để tổng qua các thẻ = đúng profit đơn.
+      const total = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM purchases WHERE order_id=? AND card!=''").get(info.oid).s;
+      if (total > 0) {
+        profit += info.profit * (info.mine / total);
+      } else {
+        // Không có số tiền → chia đều cho số thẻ (distinct) trên đơn, để không nhân đôi profit.
+        const nCards = db.prepare("SELECT COUNT(DISTINCT card) c FROM purchases WHERE order_id=? AND card!=''").get(info.oid).c;
+        profit += nCards > 0 ? info.profit / nCards : 0;
+      }
     }
   }
   return { orders, profit: Math.round(profit * 100) / 100, completed, balance: Math.round(balance * 100) / 100 };

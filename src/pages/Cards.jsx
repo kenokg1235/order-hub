@@ -105,8 +105,18 @@ export default function Cards({ currentUser }) {
     catch (e) { setErr(e.message); }
   }
 
-  const totalProfit = filtered.reduce((s, r) => s + (r.stats?.profit || 0), 0);
-  const totalBalance = filtered.reduce((s, r) => s + (r.stats?.balance || 0), 0);
+  // Cộng theo TỪNG THẺ (distinct card_value) — tránh nhân đôi khi 1 thẻ xuất hiện ở nhiều dòng yêu cầu.
+  const { totalProfit, totalBalance } = useMemo(() => {
+    const seen = new Set();
+    let profit = 0, balance = 0;
+    for (const r of filtered) {
+      const key = String(r.card || "").trim();
+      if (key) { if (seen.has(key)) continue; seen.add(key); }
+      profit += r.stats?.profit || 0;
+      balance += r.stats?.balance || 0;
+    }
+    return { totalProfit: profit, totalBalance: balance };
+  }, [filtered]);
 
   return (
     <div>
