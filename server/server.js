@@ -1243,6 +1243,47 @@ function cardStats(cardValue) {
   return { orders, profit: Math.round(profit * 100) / 100, completed, balance: Math.round(balance * 100) / 100 };
 }
 const cardOutFull = (r) => ({ ...cardOut(r), stats: cardStats(r.card_value) });
+// Tính stats cho TẤT CẢ thẻ trong vài truy vấn (thay vì N+1 mỗi thẻ) — dùng cho danh sách.
+function computeCardStatsMap() {
+  const purs = db.prepare(`
+    SELECT p.card AS card, p.order_id AS oid, p.amount AS amount, o.master_status AS master, o.profit AS profit
+    FROM purchases p JOIN orders o ON o.id = p.order_id WHERE p.card != ''`).all();
+  const orderAgg = {};   // oid -> { total, cards:Set, master, profit }
+  const cardAgg = {};    // card -> { orders:Set, mine:{oid:amount} }
+  for (const p of purs) {
+    const oa = orderAgg[p.oid] || (orderAgg[p.oid] = { total: 0, cards: new Set(), master: p.master, profit: p.profit || 0 });
+    oa.total += p.amount || 0; oa.cards.add(p.card);
+    const ca = cardAgg[p.card] || (cardAgg[p.card] = { orders: new Set(), mine: {} });
+    ca.orders.add(p.oid); ca.mine[p.oid] = (ca.mine[p.oid] || 0) + (p.amount || 0);
+  }
+  const balMap = {};
+  for (const r of db.prepare("SELECT card, COALESCE(SUM(amount),0) s FROM card_ledger GROUP BY card").all()) balMap[r.card] = r.s;
+  const out = {};
+  for (const [card, ca] of Object.entries(cardAgg)) {
+    let profit = 0, completed = 0;
+    for (const oid of ca.orders) {
+      const oa = orderAgg[oid];
+      if (oa.master === COMPLETED_STATUS) {
+        completed++;
+        const mine = ca.mine[oid] || 0;
+        if (oa.total > 0) profit += oa.profit * (mine / oa.total);
+        else profit += oa.cards.size > 0 ? oa.profit / oa.cards.size : 0;
+      }
+    }
+    out[card] = { orders: [...ca.orders], profit: Math.round(profit * 100) / 100, completed, balance: Math.round((balMap[card] || 0) * 100) / 100 };
+  }
+  return out;
+}
+const EMPTY_CARD_STATS = { orders: [], profit: 0, completed: 0, balance: 0 };
+const statsFromMap = (map, card) => (card && map[card]) || EMPTY_CARD_STATS;
+// Cache ngắn (8s) — gộp nhiều lần poll đồng thời thành 1 lần tính, giảm tải CPU.
+let _cardStatsCache = { at: 0, map: null };
+function cardStatsMapCached() {
+  const now = Date.now();
+  if (_cardStatsCache.map && now - _cardStatsCache.at < 8000) return _cardStatsCache.map;
+  _cardStatsCache = { at: now, map: computeCardStatsMap() };
+  return _cardStatsCache.map;
+}
 // card_value → earliest order period that used it ("first-used month"); robust to op order.
 function cardFirstMonths() {
   const m = {};
@@ -1255,21 +1296,23 @@ function cardFirstMonths() {
 // List: managers (Admin / canBuyCard) see all + stats; employees see only their own.
 app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const u = req.user;
+  const statsMap = cardStatsMapCached();   // dùng cache 8s (tránh N+1 & gộp poll)
+  const withStats = (r) => ({ ...cardOut(r), stats: statsFromMap(statsMap, r.card_value) });
   // Admin sees every team's requests.
   if (u.role === "Admin") {
     const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all();
-    return res.json({ requests: rows.map(cardOutFull), manager: true });
+    return res.json({ requests: rows.map(withStats), manager: true });
   }
   // Card-buyer: manager view but scoped to own team(s) — teammates' requests + own.
   if (u.canBuyCard) {
     const mates = teammateIds(u.teamIds);
     const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all()
       .filter((r) => r.requester_id === u.id || mates.has(r.requester_id));
-    return res.json({ requests: rows.map(cardOutFull), manager: true });
+    return res.json({ requests: rows.map(withStats), manager: true });
   }
   // Plain employee: only their own requests — kèm stats (đơn Đã Up / profit / balance) để tự theo dõi.
   const rows = db.prepare("SELECT * FROM card_requests WHERE requester_id=? ORDER BY created_at DESC").all(u.id);
-  res.json({ requests: rows.map(cardOutFull), manager: false });
+  res.json({ requests: rows.map(withStats), manager: false });
 });
 
 // Valid issued card values (for client-side validation in Sheet Con).
@@ -1357,9 +1400,10 @@ app.get("/api/team-card-stats", requireAuth, (req, res) => {
   // Hiển thị mọi thẻ Live/Sai bill, không phụ thuộc đã add vào Sheet Con: gắn theo tháng dùng-lần-đầu,
   // nếu chưa dùng thì theo tháng tạo yêu cầu.
   if (month && month !== "all") { const firstM = cardFirstMonths(); rows = rows.filter((r) => (firstM[r.card_value] || ymOf(r.created_at)) === month); }
+  const statsMap = cardStatsMapCached();   // dùng cache 8s (tránh N+1 & gộp poll)
   const items = rows.map((r) => ({
     id: r.id, code: cardCode(r.seq), content: r.content, requesterName: r.requester_name, status: r.status,
-    hasCard: !!r.card_value, stats: cardStats(r.card_value),   // stats computed server-side; card value NOT sent
+    hasCard: !!r.card_value, stats: statsFromMap(statsMap, r.card_value),   // stats computed server-side; card value NOT sent
   }));
   res.json({ items });
 });
@@ -1838,29 +1882,43 @@ function sessionStats(s, e) {
     ensure(r.cb, r.cn).up = r.c;
   return { up, cancel, cards: allCards.size, processed, byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
 }
+// Cache stats buổi ĐÃ kết thúc theo id (window cố định) — không tính lại mỗi lần poll.
+const _endedSessionStats = new Map();
+let _workSessionsCache = { at: 0, payload: null };
 app.get("/api/work-sessions", requireAuth, requireAdmin, (req, res) => {
+  const now = Date.now();
+  if (_workSessionsCache.payload && now - _workSessionsCache.at < 8000) return res.json(_workSessionsCache.payload);
   const rows = db.prepare("SELECT * FROM work_sessions ORDER BY started_at DESC LIMIT 40").all();
   const active = rows.find((r) => !r.ended_at) || null;
-  res.json({
+  const payload = {
     active: active ? { id: active.id, startedAt: active.started_at, startedByName: active.started_by_name, stats: sessionStats(active.started_at, 0) } : null,
-    sessions: rows.filter((r) => r.ended_at).map((r) => ({ id: r.id, startedAt: r.started_at, endedAt: r.ended_at, startedByName: r.started_by_name, note: r.note || "", stats: sessionStats(r.started_at, r.ended_at) })),
-  });
+    sessions: rows.filter((r) => r.ended_at).map((r) => {
+      let stats = _endedSessionStats.get(r.id);
+      if (!stats) { stats = sessionStats(r.started_at, r.ended_at); _endedSessionStats.set(r.id, stats); }
+      return { id: r.id, startedAt: r.started_at, endedAt: r.ended_at, startedByName: r.started_by_name, note: r.note || "", stats };
+    }),
+  };
+  _workSessionsCache = { at: now, payload };
+  res.json(payload);
 });
 app.post("/api/work-sessions/start", requireAdmin, (req, res) => {
   const open = db.prepare("SELECT id FROM work_sessions WHERE ended_at=0").get();
   if (open) return res.status(400).json({ error: "Đang có buổi mở — kết thúc buổi hiện tại trước" });
   const id = newId("ws");
   db.prepare("INSERT INTO work_sessions (id,started_at,started_by_name) VALUES (?,?,?)").run(id, Date.now(), req.user.name);
+  _workSessionsCache = { at: 0, payload: null };
   res.json({ ok: true, id });
 });
 app.post("/api/work-sessions/end", requireAdmin, (req, res) => {
   const open = db.prepare("SELECT * FROM work_sessions WHERE ended_at=0 ORDER BY started_at DESC").get();
   if (!open) return res.status(400).json({ error: "Không có buổi nào đang mở" });
   db.prepare("UPDATE work_sessions SET ended_at=?, note=? WHERE id=?").run(Date.now(), String(req.body.note || ""), open.id);
+  _endedSessionStats.delete(open.id); _workSessionsCache = { at: 0, payload: null };
   res.json({ ok: true });
 });
 app.delete("/api/work-sessions/:id", requireAdmin, (req, res) => {
   db.prepare("DELETE FROM work_sessions WHERE id=?").run(req.params.id);
+  _endedSessionStats.delete(req.params.id); _workSessionsCache = { at: 0, payload: null };
   res.json({ ok: true });
 });
 

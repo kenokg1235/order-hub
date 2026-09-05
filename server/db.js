@@ -128,6 +128,14 @@ ensureColumn("orders", "staff_note_done", "INTEGER DEFAULT 0"); // Lister đã x
 db.exec("UPDATE orders SET staff_note_at = updated_at WHERE staff_note_at = 0 AND staff_note != '' AND updated_at > 0");
 // Backfill: đơn đã Đã Up/Đã Cancel nhưng chưa có mốc → dùng updated_at (xấp xỉ thời điểm chốt).
 db.exec("UPDATE orders SET finalized_at = updated_at WHERE finalized_at = 0 AND master_status IN ('Đã Up','Đã Cancel') AND updated_at > 0");
+// Index cho các truy vấn thống kê nặng (Buổi làm việc, Leaderboard, Mua thẻ) — giảm tải CPU.
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_orders_master_final ON orders(master_status, finalized_at);
+CREATE INDEX IF NOT EXISTS idx_orders_claimed       ON orders(claimed_by);
+CREATE INDEX IF NOT EXISTS idx_audit_field_created  ON audit_log(field, created_at);
+CREATE INDEX IF NOT EXISTS idx_cardreq_requester    ON card_requests(requester_id);
+CREATE INDEX IF NOT EXISTS idx_cardreq_created      ON card_requests(created_at);
+`);
 // Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).
 {
   const rows = db.prepare("SELECT id, raw, size, order_no, line_key FROM orders").all();
