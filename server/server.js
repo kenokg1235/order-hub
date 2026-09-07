@@ -438,24 +438,48 @@ app.post("/api/orders/fetch-images", requireAuth, (req, res) => {
   res.json({ queued });
 });
 
-// Manual add single order.
+// Manual add order — hỗ trợ nhiều sản phẩm khác nhau (cùng order_no, khác dòng).
 app.post("/api/orders", requireAuth, (req, res) => {
   const b = req.body || {};
   const store = String(b.store || "").trim();
   if (!ensureStoreForUser(req.user, store)) return res.status(403).json({ error: "Store này đã tồn tại, nhờ Admin gán cho bạn" });
-  const id = String(b.id || "").trim();
-  if (!id) return res.status(400).json({ error: "Thiếu ID Order" });
-  if (db.prepare("SELECT 1 FROM orders WHERE id=?").get(id)) return res.status(409).json({ error: "ID Order đã tồn tại" });
+  const orderNo = String(b.id || "").trim();
+  if (!orderNo) return res.status(400).json({ error: "Thiếu ID Order" });
+  // items: mảng sản phẩm (mỗi sản phẩm 1 dòng). Nếu không gửi → 1 dòng từ các field phẳng (tương thích cũ).
+  let items = Array.isArray(b.items) && b.items.length
+    ? b.items
+    : [{ product: b.product, qty: b.qty, link: b.link, size: b.size, color: b.color, profit: b.profit }];
+  items = items.filter((it) => it && (String(it.product || "").trim() || String(it.link || "").trim() || String(it.size || "").trim()));
+  if (!items.length) return res.status(400).json({ error: "Cần ít nhất 1 sản phẩm" });
+  if (db.prepare("SELECT 1 FROM orders WHERE id=?").get(orderNo)) return res.status(409).json({ error: "ID Order đã tồn tại" });
   ensureStore(store);
   const now = Date.now();
-  const itemNo = (String(b.link || "").match(/itm\/(\d{6,})/) || [])[1] || "";
-  const lineKey = `${id}||${itemNo}||${b.size || ""}`;
-  db.prepare(`INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,listed_by,period,created_at,updated_at)
-              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, id, lineKey, store, b.address || "", b.custPhone || "", String(b.qty || ""), b.product || "",
-         b.image || "", b.link || "", b.size || "", b.color || "", Number(b.profit) || 0,
-         b.deadline || "", req.user.id, getActiveMonth(), now, now);
-  res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(id)) });
+  const period = getActiveMonth();
+  const insert = db.prepare(`INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,listed_by,period,created_at,updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
+  const created = [];
+  try {
+    db.transaction(() => {
+      const seenLine = new Set();
+      for (const it of items) {
+        const itemNo = (String(it.link || "").match(/itm\/(\d{6,})/) || [])[1] || "";
+        const size = String(it.size || "");
+        const lineKey = `${orderNo}||${itemNo}||${size}`;
+        if (seenLine.has(lineKey)) continue;   // bỏ dòng trùng hệt trong cùng request
+        seenLine.add(lineKey);
+        // id: order_no cho dòng đầu, order_no-2/-3… cho các sản phẩm sau (giống import eBay).
+        let id = orderNo, n = 2;
+        while (existsId.get(id)) id = `${orderNo}-${n++}`;
+        insert.run(id, orderNo, lineKey, store, b.address || "", b.custPhone || "", String(it.qty || ""), it.product || "",
+          "", it.link || "", size, it.color || "", Number(it.profit) || 0, b.deadline || "", req.user.id, period, now, now);
+        created.push(id);
+      }
+    })();
+  } catch (e) { return res.status(409).json({ error: e.message || "Lỗi tạo đơn" }); }
+  if (!created.length) return res.status(409).json({ error: "ID Order đã tồn tại" });
+  const orders = created.map((id) => orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(id)));
+  res.json({ order: orders[0], orders });
 });
 
 // Edit order fields (team change = Admin only).

@@ -832,20 +832,28 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
   const isAdmin = currentUser.role === "Admin";
   const isLister = currentUser.role === "Lister";
   const myStores = isAdmin ? stores : (currentUser.storeNames || []);
-  const [f, setF] = useState({
+  // Field CHUNG cho cả đơn (mọi sản phẩm dùng chung).
+  const [shared, setShared] = useState({
     id: order.id || "", store: order.store || (myStores[0] || ""),
-    product: order.product || "", qty: order.qty || "", custPhone: order.custPhone || "",
-    address: order.address || "", link: order.link || "", size: order.size || "",
-    color: order.color || "", profit: order.profit || 0, deadline: order.deadline || "",
+    custPhone: order.custPhone || "", address: order.address || "", deadline: order.deadline || "",
   });
+  // Field theo TỪNG sản phẩm (khi thêm mới có thể nhiều dòng).
+  const blankItem = () => ({ product: "", qty: "", link: "", size: "", color: "", profit: 0 });
+  const [items, setItems] = useState([{
+    product: order.product || "", qty: order.qty || "", link: order.link || "",
+    size: order.size || "", color: order.color || "", profit: order.profit || 0,
+  }]);
   const [err, setErr] = useState("");
-  const up = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const upS = (k, v) => setShared((p) => ({ ...p, [k]: v }));
+  const upI = (i, k, v) => setItems((p) => p.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
+  const addItem = () => setItems((p) => [...p, blankItem()]);
+  const removeItem = (i) => setItems((p) => p.filter((_, idx) => idx !== i));
 
   async function save() {
     setErr("");
     try {
-      if (isNew) await api.post("/api/orders", f);
-      else await api.put(`/api/orders/${order.id}`, f);
+      if (isNew) await api.post("/api/orders", { ...shared, items });
+      else await api.put(`/api/orders/${order.id}`, { ...shared, ...items[0] });
       onSaved();
     } catch (e) { setErr(e.message); }
   }
@@ -853,6 +861,27 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
     if (!confirm("Xóa đơn này?")) return;
     try { await api.del(`/api/orders/${order.id}`); onSaved(); } catch (e) { setErr(e.message); }
   }
+
+  // Khối nhập 1 sản phẩm.
+  const itemBlock = (it, i) => (
+    <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, marginBottom: 8, background: items.length > 1 ? "#f8fafc" : undefined }}>
+      {items.length > 1 && (
+        <div className="row" style={{ marginBottom: 6 }}>
+          <span className="badge blue">Sản phẩm {i + 1}</span>
+          <div className="spacer" />
+          <Button sm variant="danger" onClick={() => removeItem(i)}>✕ Bỏ</Button>
+        </div>
+      )}
+      <Input label="Sản phẩm" value={it.product} onChange={(e) => upI(i, "product", e.target.value)} />
+      <Input label="Link sản phẩm" value={it.link} onChange={(e) => upI(i, "link", e.target.value)} />
+      <div className="row" style={{ gap: 10 }}>
+        <div style={{ flex: 1 }}><Input label="SL" value={it.qty} onChange={(e) => upI(i, "qty", e.target.value)} /></div>
+        <div style={{ flex: 1 }}><Input label="Size/Variation" value={it.size} onChange={(e) => upI(i, "size", e.target.value)} /></div>
+        <div style={{ flex: 1 }}><Input label="Màu" value={it.color} onChange={(e) => upI(i, "color", e.target.value)} /></div>
+      </div>
+      <Input label="Profit (ròng)" type="number" value={it.profit} onChange={(e) => upI(i, "profit", e.target.value)} />
+    </div>
+  );
 
   return (
     <Modal title={isNew ? "Thêm đơn" : `Sửa đơn ${order.id}`} onClose={onClose}
@@ -864,10 +893,10 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
       </>}>
       {isNew && (
         <>
-          <Input label="ID Order" value={f.id} onChange={(e) => up("id", e.target.value)} />
+          <Input label="ID Order" value={shared.id} onChange={(e) => upS("id", e.target.value)} />
           <div className="field">
             <label className="label">Store</label>
-            <input className="input" list="ordermodal-stores" value={f.store} onChange={(e) => up("store", e.target.value)}
+            <input className="input" list="ordermodal-stores" value={shared.store} onChange={(e) => upS("store", e.target.value)}
               placeholder="Gõ để tìm store, hoặc gõ tên store MỚI…" autoComplete="off" />
             <datalist id="ordermodal-stores">
               {(isAdmin ? stores : myStores).map((s) => <option key={s} value={s} />)}
@@ -875,26 +904,21 @@ function OrderModal({ order, currentUser, stores, onClose, onSaved }) {
           </div>
         </>
       )}
-      <Input label="Sản phẩm" value={f.product} onChange={(e) => up("product", e.target.value)} />
-      <div className="row" style={{ gap: 10 }}>
-        <div style={{ flex: 1 }}><Input label="SL" value={f.qty} onChange={(e) => up("qty", e.target.value)} /></div>
-        <div style={{ flex: 1 }}><Input label="SĐT khách" value={f.custPhone} onChange={(e) => up("custPhone", e.target.value)} /></div>
-      </div>
+      <Input label="SĐT khách" value={shared.custPhone} onChange={(e) => upS("custPhone", e.target.value)} />
       <div className="field">
         <label className="label">Address</label>
-        <textarea className="input" rows={3} value={f.address} onChange={(e) => up("address", e.target.value)} />
+        <textarea className="input" rows={3} value={shared.address} onChange={(e) => upS("address", e.target.value)} />
       </div>
-      <Input label="Link sản phẩm" value={f.link} onChange={(e) => up("link", e.target.value)} />
-      <div className="row" style={{ gap: 10 }}>
-        <div style={{ flex: 1 }}><Input label="Size/Variation" value={f.size} onChange={(e) => up("size", e.target.value)} /></div>
-        <div style={{ flex: 1 }}><Input label="Màu" value={f.color} onChange={(e) => up("color", e.target.value)} /></div>
-      </div>
-      <div className="row" style={{ gap: 10 }}>
-        <div style={{ flex: 1 }}><Input label="Profit (ròng)" type="number" value={f.profit} onChange={(e) => up("profit", e.target.value)} /></div>
-        <div style={{ flex: 1 }}>
-          <label className="label">Thời hạn</label>
-          <DeadlinePicker value={f.deadline} onChange={(v) => up("deadline", v)} />
-        </div>
+
+      {isNew && items.length > 1 && <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>📦 Đơn nhiều sản phẩm — dùng chung ID, địa chỉ, SĐT, thời hạn.</div>}
+      {items.map(itemBlock)}
+      {isNew && (
+        <Button sm onClick={addItem} style={{ marginBottom: 10 }}>＋ Thêm sản phẩm khác</Button>
+      )}
+
+      <div className="field">
+        <label className="label">Thời hạn</label>
+        <DeadlinePicker value={shared.deadline} onChange={(v) => upS("deadline", v)} />
       </div>
       {err && <div style={{ color: "var(--red)" }}>{err}</div>}
     </Modal>
