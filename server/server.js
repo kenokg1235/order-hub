@@ -458,15 +458,18 @@ app.post("/api/orders", requireAuth, (req, res) => {
   const insert = db.prepare(`INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,listed_by,period,created_at,updated_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
+  const existsLineKeyStmt = db.prepare("SELECT 1 FROM orders WHERE line_key=?");
   const created = [];
   try {
     db.transaction(() => {
       const seenLine = new Set();
-      for (const it of items) {
+      items.forEach((it, i) => {
         const itemNo = (String(it.link || "").match(/itm\/(\d{6,})/) || [])[1] || "";
         const size = String(it.size || "");
-        const lineKey = `${orderNo}||${itemNo}||${size}`;
-        if (seenLine.has(lineKey)) continue;   // bỏ dòng trùng hệt trong cùng request
+        // Mỗi sản phẩm nhập tay là 1 dòng riêng — giữ line_key DUY NHẤT (thêm chỉ số nếu trùng,
+        // vd 2 sản phẩm khác tên nhưng đều không có link & cùng size).
+        let lineKey = `${orderNo}||${itemNo}||${size}`;
+        if (seenLine.has(lineKey) || existsLineKeyStmt.get(lineKey)) lineKey = `${orderNo}||${itemNo}||${size}||${i}`;
         seenLine.add(lineKey);
         // id: order_no cho dòng đầu, order_no-2/-3… cho các sản phẩm sau (giống import eBay).
         let id = orderNo, n = 2;
@@ -474,7 +477,7 @@ app.post("/api/orders", requireAuth, (req, res) => {
         insert.run(id, orderNo, lineKey, store, b.address || "", b.custPhone || "", String(it.qty || ""), it.product || "",
           "", it.link || "", size, it.color || "", Number(it.profit) || 0, b.deadline || "", req.user.id, period, now, now);
         created.push(id);
-      }
+      });
     })();
   } catch (e) { return res.status(409).json({ error: e.message || "Lỗi tạo đơn" }); }
   if (!created.length) return res.status(409).json({ error: "ID Order đã tồn tại" });
