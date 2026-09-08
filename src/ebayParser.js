@@ -118,6 +118,21 @@ export function parseEbayCsv(text) {
 
 // Mã đơn dạng "14-15124-99674" / "07-15139-30825"… (cột mã đơn của sheet có thể KHÔNG có tiêu đề).
 const looksLikeOrderCode = (v) => /^\s*[A-Za-z0-9]{1,4}-\d{3,7}-\d{3,8}\s*$/.test(String(v || ""));
+// Suy tên sản phẩm dễ đọc từ link (khi sheet không có cột "Sản phẩm").
+// vd .../p/brooks-mens-ghost-17-running-shoe/602592 → "Brooks Mens Ghost 17 Running Shoe".
+function productFromLink(link) {
+  const u = String(link || "").trim();
+  if (!u || /ebay\.com\/itm\//i.test(u)) return "";   // link eBay dạng itm/số → không có slug
+  const path = u.replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0];
+  let best = "";
+  for (const seg of path.split("/")) {
+    const alpha = (seg.match(/[a-zA-Z]/g) || []).length;
+    if (alpha >= 4 && alpha > (best.match(/[a-zA-Z]/g) || []).length) best = seg;
+  }
+  if (!best) return "";
+  return best.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80);
+}
 // Dò cột mã đơn theo DỮ LIỆU khi không tìm được theo tiêu đề (nhiều ô khớp mẫu mã đơn nhất).
 function detectIdColumn(rows, hIdx) {
   const nCol = rows.slice(hIdx + 1, hIdx + 30).reduce((m, r) => Math.max(m, r.length), 0);
@@ -174,11 +189,13 @@ export function parseOrderHubCsv(text) {
       get(row, ci.country),
     ].filter(Boolean);
     const itemNo = get(row, ci.itemNo);
+    const link = get(row, ci.link) || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : "");
     out.push({
       id, orderNumber: id, itemNumber: itemNo,
-      product: get(row, ci.product), qty: get(row, ci.qty), custPhone: get(row, ci.phone),
+      product: get(row, ci.product) || productFromLink(link),   // trống → suy tên từ link
+      qty: get(row, ci.qty), custPhone: get(row, ci.phone),
       address: addressParts.join("\n"),
-      link: get(row, ci.link) || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : ""),
+      link,
       size: get(row, ci.size), color: get(row, ci.color),
       profit: get(row, ci.profit), deadline: dl(get(row, ci.deadline)),
       masterNote: get(row, ci.note),
