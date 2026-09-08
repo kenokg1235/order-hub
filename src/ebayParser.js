@@ -116,33 +116,51 @@ export function parseEbayCsv(text) {
   return { rows: merged, count: merged.length };
 }
 
-// Parse mẫu nhập CHUẨN của OrderHub (người dùng tự điền). Cột tiếng Việt thân thiện.
-// Bắt buộc có cột "ID Order". Địa chỉ gộp từ: Người nhận + Địa chỉ + (Thành phố, Bang Zip) + Quốc gia.
+// Mã đơn dạng "14-15124-99674" / "07-15139-30825"… (cột mã đơn của sheet có thể KHÔNG có tiêu đề).
+const looksLikeOrderCode = (v) => /^\s*[A-Za-z0-9]{1,4}-\d{3,7}-\d{3,8}\s*$/.test(String(v || ""));
+// Dò cột mã đơn theo DỮ LIỆU khi không tìm được theo tiêu đề (nhiều ô khớp mẫu mã đơn nhất).
+function detectIdColumn(rows, hIdx) {
+  const nCol = rows.slice(hIdx + 1, hIdx + 30).reduce((m, r) => Math.max(m, r.length), 0);
+  let best = -1, bestCount = 0;
+  for (let c = 0; c < nCol; c++) {
+    let cnt = 0;
+    for (let r = hIdx + 1; r < Math.min(rows.length, hIdx + 60); r++) if (looksLikeOrderCode(rows[r][c])) cnt++;
+    if (cnt > bestCount) { bestCount = cnt; best = c; }
+  }
+  return bestCount > 0 ? best : -1;
+}
+
+// Parse mẫu nhập CHUẨN của OrderHub (người dùng tự điền) HOẶC sheet Google tự tạo (cột tiếng Việt).
+// Tự dò cột mã đơn theo dữ liệu nếu tiêu đề trống. Địa chỉ gộp từ các cột địa chỉ (hoặc 1 ô địa chỉ gộp sẵn).
 export function parseOrderHubCsv(text) {
   const rows = parseCSV(text);
-  const hIdx = rows.findIndex((r) => r.some((c) => ["id order", "order number", "mã đơn", "ma don"].includes(norm(c))));
-  if (hIdx < 0) throw new Error("Mẫu OrderHub: thiếu cột 'ID Order'.");
+  // Nhận diện hàng tiêu đề: có cột mã đơn HOẶC các tiêu đề đặc trưng của sheet.
+  const HEAD_MARKERS = ["id order", "order number", "mã đơn", "ma don", "địa chỉ ship", "dia chi ship", "variation", "giá sp", "gia sp", "link1"];
+  let hIdx = rows.findIndex((r) => r.some((c) => HEAD_MARKERS.includes(norm(c))));
+  if (hIdx < 0) hIdx = 0;   // không rõ tiêu đề → coi hàng đầu là tiêu đề
   const header = rows[hIdx].map(norm);
   const find = (...names) => { for (const n of names) { const i = header.indexOf(norm(n)); if (i >= 0) return i; } return -1; };
   const ci = {
-    id: find("ID Order", "Order Number", "Mã đơn"),
+    id: find("ID Order", "Order Number", "Mã đơn", "Ma don"),
     name: find("Người nhận", "Tên người nhận", "Ship To Name", "Ten"),
-    addr: find("Địa chỉ", "Address", "Dia chi"),
+    addr: find("Địa chỉ", "Địa chỉ ship", "Dia chi ship", "Address", "Dia chi"),
     city: find("Thành phố", "City", "Thanh pho"),
     state: find("Bang", "State", "Tỉnh"),
     zip: find("Zip", "Zip code", "Mã zip"),
     country: find("Quốc gia", "Country", "Quoc gia"),
     phone: find("SĐT", "Điện thoại", "Phone", "SDT"),
     qty: find("SL", "Số lượng", "Quantity", "So luong"),
-    product: find("Sản phẩm", "Product", "Item Title", "San pham"),
-    link: find("Link", "Link sản phẩm", "URL"),
+    product: find("Sản phẩm", "Product", "Item Title", "San pham", "SKU"),
+    link: find("Link", "Link sản phẩm", "URL", "link1", "Link1"),
     size: find("Size", "Variation", "Size/Variation"),
     color: find("Màu", "Color", "Mau"),
     profit: find("Profit", "Lợi nhuận", "Loi nhuan"),
-    deadline: find("Thời hạn", "Deadline", "Ship By", "Han"),
+    deadline: find("Thời hạn", "Deadline", "Ship By", "Hạn", "Han"),
     note: find("Ghi chú", "Note", "Note tổng", "Ghi chu"),
     itemNo: find("Item Number", "eBay Item Number", "Item No"),
   };
+  if (ci.id < 0) ci.id = detectIdColumn(rows, hIdx);   // tiêu đề trống → dò theo dữ liệu
+  if (ci.id < 0) throw new Error("Không tìm ra cột mã đơn — thêm tiêu đề 'ID Order' cho cột mã đơn.");
   const get = (row, idx) => (idx >= 0 ? (row[idx] || "").trim() : "");
   const dl = (v) => (/^\d{1,2}\s*\/\s*\d{1,2}$/.test(v) ? v.replace(/\s/g, "") : (toDDMM(v) || v));
   const out = [];

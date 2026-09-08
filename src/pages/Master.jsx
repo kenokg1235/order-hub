@@ -816,8 +816,11 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
             <datalist id="store-list">{stores.map((s) => <option key={s} value={s} />)}</datalist>
           </div>
           <div className="field">
-            <label className="label">File eBay OrdersReport (.csv)</label>
+            <label className="label">File .csv (eBay OrdersReport hoặc Google Sheet của bạn)</label>
             <input type="file" accept=".csv,text/csv" onChange={onFile} />
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Google Sheet: <b>File → Download → CSV</b> rồi chọn tại đây. Tự nhận cột mã đơn, địa chỉ, link, Variation.
+            </div>
           </div>
           {parsed && <div className="badge blue">Đọc được {parsed.count} đơn</div>}
           {err && <div style={{ color: "var(--red)", marginTop: 10 }}>{err}</div>}
