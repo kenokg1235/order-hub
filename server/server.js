@@ -1960,10 +1960,16 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const monthQ = String(req.query.month || "").trim();
   const isAll = monthQ === "all";
   const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
-  // ĐƠN (Đã Up / Đã Cancel): tính theo THÁNG LỊCH của đơn → khớp đúng bảng ở Sheet Tổng.
-  // Tháng suy từ ngày bắt đầu kỳ (vd kỳ 06/07/2026 → nay ⇒ tháng 2026-07).
+  // Tháng lịch (dùng cho fallback THẺ khi chỉ chọn tháng, không có from/to).
   const orderMonth = isAll ? "" : (from ? from.slice(0, 7) : (monthQ || getActiveMonth()));
-  const scopeM = (arr) => orderMonth ? arr.filter((o) => o.period === orderMonth) : arr;
+  // ĐƠN (Đã Up / Đã Cancel):
+  //  - Có KỲ (from/to): tính theo NGÀY CHỐT (finalized_at) trong khoảng → kỳ mới bắt đầu từ 0.
+  //  - Chỉ chọn THÁNG (không from/to): theo tháng lịch của đơn → khớp bảng ở Sheet Tổng.
+  const scopeM = (arr) => {
+    if (isAll) return arr;
+    if (from || to) return arr.filter((o) => inRange(o.finalized_at || o.created_at));
+    return orderMonth ? arr.filter((o) => o.period === orderMonth) : arr;
+  };
 
   const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.

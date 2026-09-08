@@ -57,7 +57,7 @@ export default function Leaderboard({ currentUser }) {
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
-        Theo <b>từng kỳ</b> (dùng chung kỳ với Thống kê chi phí). <b>Số đơn (Đã Up) &amp; Profit</b> tính theo <b>tháng lịch của đơn</b> — khớp đúng bảng ở <b>Sheet Tổng</b>. <b>Số thẻ</b> tính theo <b>khoảng ngày của kỳ</b> (kể từ ngày chốt kỳ), là thẻ NV được cấp ở Mua thẻ có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, theo người yêu cầu. <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí; bấm số ở cột Số đơn để xem danh sách đơn đã tính.
+        Theo <b>từng kỳ</b> (dùng chung kỳ với Thống kê chi phí). <b>Số đơn (Đã Up), Profit &amp; Số thẻ</b> đều tính theo <b>khoảng ngày của kỳ</b> (kể từ ngày chốt kỳ) — đơn tính theo <b>ngày chốt (Đã Up)</b>, nên kỳ mới bắt đầu từ 0. Khi chọn <b>nguyên một tháng lịch</b>, đơn tính theo tháng của đơn (khớp bảng ở Sheet Tổng). <b>Số thẻ</b> là thẻ NV được cấp ở Mua thẻ có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, theo người yêu cầu. <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí; bấm số ở cột Số đơn để xem danh sách đơn đã tính.
       </div>
       {totals && (
         <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
