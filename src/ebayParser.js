@@ -22,7 +22,9 @@ function parseCSV(text) {
   return rows;
 }
 
-const norm = (s) => String(s || "").trim().toLowerCase();
+// Chuẩn hóa Unicode (NFC) để so khớp tiêu đề ổn định — dấu tiếng Việt gõ trong Google Sheets
+// có thể ở dạng tổ hợp (NFD) khác với chuỗi trong code, nếu không normalize sẽ so KHÔNG khớp.
+const norm = (s) => String(s || "").normalize("NFC").trim().toLowerCase();
 
 // Đơn nhiều sản phẩm: eBay tách 1 dòng "tổng" (có địa chỉ, KHÔNG sản phẩm) + các dòng sản phẩm
 // (KHÔNG địa chỉ). → chép địa chỉ/SĐT/thời hạn sang dòng sản phẩm, bỏ dòng tổng trống.
@@ -133,17 +135,20 @@ function productFromLink(link) {
   return best.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
     .replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 80);
 }
-// Dò cột mã đơn theo DỮ LIỆU khi không tìm được theo tiêu đề (nhiều ô khớp mẫu mã đơn nhất).
-function detectIdColumn(rows, hIdx) {
+// Dò cột theo DỮ LIỆU khi không tìm được theo tiêu đề (chọn cột có nhiều ô khớp nhất).
+function detectColumn(rows, hIdx, test) {
   const nCol = rows.slice(hIdx + 1, hIdx + 30).reduce((m, r) => Math.max(m, r.length), 0);
   let best = -1, bestCount = 0;
   for (let c = 0; c < nCol; c++) {
     let cnt = 0;
-    for (let r = hIdx + 1; r < Math.min(rows.length, hIdx + 60); r++) if (looksLikeOrderCode(rows[r][c])) cnt++;
+    for (let r = hIdx + 1; r < Math.min(rows.length, hIdx + 60); r++) if (test(rows[r][c])) cnt++;
     if (cnt > bestCount) { bestCount = cnt; best = c; }
   }
   return bestCount > 0 ? best : -1;
 }
+const detectIdColumn = (rows, hIdx) => detectColumn(rows, hIdx, looksLikeOrderCode);
+// Cột link = cột có nhiều ô là URL http(s) nhất (tên tiêu đề tùy ý).
+const detectLinkColumn = (rows, hIdx) => detectColumn(rows, hIdx, (v) => /^\s*https?:\/\//i.test(String(v || "")));
 
 // Parse mẫu nhập CHUẨN của OrderHub (người dùng tự điền) HOẶC sheet Google tự tạo (cột tiếng Việt).
 // Tự dò cột mã đơn theo dữ liệu nếu tiêu đề trống. Địa chỉ gộp từ các cột địa chỉ (hoặc 1 ô địa chỉ gộp sẵn).
@@ -166,7 +171,7 @@ export function parseOrderHubCsv(text) {
     phone: find("SĐT", "Điện thoại", "Phone", "SDT"),
     qty: find("SL", "Số lượng", "Quantity", "So luong"),
     product: find("Sản phẩm", "Product", "Item Title", "San pham", "SKU"),
-    link: find("Link", "Link sản phẩm", "URL", "link1", "Link1"),
+    link: find("Link", "Link sản phẩm", "Đường link", "Duong link", "Link sp", "URL", "link1", "Link1", "Product link"),
     size: find("Size", "Variation", "Size/Variation"),
     color: find("Màu", "Color", "Mau"),
     profit: find("Profit", "Lợi nhuận", "Loi nhuan"),
@@ -174,7 +179,10 @@ export function parseOrderHubCsv(text) {
     note: find("Ghi chú", "Note", "Note tổng", "Ghi chu"),
     itemNo: find("Item Number", "eBay Item Number", "Item No"),
   };
-  if (ci.id < 0) ci.id = detectIdColumn(rows, hIdx);   // tiêu đề trống → dò theo dữ liệu
+  if (ci.id < 0) ci.id = detectIdColumn(rows, hIdx);       // tiêu đề trống → dò theo dữ liệu
+  // Link: nếu cột theo tiêu đề rỗng/không phải URL → dò cột thật sự chứa URL (tên cột tùy ý).
+  const colHasUrl = (c) => c >= 0 && rows.slice(hIdx + 1, hIdx + 60).some((r) => /^\s*https?:\/\//i.test(String(r[c] || "")));
+  if (!colHasUrl(ci.link)) { const d = detectLinkColumn(rows, hIdx); if (d >= 0) ci.link = d; }
   if (ci.id < 0) throw new Error("Không tìm ra cột mã đơn — thêm tiêu đề 'ID Order' cho cột mã đơn.");
   const get = (row, idx) => (idx >= 0 ? (row[idx] || "").trim() : "");
   const dl = (v) => (/^\d{1,2}\s*\/\s*\d{1,2}$/.test(v) ? v.replace(/\s/g, "") : (toDDMM(v) || v));
@@ -189,10 +197,14 @@ export function parseOrderHubCsv(text) {
       get(row, ci.country),
     ].filter(Boolean);
     const itemNo = get(row, ci.itemNo);
-    const link = get(row, ci.link) || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : "");
+    const rawProduct = get(row, ci.product);
+    const productIsUrl = /^\s*https?:\/\//i.test(rawProduct);   // cột "Sản phẩm" chứa link
+    const link = get(row, ci.link) || (productIsUrl ? rawProduct : "") || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : "");
+    // Tên sản phẩm: nếu cột SP là URL → suy tên đẹp từ URL; nếu trống → suy từ link.
+    const product = productIsUrl ? productFromLink(rawProduct) : (rawProduct || productFromLink(link));
     out.push({
       id, orderNumber: id, itemNumber: itemNo,
-      product: get(row, ci.product) || productFromLink(link),   // trống → suy tên từ link
+      product,
       qty: get(row, ci.qty), custPhone: get(row, ci.phone),
       address: addressParts.join("\n"),
       link,
