@@ -26,6 +26,12 @@ function parseCSV(text) {
 // có thể ở dạng tổ hợp (NFD) khác với chuỗi trong code, nếu không normalize sẽ so KHÔNG khớp.
 const norm = (s) => String(s || "").normalize("NFC").trim().toLowerCase();
 
+// Khóa ngắn ổn định từ link → phân biệt các sản phẩm cùng đơn khi Size trùng nhau.
+function linkKey(link) {
+  const s = String(link || ""); if (!s) return "";
+  let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return "L" + h.toString(36);
+}
 // Đơn nhiều sản phẩm: eBay tách 1 dòng "tổng" (có địa chỉ, KHÔNG sản phẩm) + các dòng sản phẩm
 // (KHÔNG địa chỉ). → chép địa chỉ/SĐT/thời hạn sang dòng sản phẩm, bỏ dòng tổng trống.
 function mergeMultiItem(rows) {
@@ -36,10 +42,15 @@ function mergeMultiItem(rows) {
     if (group.length === 1) { out.push(group[0]); continue; }
     const pick = (f) => (group.find((g) => String(g[f] || "").trim()) || {})[f] || "";
     const addr = pick("address"), phone = pick("custPhone"), deadline = pick("deadline");
-    const products = group.filter((g) => String(g.product || "").trim() || g.itemNumber);
+    const products = group.filter((g) => String(g.product || "").trim() || g.itemNumber || g.link);
     const keep = products.length ? products : group;   // không tách được thì giữ nguyên
-    for (const it of keep)
-      out.push({ ...it, address: it.address || addr, custPhone: it.custPhone || phone, deadline: it.deadline || deadline });
+    keep.forEach((it, idx) =>
+      out.push({
+        ...it,
+        // Mỗi sản phẩm cần line_key riêng: gán itemNumber theo link (hoặc chỉ số) để không trùng khi Size giống nhau.
+        itemNumber: it.itemNumber || linkKey(it.link) || `p${idx + 1}`,
+        address: it.address || addr, custPhone: it.custPhone || phone, deadline: it.deadline || deadline,
+      }));
   }
   return out;
 }
@@ -202,29 +213,43 @@ export function parseOrderHubCsv(text) {
   const get = (row, idx) => (idx >= 0 ? (row[idx] || "").trim() : "");
   const dl = (v) => (/^\d{1,2}\s*\/\s*\d{1,2}$/.test(v) ? v.replace(/\s/g, "") : (toDDMM(v) || v));
   const out = [];
+  let lastId = "", lastAddr = "", lastPhone = "", lastDeadline = "";   // fill-down cho đơn nhiều sản phẩm
   for (let r = hIdx + 1; r < rows.length; r++) {
     const row = rows[r];
-    const id = get(row, ci.id);
-    if (!id || !/\d/.test(id) || /record\(s\)|downloaded|seller id/i.test(id)) continue;
+    const rawId = get(row, ci.id);
+    if (/record\(s\)|downloaded|seller id/i.test(rawId)) continue;   // dòng footer
+    const itemNo = get(row, ci.itemNo);
+    const rawProduct = get(row, ci.product);
+    const productIsUrl = /^\s*https?:\/\//i.test(rawProduct);   // cột "Sản phẩm" chứa link
+    const link = get(row, ci.link) || (productIsUrl ? rawProduct : "") || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : "");
+    const size = get(row, ci.size);
+    const hasProduct = !!(link || (rawProduct && !productIsUrl) || size);
     const addressParts = [
       get(row, ci.name), get(row, ci.addr),
       [get(row, ci.city), [get(row, ci.state), get(row, ci.zip)].filter(Boolean).join(" ")].filter(Boolean).join(", "),
       get(row, ci.country),
     ].filter(Boolean);
-    const itemNo = get(row, ci.itemNo);
-    const rawProduct = get(row, ci.product);
-    const productIsUrl = /^\s*https?:\/\//i.test(rawProduct);   // cột "Sản phẩm" chứa link
-    const link = get(row, ci.link) || (productIsUrl ? rawProduct : "") || (itemNo ? `https://www.ebay.com/itm/${itemNo}` : "");
+
+    let id = rawId, inherit = false;
+    if (rawId && /\d/.test(rawId)) {
+      // Dòng có MÃ ĐƠN → đơn mới; ghi nhớ để các dòng sản phẩm phụ (không mã đơn) kế thừa.
+      lastId = rawId; lastAddr = addressParts.join("\n");
+      lastPhone = get(row, ci.phone); lastDeadline = dl(get(row, ci.deadline));
+    } else if (hasProduct && lastId) {
+      id = lastId; inherit = true;   // dòng KHÔNG mã đơn nhưng có sản phẩm → sản phẩm phụ của đơn trước
+    } else {
+      continue;   // dòng trống thật
+    }
     // Tên sản phẩm: nếu cột SP là URL → suy tên đẹp từ URL; nếu trống → suy từ link.
     const product = productIsUrl ? productFromLink(rawProduct) : (rawProduct || productFromLink(link));
     out.push({
       id, orderNumber: id, itemNumber: itemNo,
       product,
-      qty: get(row, ci.qty), custPhone: get(row, ci.phone),
-      address: addressParts.join("\n"),
+      qty: get(row, ci.qty), custPhone: inherit ? lastPhone : get(row, ci.phone),
+      address: inherit ? lastAddr : addressParts.join("\n"),
       link,
-      size: get(row, ci.size), color: get(row, ci.color),
-      profit: get(row, ci.profit), deadline: dl(get(row, ci.deadline)),
+      size, color: get(row, ci.color),
+      profit: get(row, ci.profit), deadline: inherit ? lastDeadline : dl(get(row, ci.deadline)),
       masterNote: get(row, ci.note),
       raw: { itemNumber: itemNo },
     });

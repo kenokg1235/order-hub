@@ -394,7 +394,7 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
         raw: JSON.stringify(r.raw || {}), period, now,
       });
       inserted++;
-      if (itemNo) newIds.push({ id, it: itemNo });
+      if (itemNo && /^\d{6,}$/.test(itemNo)) newIds.push({ id, it: itemNo });   // chỉ fetch ảnh eBay khi là item number thật (toàn số)
     }
   });
   tx(rows);
