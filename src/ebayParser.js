@@ -118,8 +118,15 @@ export function parseEbayCsv(text) {
   return { rows: merged, count: merged.length };
 }
 
-// Mã đơn dạng "14-15124-99674" / "07-15139-30825"… (cột mã đơn của sheet có thể KHÔNG có tiêu đề).
-const looksLikeOrderCode = (v) => /^\s*[A-Za-z0-9]{1,4}-\d{3,7}-\d{3,8}\s*$/.test(String(v || ""));
+// Mã đơn: "14-15124-99674" (3 nhóm), "m19178308392" (eBay chữ+số), "27-15112-15902"…
+// Nhận diện linh hoạt để dò cột mã đơn theo DỮ LIỆU (kể cả khi cột không/khó đặt tiêu đề).
+const looksLikeOrderCode = (v) => {
+  const s = String(v || "").trim();
+  if (!s) return false;
+  if (/^[A-Za-z0-9]{1,4}-\d{3,7}-\d{3,8}$/.test(s)) return true;   // dạng 3 nhóm có gạch
+  if (/^[A-Za-z]{1,3}\d{8,}$/.test(s)) return true;                // dạng eBay: m + nhiều số
+  return false;
+};
 // Suy tên sản phẩm dễ đọc từ link (khi sheet không có cột "Sản phẩm").
 // vd .../p/brooks-mens-ghost-17-running-shoe/602592 → "Brooks Mens Ghost 17 Running Shoe".
 function productFromLink(link) {
@@ -154,16 +161,24 @@ const detectLinkColumn = (rows, hIdx) => detectColumn(rows, hIdx, (v) => /^\s*ht
 // Tự dò cột mã đơn theo dữ liệu nếu tiêu đề trống. Địa chỉ gộp từ các cột địa chỉ (hoặc 1 ô địa chỉ gộp sẵn).
 export function parseOrderHubCsv(text) {
   const rows = parseCSV(text);
-  // Nhận diện hàng tiêu đề: có cột mã đơn HOẶC các tiêu đề đặc trưng của sheet.
-  const HEAD_MARKERS = ["id order", "order number", "mã đơn", "ma don", "địa chỉ ship", "dia chi ship", "variation", "giá sp", "gia sp", "link1"];
-  let hIdx = rows.findIndex((r) => r.some((c) => HEAD_MARKERS.includes(norm(c))));
+  // Nhận diện hàng tiêu đề: quét các keyword đặc trưng ở HÀNG 1 (tên cột linh hoạt).
+  const HEAD_MARKERS = ["id order", "order number", "order", "mã đơn", "ma don", "địa chỉ", "address", "add", "variation", "size", "link", "hạn", "hạn ship", "seller note"];
+  const hasMarker = (r) => r.some((c) => { const n = norm(c); return n && HEAD_MARKERS.some((m) => n === m || n.includes(m)); });
+  let hIdx = rows.findIndex(hasMarker);
   if (hIdx < 0) hIdx = 0;   // không rõ tiêu đề → coi hàng đầu là tiêu đề
   const header = rows[hIdx].map(norm);
-  const find = (...names) => { for (const n of names) { const i = header.indexOf(norm(n)); if (i >= 0) return i; } return -1; };
+  // Khớp tiêu đề theo keyword: ưu tiên KHỚP CHÍNH XÁC, sau đó CHỨA keyword (>=3 ký tự) — để quét
+  // các tên cột viết tắt như "Order", "Add", "Hạn Ship", "Seller Note", "sl", "link", "size".
+  const usedCols = new Set();
+  const find = (...names) => {
+    for (const n of names) { const i = header.indexOf(norm(n)); if (i >= 0 && !usedCols.has(i)) { usedCols.add(i); return i; } }
+    for (const n of names) { const nk = norm(n); if (nk.length >= 3) { const i = header.findIndex((h, j) => !usedCols.has(j) && h.includes(nk)); if (i >= 0) { usedCols.add(i); return i; } } }
+    return -1;
+  };
   const ci = {
-    id: find("ID Order", "Order Number", "Mã đơn", "Ma don"),
+    id: find("ID Order", "Order Number", "Mã đơn", "Ma don"),   // "Order" đơn lẻ dễ trùng cột khác → dò theo dữ liệu bên dưới
     name: find("Người nhận", "Tên người nhận", "Ship To Name", "Ten"),
-    addr: find("Địa chỉ", "Địa chỉ ship", "Dia chi ship", "Address", "Dia chi"),
+    addr: find("Địa chỉ", "Địa chỉ ship", "Dia chi ship", "Address", "Dia chi", "Add"),
     city: find("Thành phố", "City", "Thanh pho"),
     state: find("Bang", "State", "Tỉnh"),
     zip: find("Zip", "Zip code", "Mã zip"),
@@ -175,8 +190,8 @@ export function parseOrderHubCsv(text) {
     size: find("Size", "Variation", "Size/Variation"),
     color: find("Màu", "Color", "Mau"),
     profit: find("Profit", "Lợi nhuận", "Loi nhuan"),
-    deadline: find("Thời hạn", "Deadline", "Ship By", "Hạn", "Han"),
-    note: find("Ghi chú", "Note", "Note tổng", "Ghi chu"),
+    deadline: find("Thời hạn", "Deadline", "Ship By", "Hạn Ship", "Hạn", "Han"),
+    note: find("Ghi chú", "Seller Note", "Note", "Note tổng", "Ghi chu"),
     itemNo: find("Item Number", "eBay Item Number", "Item No"),
   };
   if (ci.id < 0) ci.id = detectIdColumn(rows, hIdx);       // tiêu đề trống → dò theo dữ liệu
