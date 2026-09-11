@@ -61,7 +61,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);   // refetch when switching month
 
-  // Tự cập nhật mỗi 15s: đơn mới / trạng thái / chỉnh sửa đều hiện ngay,
+  // Tự cập nhật mỗi 30s: đơn mới / trạng thái / chỉnh sửa đều hiện ngay,
   // chỉ CHỪA đúng dòng đang được focus (đang gõ) để không mất chữ.
   useEffect(() => {
     if (!month) return;
@@ -74,7 +74,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
           return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
         });
       } catch {}
-    }, 15000);
+    }, 30000);
     return () => clearInterval(t);
   }, [month]);
 
@@ -220,6 +220,23 @@ export default function Master({ currentUser, teams, refreshUser }) {
       return deadlineSort === "asc" ? va - vb : vb - va;
     });
   }, [filtered, deadlineSort]);
+
+  // Phân trang để không render hàng trăm dòng cùng lúc (chống lag trình duyệt).
+  const PER_PAGE = 100;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(displayed.length / PER_PAGE));
+  useEffect(() => { setPage(1); }, [cf, q, month, deadlineSort]);            // đổi lọc/tháng → về trang 1
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const paged = useMemo(() => displayed.slice((page - 1) * PER_PAGE, page * PER_PAGE), [displayed, page]);
+  const Pager = () => totalPages <= 1 ? null : (
+    <div className="row" style={{ gap: 8, alignItems: "center", padding: "8px 0", flexWrap: "wrap" }}>
+      <Button sm disabled={page <= 1} onClick={() => setPage(1)}>« Đầu</Button>
+      <Button sm disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹ Trước</Button>
+      <span className="muted" style={{ fontSize: 13 }}>Trang <b>{page}</b>/{totalPages} · {displayed.length} đơn</span>
+      <Button sm disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Sau ›</Button>
+      <Button sm disabled={page >= totalPages} onClick={() => setPage(totalPages)}>Cuối »</Button>
+    </div>
+  );
 
   // Đo độ rộng cột (từ hàng tiêu đề) để ghim N cột đầu đúng vị trí khi cuộn ngang.
   useLayoutEffect(() => {
@@ -460,6 +477,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
+      <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="mtbl" ref={tableRef} className="tbl" style={{ minWidth: 1850, whiteSpace: "nowrap" }}>
           <thead><tr>
@@ -508,7 +526,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
             <td>{activeFilters > 0 && <button className="btn sm" onClick={clearFilters} title="Xóa lọc">✕</button>}</td>
           </tr></thead>
           <tbody>
-            {displayed.map((o) => {
+            {paged.map((o) => {
               const procSt = (o.purchases || []).map((p) => p.processStatus).find(Boolean) || "";
               const rowColor = rowBg(o.masterStatus, procSt, statusColors);
               // "Có tracking": khi MỌI hàng (thẻ) trong đơn đều có TRẠNG THÁI XỬ LÝ = "Có Tracking".
@@ -664,6 +682,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
           </tbody>
         </table>
       </div>
+      <Pager />
 
       {importOpen && (
         <ImportModal currentUser={currentUser} stores={stores}

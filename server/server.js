@@ -260,6 +260,14 @@ function orderNoCounts() {
     m[r.order_no] = (m[r.order_no] || 0) + 1;
   return m;
 }
+// Cache ngắn (8s) cho 2 tổng hợp quét-toàn-bảng — gộp nhiều lần poll đồng thời, giảm tải CPU.
+let _orderAggCache = { at: 0, addr: null, on: null };
+function orderAggsCached() {
+  const now = Date.now();
+  if (_orderAggCache.addr && now - _orderAggCache.at < 8000) return _orderAggCache;
+  _orderAggCache = { at: now, addr: allAddressCounts(), on: orderNoCounts() };
+  return _orderAggCache;
+}
 
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
 function itemNoOf(o) {
@@ -351,8 +359,7 @@ app.get("/api/orders", requireAuth, (req, res) => {
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
   const purMap = purchasesByOrders(rows.map((o) => o.id));
-  const addrCount = allAddressCounts();
-  const onCount = orderNoCounts();
+  const { addr: addrCount, on: onCount } = orderAggsCached();
   res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })) });
 });
 
@@ -840,8 +847,7 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
-  const addrCount = allAddressCounts();
-  const onCount = orderNoCounts();
+  const { addr: addrCount, on: onCount } = orderAggsCached();
   res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })) });
 });
 
