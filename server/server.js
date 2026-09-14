@@ -1954,6 +1954,25 @@ app.delete("/api/work-sessions/:id", requireAdmin, (req, res) => {
   _endedSessionStats.delete(req.params.id); _workSessionsCache = { at: 0, payload: null };
   res.json({ ok: true });
 });
+// Tự động reset buổi làm việc mỗi ngày lúc giờ cấu hình (giờ VN, UTC+7 — không lệ thuộc TZ máy chủ).
+// Cấu hình: setting "wsAutoReset" = { enabled, time:"HH:MM" }. Giờ đến → kết thúc buổi đang mở + mở buổi mới.
+function autoResetWorkSessionTick() {
+  const cfg = getSetting("wsAutoReset", { enabled: false, time: "" });
+  if (!cfg || !cfg.enabled || !/^\d{2}:\d{2}$/.test(cfg.time || "")) return;
+  const d = new Date(Date.now() + 7 * 3600 * 1000);   // giờ VN qua UTC+7
+  const hhmm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  if (hhmm !== cfg.time) return;
+  const today = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+  if (getSetting("wsLastAutoReset", "") === today) return;   // đã reset trong ngày → khỏi lặp
+  setSetting("wsLastAutoReset", today);
+  const open = db.prepare("SELECT * FROM work_sessions WHERE ended_at=0 ORDER BY started_at DESC").get();
+  if (open) db.prepare("UPDATE work_sessions SET ended_at=?, note=? WHERE id=?").run(Date.now(), open.note || "Tự động kết thúc", open.id);
+  const id = newId("ws");
+  db.prepare("INSERT INTO work_sessions (id,started_at,started_by_name,note) VALUES (?,?,?,?)").run(id, Date.now(), "Tự động", "Tự động bắt đầu");
+  if (open) _endedSessionStats.delete(open.id);
+  _workSessionsCache = { at: 0, payload: null };
+}
+setInterval(autoResetWorkSessionTick, 60000);
 
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,

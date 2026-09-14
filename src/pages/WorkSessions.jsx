@@ -6,10 +6,17 @@ import { Button, Badge } from "../ui.jsx";
 export default function WorkSessions() {
   const [active, setActive] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [reset, setReset] = useState({ enabled: false, time: "" });   // tự động reset mỗi ngày
+  const [savedReset, setSavedReset] = useState("");
   const [err, setErr] = useState("");
 
   async function load() {
     try { const r = await api.get("/api/work-sessions"); setActive(r.active); setSessions(r.sessions || []); } catch (e) { setErr(e.message); }
+    try { const s = (await api.get("/api/settings")).settings; setReset({ enabled: !!s.wsAutoReset?.enabled, time: s.wsAutoReset?.time || "" }); } catch {}
+  }
+  async function saveReset(next) {
+    try { await api.put("/api/settings/wsAutoReset", { value: next }); setReset(next); setSavedReset("✓ Đã lưu"); setTimeout(() => setSavedReset(""), 2000); }
+    catch (e) { setErr(e.message); }
   }
   useEffect(() => { load(); }, []);
   // Buổi đang mở → cập nhật số liệu 20s cho tươi.
@@ -69,6 +76,26 @@ export default function WorkSessions() {
       <h2 style={{ margin: "0 0 6px" }}>⏱️ Buổi làm việc</h2>
       <div className="muted" style={{ marginBottom: 14 }}>Bấm <b>Bắt đầu buổi</b> khi vào ca, <b>Kết thúc buổi</b> khi hết ca. Số thẻ & đơn được tính trong khoảng thời gian buổi đó.</div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {/* Tự động reset buổi mỗi ngày vào giờ mong muốn */}
+      <div className="card" style={{ padding: "12px 14px", marginBottom: 14 }}>
+        <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <label className="row" style={{ gap: 6, cursor: "pointer", fontWeight: 600 }}>
+            <input type="checkbox" checked={reset.enabled}
+              onChange={(e) => saveReset({ enabled: e.target.checked, time: reset.time || "00:00" })} />
+            🔄 Tự động reset buổi mỗi ngày lúc
+          </label>
+          <input type="time" className="input" style={{ width: 120 }} value={reset.time}
+            onChange={(e) => setReset((p) => ({ ...p, time: e.target.value }))}
+            onBlur={() => reset.time && saveReset({ enabled: reset.enabled, time: reset.time })} />
+          <Button sm onClick={() => reset.time && saveReset({ enabled: reset.enabled, time: reset.time })}>Lưu giờ</Button>
+          {savedReset && <span className="badge green">{savedReset}</span>}
+        </div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          Đúng giờ này mỗi ngày (giờ VN), hệ thống <b>tự kết thúc buổi đang mở và mở buổi mới</b> — không cần bấm tay.
+          {reset.enabled && reset.time ? <> Đang bật: <b>{reset.time}</b> hằng ngày.</> : " Đang tắt."}
+        </div>
+      </div>
 
       {/* Buổi hiện tại */}
       <div className="card" style={{ padding: 16, marginBottom: 18, borderColor: active ? "#16a34a" : undefined, background: active ? "var(--green-bg)" : undefined }}>
