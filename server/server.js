@@ -1737,10 +1737,15 @@ app.put("/api/tasks/:id", requireAuth, adminOrListerTask, (req, res) => {
   if (sets.length) db.prepare(`UPDATE tasks SET ${sets.join(",")} WHERE id=?`).run(...vals, t.id);
   res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
 });
+function removeTaskFiles(taskId) {
+  try { for (const f of fs.readdirSync(taskDir)) if (f.startsWith(taskId + ".")) fs.unlinkSync(path.join(taskDir, f)); } catch {}
+}
 app.post("/api/tasks/:id/done", requireAuth, adminOrListerTask, (req, res) => {
   const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
   if (!t) return res.status(404).json({ error: "Không tìm thấy task" });
   const done = req.body && req.body.done === false ? 0 : 1;
+  // Task hoàn thành → xóa ảnh đính kèm cho nhẹ (đã xử lý xong, không cần giữ).
+  if (done) { removeTaskFiles(t.id); db.prepare("UPDATE tasks SET images='[]' WHERE id=?").run(t.id); }
   db.prepare("UPDATE tasks SET done=?, done_by_name=?, done_at=? WHERE id=?")
     .run(done, done ? req.user.name : "", done ? Date.now() : 0, t.id);
   res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
@@ -1748,7 +1753,7 @@ app.post("/api/tasks/:id/done", requireAuth, adminOrListerTask, (req, res) => {
 app.delete("/api/tasks/:id", requireAuth, adminOrListerTask, (req, res) => {
   const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
   if (t && req.user.role !== "Admin" && t.created_by !== req.user.id) return res.status(403).json({ error: "Chỉ người tạo hoặc Admin xóa" });
-  try { for (const f of fs.readdirSync(taskDir)) if (f.startsWith(req.params.id + ".")) fs.unlinkSync(path.join(taskDir, f)); } catch {}
+  removeTaskFiles(req.params.id);
   db.prepare("DELETE FROM tasks WHERE id=?").run(req.params.id);
   res.json({ ok: true });
 });
