@@ -26,6 +26,8 @@ app.use(express.json({ limit: "12mb" }));  // đủ cho ảnh deli dán vào (đ
 const uploadsDir = path.join(__dirname, "uploads");
 const deliDir = path.join(uploadsDir, "deli");
 try { fs.mkdirSync(deliDir, { recursive: true }); } catch {}
+const taskDir = path.join(uploadsDir, "task");
+try { fs.mkdirSync(taskDir, { recursive: true }); } catch {}
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
 const PORT = process.env.PORT || 4000;
@@ -1653,7 +1655,12 @@ const taskOut = (t) => ({
   createdBy: t.created_by, createdByName: t.created_by_name || "—",
   response: t.response || "", responseByName: t.response_by_name || "", responseAt: t.response_at || 0,
   done: !!t.done, doneByName: t.done_by_name || "", doneAt: t.done_at || 0, createdAt: t.created_at,
+  images: (() => { try { return JSON.parse(t.images || "[]"); } catch { return []; } })(),
 });
+// Ai được đính kèm/xóa ảnh của task: Admin/Lister HOẶC nhân viên đang nhận đơn của task.
+function canTouchTask(u, t) {
+  return u.role === "Admin" || u.role === "Lister" || (t.order_no && myClaimedOrderNos(u.id).has(t.order_no));
+}
 // Mã order do người dùng hiện tại đang nhận (để nhân viên xử lý thấy task đơn mình).
 function myClaimedOrderNos(userId) {
   return new Set(db.prepare("SELECT DISTINCT order_no FROM orders WHERE claimed_by=? AND order_no!=''").all(userId).map((r) => r.order_no));
@@ -1741,8 +1748,38 @@ app.post("/api/tasks/:id/done", requireAuth, adminOrListerTask, (req, res) => {
 app.delete("/api/tasks/:id", requireAuth, adminOrListerTask, (req, res) => {
   const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
   if (t && req.user.role !== "Admin" && t.created_by !== req.user.id) return res.status(403).json({ error: "Chỉ người tạo hoặc Admin xóa" });
+  try { for (const f of fs.readdirSync(taskDir)) if (f.startsWith(req.params.id + ".")) fs.unlinkSync(path.join(taskDir, f)); } catch {}
   db.prepare("DELETE FROM tasks WHERE id=?").run(req.params.id);
   res.json({ ok: true });
+});
+// Đính kèm ảnh (dán) vào task — Admin/Lister hoặc NV nhận đơn của task. Tối đa 8 ảnh.
+app.post("/api/tasks/:id/images", requireAuth, (req, res) => {
+  const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
+  if (!t) return res.status(404).json({ error: "Không tìm thấy task" });
+  if (!canTouchTask(req.user, t)) return res.status(403).json({ error: "Không có quyền đính kèm ảnh cho task này" });
+  const list = (() => { try { return JSON.parse(t.images || "[]"); } catch { return []; } })();
+  if (list.length >= 8) return res.status(400).json({ error: "Tối đa 8 ảnh mỗi task" });
+  const m = String(req.body.dataUrl || "").match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return res.status(400).json({ error: "Ảnh không hợp lệ" });
+  const ext = m[1] === "jpeg" ? "jpg" : m[1];
+  const buf = Buffer.from(m[2], "base64");
+  if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: "Ảnh quá lớn" });
+  const fname = `${t.id}.${Date.now()}.${ext}`;
+  fs.writeFileSync(path.join(taskDir, fname), buf);
+  list.push(`/uploads/task/${fname}`);
+  db.prepare("UPDATE tasks SET images=? WHERE id=?").run(JSON.stringify(list), t.id);
+  res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
+});
+app.delete("/api/tasks/:id/images", requireAuth, (req, res) => {
+  const t = db.prepare("SELECT * FROM tasks WHERE id=?").get(req.params.id);
+  if (!t) return res.status(404).json({ error: "Không tìm thấy task" });
+  if (!canTouchTask(req.user, t)) return res.status(403).json({ error: "Không có quyền" });
+  const url = String(req.body.url || "");
+  const list = (() => { try { return JSON.parse(t.images || "[]"); } catch { return []; } })().filter((u) => u !== url);
+  const base = url.split("/").pop();
+  if (base) try { fs.unlinkSync(path.join(taskDir, base)); } catch {}
+  db.prepare("UPDATE tasks SET images=? WHERE id=?").run(JSON.stringify(list), t.id);
+  res.json({ task: taskOut(db.prepare("SELECT * FROM tasks WHERE id=?").get(t.id)) });
 });
 
 // ── Note của NV xử lý → Lister xử lý với khách (Admin + Lister theo store) ────

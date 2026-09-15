@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
+import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
 
 // Task — Lister thêm hạng mục cần Admin kiểm tra; Admin thêm task theo dõi/xử lý case.
 export default function Tasks({ currentUser }) {
@@ -70,6 +71,21 @@ export default function Tasks({ currentUser }) {
   async function remove(t) {
     if (!confirm("Xóa task này?")) return;
     try { await api.del(`/api/tasks/${t.id}`); setTasks((p) => p.filter((x) => x.id !== t.id)); } catch (e) { setErr(e.message); }
+  }
+  const [imgBusy, setImgBusy] = useState("");   // id task đang upload ảnh
+  async function addTaskImage(t, file) {
+    if (!file) return;
+    setImgBusy(t.id); setErr("");
+    try {
+      const dataUrl = await fileToResizedDataUrl(file);
+      const { task } = await api.post(`/api/tasks/${t.id}/images`, { dataUrl });
+      setTasks((p) => p.map((x) => x.id === t.id ? { ...x, images: task.images } : x));
+    } catch (e) { setErr(e.message); } finally { setImgBusy(""); }
+  }
+  async function delTaskImage(t, url) {
+    if (!confirm("Xóa ảnh này?")) return;
+    try { const { task } = await api.del(`/api/tasks/${t.id}/images`, { url }); setTasks((p) => p.map((x) => x.id === t.id ? { ...x, images: task.images } : x)); }
+    catch (e) { setErr(e.message); }
   }
 
   const TABS = [["open", `Chưa xong (${openCount})`], ["done", "Đã xong"], ["all", "Tất cả"]];
@@ -204,6 +220,33 @@ export default function Tasks({ currentUser }) {
               ? <input className="input" style={{ width: "100%", marginTop: 4, fontSize: 13 }} defaultValue={t.note} placeholder="ghi chú…"
                   onBlur={(e) => save(t, "note", e.target.value)} />
               : <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>{t.note}</div>)}
+
+            {/* Ảnh đính kèm (dán) — Lister & NV xử lý đều thêm được */}
+            <div style={{ marginTop: 6 }}>
+              {(t.images || []).length > 0 && (
+                <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                  {(t.images || []).map((u) => (
+                    <div key={u} style={{ position: "relative" }}>
+                      <img src={u} alt="" style={{ height: 64, borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in", objectFit: "cover" }}
+                        onClick={() => window.open(u, "_blank")} />
+                      <span title="Xóa ảnh" onClick={() => delTaskImage(t, u)}
+                        style={{ position: "absolute", top: -6, right: -6, background: "var(--red)", color: "#fff", borderRadius: "50%", width: 18, height: 18, lineHeight: "18px", textAlign: "center", fontSize: 11, cursor: "pointer" }}>✕</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="row" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <div tabIndex={0} onPaste={(e) => { const f = imageFromPaste(e); if (f) { e.preventDefault(); addTaskImage(t, f); } }}
+                  style={{ border: "1px dashed var(--border)", borderRadius: 6, padding: "4px 10px", fontSize: 12, color: "var(--muted)", cursor: "text", background: "var(--panel)" }}>
+                  📎 {imgBusy === t.id ? "Đang tải ảnh…" : "Bấm vào đây rồi Ctrl+V để dán ảnh"}
+                </div>
+                <label className="btn sm" style={{ cursor: "pointer" }}>
+                  Chọn ảnh
+                  <input type="file" accept="image/*" style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) addTaskImage(t, f); e.target.value = ""; }} />
+                </label>
+              </div>
+            </div>
 
             {/* Phản hồi của nhân viên xử lý đơn (chỉ với task gắn đơn) */}
             {t.orderNo && (

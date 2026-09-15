@@ -271,6 +271,7 @@ ensureColumn("tasks", "order_no", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response_by_name", "TEXT DEFAULT ''");
 ensureColumn("tasks", "response_at", "INTEGER DEFAULT 0");
+ensureColumn("tasks", "images", "TEXT DEFAULT '[]'");   // ảnh đính kèm (dán vào) — mảng URL JSON
 db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_orderno ON tasks(order_no)");   // sau khi chắc chắn có cột order_no
 
 // Proxy accounts — Admin thêm; nhân viên xử lý tự chọn "đang dùng", hiện tên cho mọi người.
