@@ -10,6 +10,12 @@ async function req(method, url, body) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
+  // Phiên bị vô hiệu khi đang đăng nhập (vd Admin đổi mật khẩu) → tự đăng xuất, về màn hình Login.
+  if (r.status === 401 && token) {
+    setToken("");
+    try { window.location.reload(); } catch {}
+    throw new Error(data.error || "Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại");
+  }
   if (!r.ok) throw new Error(data.error || `Lỗi ${r.status}`);
   return data;
 }

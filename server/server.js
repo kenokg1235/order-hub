@@ -90,6 +90,8 @@ app.put("/api/users/:id", requireAdmin, (req, res) => {
          canMaster != null ? (canMaster ? 1 : 0) : u.can_master,
          active != null ? (active ? 1 : 0) : u.active,
          password ? bcrypt.hashSync(String(password), 10) : null, u.id);
+  // Đổi mật khẩu → hủy mọi phiên đang đăng nhập của user đó (buộc đăng nhập lại bằng mật khẩu mới).
+  if (password) db.prepare("DELETE FROM sessions WHERE user_id=?").run(u.id);
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(u.id)) });
 });
 
