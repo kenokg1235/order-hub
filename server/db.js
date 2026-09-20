@@ -104,6 +104,11 @@ function ensureColumn(table, col, decl) {
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 ensureColumn("users", "store_names", "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn("sessions", "user_agent", "TEXT DEFAULT ''");   // phiên đăng nhập: thiết bị/trình duyệt
+ensureColumn("sessions", "ip", "TEXT DEFAULT ''");
+ensureColumn("sessions", "last_seen", "INTEGER DEFAULT 0");
+ensureColumn("sessions", "sid", "TEXT DEFAULT ''");          // id ngắn không bí mật để hiển thị/thu hồi 1 phiên
+db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)");
 ensureColumn("stores", "status", "TEXT DEFAULT 'active'");   // trạng thái acc: active | die
 ensureColumn("stores", "note", "TEXT DEFAULT ''");           // ghi chú (vd lý do die)
 ensureColumn("stores", "died_at", "TEXT DEFAULT ''");        // ngày acc die "YYYY-MM-DD"

@@ -40,7 +40,8 @@ app.post("/api/auth/login", (req, res) => {
   if (!u || !u.active) return res.status(401).json({ error: "Email hoặc mật khẩu sai" });
   if (!bcrypt.compareSync(password, u.password))
     return res.status(401).json({ error: "Email hoặc mật khẩu sai" });
-  const token = createSession(u.id);
+  const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+  const token = createSession(u.id, { ua: req.headers["user-agent"], ip });
   res.json({ token, user: publicUser(u) });
 });
 
@@ -98,6 +99,30 @@ app.put("/api/users/:id", requireAdmin, (req, res) => {
 app.delete("/api/users/:id", requireAdmin, (req, res) => {
   if (req.params.id === "u-admin") return res.status(400).json({ error: "Không thể xóa Admin gốc" });
   db.prepare("DELETE FROM users WHERE id=?").run(req.params.id);
+  db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+// Mô tả thiết bị ngắn gọn từ user-agent (để hiển thị phiên đăng nhập).
+function deviceLabel(ua) {
+  ua = String(ua || "");
+  if (!ua) return "Không rõ";
+  const os = /Windows/i.test(ua) ? "Windows" : /iPhone|iPad|iOS/i.test(ua) ? "iOS" : /Android/i.test(ua) ? "Android"
+    : /Mac OS X|Macintosh/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "";
+  const br = /Edg\//i.test(ua) ? "Edge" : /OPR\/|Opera/i.test(ua) ? "Opera" : /Chrome\//i.test(ua) ? "Chrome"
+    : /Firefox\//i.test(ua) ? "Firefox" : /Safari\//i.test(ua) ? "Safari" : "";
+  return [br, os].filter(Boolean).join(" · ") || "Không rõ";
+}
+// Xem các phiên đăng nhập của 1 tài khoản (Admin).
+app.get("/api/users/:id/sessions", requireAdmin, (req, res) => {
+  const curToken = (req.headers.authorization || "").replace(/^Bearer /, "");
+  const rows = db.prepare("SELECT token, sid, created_at, last_seen, ip, user_agent FROM sessions WHERE user_id=? ORDER BY last_seen DESC, created_at DESC").all(req.params.id);
+  res.json({ sessions: rows.map((s) => ({ sid: s.sid || "", device: deviceLabel(s.user_agent), ip: s.ip || "", createdAt: s.created_at, lastSeen: s.last_seen || s.created_at, current: s.token === curToken })) });
+});
+// Thu hồi 1 phiên (theo sid) hoặc TẤT CẢ phiên của tài khoản → buộc đăng xuất.
+app.delete("/api/users/:id/sessions", requireAdmin, (req, res) => {
+  const sid = String((req.body && req.body.sid) || "").trim();
+  if (sid) db.prepare("DELETE FROM sessions WHERE user_id=? AND sid=?").run(req.params.id, sid);
+  else db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.params.id);
   res.json({ ok: true });
 });
 

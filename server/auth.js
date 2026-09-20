@@ -6,10 +6,11 @@ export function newId(prefix = "id") {
   return `${prefix}-${crypto.randomBytes(8).toString("hex")}`;
 }
 
-export function createSession(userId) {
+export function createSession(userId, meta = {}) {
   const token = crypto.randomBytes(24).toString("hex");
-  db.prepare("INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)")
-    .run(token, userId, Date.now());
+  const now = Date.now();
+  db.prepare("INSERT INTO sessions (token,user_id,created_at,user_agent,ip,last_seen,sid) VALUES (?,?,?,?,?,?,?)")
+    .run(token, userId, now, String(meta.ua || "").slice(0, 400), String(meta.ip || "").slice(0, 60), now, crypto.randomBytes(6).toString("hex"));
   return token;
 }
 
@@ -22,12 +23,13 @@ export function userFromReq(req) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : "";
   if (!token) return null;
-  const sess = db.prepare("SELECT user_id FROM sessions WHERE token=?").get(token);
+  const sess = db.prepare("SELECT user_id, last_seen FROM sessions WHERE token=?").get(token);
   if (!sess) return null;
   const u = db.prepare("SELECT * FROM users WHERE id=? AND active=1").get(sess.user_id);
   if (!u) return null;
   const now = Date.now();
   if (now - (u.last_seen || 0) > 20000) db.prepare("UPDATE users SET last_seen=? WHERE id=?").run(now, u.id);   // heartbeat (throttle 20s)
+  if (now - (sess.last_seen || 0) > 20000) db.prepare("UPDATE sessions SET last_seen=? WHERE token=?").run(now, token);   // hoạt động gần nhất của phiên
   return publicUser(u);
 }
 

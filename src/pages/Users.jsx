@@ -10,6 +10,7 @@ export default function Users({ teams }) {
   const [users, setUsers] = useState([]);
   const [stores, setStores] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [sessFor, setSessFor] = useState(null);   // user đang xem phiên đăng nhập
   const [err, setErr] = useState("");
 
   async function load() {
@@ -48,7 +49,10 @@ export default function Users({ teams }) {
                 <td style={{ fontSize: 12 }}>{u.storeNames.join(", ") || <span className="muted">—</span>}</td>
                 <td>{u.canBuyCard ? <Badge color="green">Có</Badge> : <span className="muted">—</span>}</td>
                 <td>{u.active ? <Badge color="green">Hoạt động</Badge> : <Badge color="red">Khóa</Badge>}</td>
-                <td><Button sm onClick={() => setEditing(u)}>Sửa</Button></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <Button sm onClick={() => setEditing(u)}>Sửa</Button>
+                  <Button sm onClick={() => setSessFor(u)} style={{ marginLeft: 4 }}>🔑 Phiên</Button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -59,7 +63,52 @@ export default function Users({ teams }) {
         <UserModal user={editing} teams={teams} stores={stores} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
       )}
+      {sessFor && <SessionsModal user={sessFor} onClose={() => setSessFor(null)} />}
     </div>
+  );
+}
+
+function SessionsModal({ user, onClose }) {
+  const [sessions, setSessions] = useState(null);
+  const [err, setErr] = useState("");
+  async function load() {
+    try { setSessions((await api.get(`/api/users/${user.id}/sessions`)).sessions); } catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+  const fmt = (ts) => { if (!ts) return "—"; const d = new Date(ts), p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  const ago = (ts) => { const m = Math.floor((Date.now() - ts) / 60000); if (m < 1) return "vừa xong"; if (m < 60) return `${m} phút trước`; const h = Math.floor(m / 60); if (h < 24) return `${h} giờ trước`; return `${Math.floor(h / 24)} ngày trước`; };
+  async function revoke(sid) {
+    if (!confirm(sid ? "Đăng xuất phiên này?" : "Đăng xuất TẤT CẢ thiết bị của tài khoản này?")) return;
+    try { await api.del(`/api/users/${user.id}/sessions`, sid ? { sid } : {}); load(); } catch (e) { setErr(e.message); }
+  }
+  return (
+    <Modal title={`Phiên đăng nhập — ${user.name}`} onClose={onClose}
+      footer={<>
+        {sessions && sessions.length > 0 && <Button variant="danger" onClick={() => revoke("")}>⏻ Đăng xuất tất cả</Button>}
+        <div className="spacer" />
+        <Button onClick={onClose}>Đóng</Button>
+      </>}>
+      {err && <div style={{ color: "var(--red)", marginBottom: 8 }}>{err}</div>}
+      {sessions === null ? <div className="muted">Đang tải…</div>
+        : sessions.length === 0 ? <div className="muted">Tài khoản này hiện không có phiên đăng nhập nào.</div>
+        : (
+          <table className="tbl" style={{ width: "100%" }}>
+            <thead><tr><th>Thiết bị</th><th>IP</th><th>Đăng nhập</th><th>Hoạt động</th><th></th></tr></thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.sid || s.createdAt}>
+                  <td style={{ fontWeight: 600 }}>{s.device}{s.current && <span className="badge green" style={{ marginLeft: 6, fontSize: 10 }}>Hiện tại</span>}</td>
+                  <td className="muted" style={{ fontSize: 12 }}>{s.ip || "—"}</td>
+                  <td style={{ fontSize: 12 }}>{fmt(s.createdAt)}</td>
+                  <td style={{ fontSize: 12 }}>{ago(s.lastSeen)}</td>
+                  <td>{s.sid && <Button sm variant="danger" onClick={() => revoke(s.sid)}>✕</Button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>Đăng xuất = xóa phiên; lần thao tác kế tiếp thiết bị đó sẽ bị đưa về màn hình đăng nhập.</div>
+    </Modal>
   );
 }
 
