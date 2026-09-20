@@ -89,6 +89,19 @@ function SessionsModal({ user, onClose }) {
         <Button onClick={onClose}>Đóng</Button>
       </>}>
       {err && <div style={{ color: "var(--red)", marginBottom: 8 }}>{err}</div>}
+      {(() => {
+        if (!sessions || sessions.length === 0) return null;
+        const recent = sessions.filter((s) => Date.now() - s.lastSeen < 15 * 60000);   // hoạt động trong 15 phút
+        const ips = new Set(recent.map((s) => s.ip).filter(Boolean));
+        const shared = recent.length >= 2 && (ips.size >= 2 || recent.filter((s) => !s.ip).length >= 2);
+        return (
+          <div className="card" style={{ padding: "8px 12px", marginBottom: 10, background: shared ? "#fdeaea" : "var(--green-bg)", borderColor: shared ? "var(--red)" : undefined }}>
+            {shared
+              ? <><b style={{ color: "var(--red)" }}>⚠️ Nghi ngờ dùng chung tài khoản</b> — có <b>{recent.length}</b> phiên hoạt động trong 15 phút qua{ips.size >= 2 ? ` từ ${ips.size} IP khác nhau` : ""}.</>
+              : <>✅ {recent.length ? `${recent.length} phiên hoạt động gần đây${ips.size ? ` từ ${ips.size} IP` : ""}.` : "Không có phiên hoạt động trong 15 phút qua."} Bình thường.</>}
+          </div>
+        );
+      })()}
       {sessions === null ? <div className="muted">Đang tải…</div>
         : sessions.length === 0 ? <div className="muted">Tài khoản này hiện không có phiên đăng nhập nào.</div>
         : (

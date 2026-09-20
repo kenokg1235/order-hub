@@ -29,7 +29,16 @@ export function userFromReq(req) {
   if (!u) return null;
   const now = Date.now();
   if (now - (u.last_seen || 0) > 20000) db.prepare("UPDATE users SET last_seen=? WHERE id=?").run(now, u.id);   // heartbeat (throttle 20s)
-  if (now - (sess.last_seen || 0) > 20000) db.prepare("UPDATE sessions SET last_seen=? WHERE token=?").run(now, token);   // hoạt động gần nhất của phiên
+  if (now - (sess.last_seen || 0) > 20000) {
+    // Cập nhật hoạt động gần nhất; tự ĐIỀN thiết bị/IP/sid cho phiên cũ (đăng nhập trước khi có tính năng).
+    const ua = String(req.headers["user-agent"] || "").slice(0, 400);
+    const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim().slice(0, 60);
+    db.prepare(`UPDATE sessions SET last_seen=?,
+                  user_agent = CASE WHEN COALESCE(user_agent,'')='' THEN ? ELSE user_agent END,
+                  ip         = CASE WHEN COALESCE(ip,'')='' THEN ? ELSE ip END,
+                  sid        = CASE WHEN COALESCE(sid,'')='' THEN ? ELSE sid END
+                WHERE token=?`).run(now, ua, ip, crypto.randomBytes(6).toString("hex"), token);
+  }
   return publicUser(u);
 }
 
