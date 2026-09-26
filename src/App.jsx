@@ -116,6 +116,13 @@ export default function App() {
 
   useEffect(() => { if (user) { loadTeams(); loadProxyHidden(); } }, [user]);
 
+  // Phiên hết hạn / bị thu hồi (401) → về màn hình Login mà KHÔNG reload cứng (tránh treo/trắng màn).
+  useEffect(() => {
+    const onLogout = () => { setToken(""); setUser(null); };
+    window.addEventListener("orderhub:logout", onLogout);
+    return () => window.removeEventListener("orderhub:logout", onLogout);
+  }, []);
+
   // Đặt trang mặc định CHỈ 1 LẦN khi đăng nhập — không reset khi user được refresh (vd sau khi thêm payout).
   const didLand = useRef(false);
   useEffect(() => {

@@ -10,10 +10,11 @@ async function req(method, url, body) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const r = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
-  // Phiên bị vô hiệu khi đang đăng nhập (vd Admin đổi mật khẩu) → tự đăng xuất, về màn hình Login.
+  // Phiên bị vô hiệu khi đang đăng nhập (vd Admin đổi mật khẩu) → xóa token + báo App về Login.
+  // KHÔNG reload cứng (tránh vòng lặp reload gây trắng màn/treo).
   if (r.status === 401 && token) {
     setToken("");
-    try { window.location.reload(); } catch {}
+    try { window.dispatchEvent(new Event("orderhub:logout")); } catch {}
     throw new Error(data.error || "Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại");
   }
   if (!r.ok) throw new Error(data.error || `Lỗi ${r.status}`);
