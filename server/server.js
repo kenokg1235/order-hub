@@ -411,14 +411,17 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   const period = getActiveMonth();
   const stmt = db.prepare(`
     INSERT INTO orders (id,order_no,line_key,store,address,cust_phone,qty,product,image,link,size,color,profit,deadline,master_note,listed_by,raw,period,created_at,updated_at)
-    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@profit,@deadline,@masterNote,@listedBy,@raw,@period,@now,@now)`);
+    VALUES (@id,@orderNo,@lineKey,@store,@address,@custPhone,@qty,@product,@image,@link,@size,@color,@profit,@deadline,@masterNote,@listedBy,@raw,@period,@createdAt,@now)`);
   const existsLineKey = db.prepare("SELECT 1 FROM orders WHERE line_key=?");
   const existsId = db.prepare("SELECT 1 FROM orders WHERE id=?");
   let inserted = 0, duplicates = 0, skipped = 0;
   const seenInFile = new Set();
   const newIds = [];
   const tx = db.transaction((list) => {
-    for (const r of list) {
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      // created_at GIẢM dần theo thứ tự file → hiển thị (ORDER BY created_at DESC) đúng thứ tự eBay (dòng đầu file ở trên).
+      const createdAt = now + (list.length - i);
       const orderNo = String(r.orderNumber || r.id || "").trim();
       if (!orderNo) { skipped++; continue; }
       const itemNo = r.raw && r.raw.itemNumber ? String(r.raw.itemNumber) : String(r.itemNumber || "");
@@ -435,7 +438,7 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
         product: r.product || "", image: "", link: r.link || "",
         size: variation, color: r.color || "", profit: Number(r.profit) || 0, deadline: r.deadline || "",
         masterNote: r.masterNote || "", listedBy: req.user.id,
-        raw: JSON.stringify(r.raw || {}), period, now,
+        raw: JSON.stringify(r.raw || {}), period, createdAt, now,
       });
       inserted++;
       if (itemNo && /^\d{6,}$/.test(itemNo)) newIds.push({ id, it: itemNo, sz: variation });   // chỉ fetch ảnh eBay khi là item number thật (toàn số)
