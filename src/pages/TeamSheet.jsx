@@ -66,6 +66,7 @@ export default function TeamSheet({ currentUser, teams }) {
   useEffect(() => {
     if (!month) return;
     const t = setInterval(async () => {
+      if (document.hidden) return;   // tab ẩn → không poll
       try {
         const fresh = (await api.get(`/api/team-orders?month=${encodeURIComponent(month)}`)).orders;
         const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
@@ -74,7 +75,7 @@ export default function TeamSheet({ currentUser, teams }) {
           return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
         });
       } catch {}
-    }, 15000);
+    }, 30000);
     return () => clearInterval(t);
   }, [month]);
 
@@ -148,6 +149,23 @@ export default function TeamSheet({ currentUser, teams }) {
     });
   }, [list, deadlineSort, amountSort]);
 
+  // Phân trang để không render hàng trăm dòng cùng lúc (chống lag).
+  const PER_PAGE = 100;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(displayed.length / PER_PAGE));
+  useEffect(() => { setPage(1); }, [filter, teamFilter, q, cf, deadlineSort, amountSort, month]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const paged = useMemo(() => displayed.slice((page - 1) * PER_PAGE, page * PER_PAGE), [displayed, page]);
+  const Pager = () => totalPages <= 1 ? null : (
+    <div className="row" style={{ gap: 8, alignItems: "center", padding: "8px 0", flexWrap: "wrap" }}>
+      <button className="btn sm" disabled={page <= 1} onClick={() => setPage(1)}>« Đầu</button>
+      <button className="btn sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹ Trước</button>
+      <span className="muted" style={{ fontSize: 13 }}>Trang <b>{page}</b>/{totalPages} · {displayed.length} đơn</span>
+      <button className="btn sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Sau ›</button>
+      <button className="btn sm" disabled={page >= totalPages} onClick={() => setPage(totalPages)}>Cuối »</button>
+    </div>
+  );
+
   // Đo độ rộng cột (từ hàng tiêu đề) để ghim N cột đầu đúng vị trí khi cuộn ngang.
   useLayoutEffect(() => {
     if (!pinned || freezeCols <= 0) { setColLefts([]); return; }
@@ -161,7 +179,8 @@ export default function TeamSheet({ currentUser, teams }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [pinned, freezeCols, displayed, cf, q, month, orders]);
+    // Chỉ đo lại khi cấu trúc đổi — KHÔNG đo mỗi lần poll dữ liệu (giảm reflow/lag).
+  }, [pinned, freezeCols, page, month]);
 
   // CSS ghim: thead cả 2 hàng + CHỈ dòng đầu mỗi đơn (tr.ordrow) — các cột đơn dùng rowSpan
   // nên dòng thẻ phụ (idx>0) không có ô cột-đơn, không ghim để tránh dính nhầm ô thẻ.
@@ -331,6 +350,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
+      <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="ttbl" ref={tableRef} className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
           <thead><tr>
@@ -386,7 +406,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("note4", 80)}</td>
           </tr></thead>
           <tbody>
-            {displayed.flatMap((o) => {
+            {paged.flatMap((o) => {
               const purs = o.purchases.length ? o.purchases : [null];
               const span = purs.length;
               return purs.map((p, idx) => {
@@ -558,6 +578,7 @@ export default function TeamSheet({ currentUser, teams }) {
           </tbody>
         </table>
       </div>
+      <Pager />
       {historyFor && (
         <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
       )}

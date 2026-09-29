@@ -88,6 +88,7 @@ export default function Cards({ currentUser }) {
   // chỉ CHỪA đúng dòng đang được focus (đang gõ thẻ) để không mất chữ.
   useEffect(() => {
     const t = setInterval(async () => {
+      if (document.hidden) return;   // tab ẩn → không poll (giảm tải server)
       try {
         const fresh = (await api.get("/api/card-requests")).requests;
         const editingId = document.activeElement?.closest?.("tr[data-rid]")?.getAttribute("data-rid") || null;

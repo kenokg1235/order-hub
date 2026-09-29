@@ -66,6 +66,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   useEffect(() => {
     if (!month) return;
     const t = setInterval(async () => {
+      if (document.hidden) return;   // tab ẩn → không poll (đỡ tải khi mở nhiều tab)
       try {
         const fresh = (await api.get(`/api/orders?month=${encodeURIComponent(month)}`)).orders;
         const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
@@ -251,7 +252,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [pinned, freezeCols, displayed, cf, q, month, orders, stores]);
+    // Chỉ đo lại khi cấu trúc đổi (ghim/số cột/trang/tháng) — KHÔNG đo mỗi lần poll dữ liệu (đỡ reflow, giảm lag).
+  }, [pinned, freezeCols, page, month, stores.length]);
 
   const colStyle = useMemo(() => {
     if (!pinned || freezeCols <= 0 || !colLefts.length) return "";
@@ -586,7 +588,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                   {o.image ? (
                     <>
                       <a href={o.image} target="_blank" rel="noreferrer" title="Bấm để xem ảnh gốc">
-                        <img src={o.image} alt="" style={{ width: 88, height: 88, objectFit: "contain",
+                        <img src={o.image} alt="" loading="lazy" decoding="async" style={{ width: 88, height: 88, objectFit: "contain",
                           background: "#fff", borderRadius: 8, border: "1px solid var(--border)", display: "block", cursor: "zoom-in" }}
                           onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
                           onMouseLeave={() => setPreview(null)} />
