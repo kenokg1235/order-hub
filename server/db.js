@@ -137,6 +137,8 @@ db.exec("UPDATE orders SET finalized_at = updated_at WHERE finalized_at = 0 AND 
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_orders_master_final ON orders(master_status, finalized_at);
 CREATE INDEX IF NOT EXISTS idx_orders_claimed       ON orders(claimed_by);
+CREATE INDEX IF NOT EXISTS idx_orders_period        ON orders(period);
+CREATE INDEX IF NOT EXISTS idx_orders_period_created ON orders(period, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_field_created  ON audit_log(field, created_at);
 CREATE INDEX IF NOT EXISTS idx_cardreq_requester    ON card_requests(requester_id);
 CREATE INDEX IF NOT EXISTS idx_cardreq_created      ON card_requests(created_at);
