@@ -305,30 +305,32 @@ function itemNoOf(o) {
   return m ? m[1] : "";
 }
 
-// Biến thể (variation) chuẩn hóa từ ô Size/Variation — để ảnh KHÔNG dùng chung giữa các màu.
-const varOf = (size) => String(size || "").replace(/\s+/g, " ").trim().toLowerCase();
-// Tách MÀU từ chuỗi variation (vd "Size: 11M\nColor: GREY" → "GREY"; "Color: BROWN COMBO" → "BROWN COMBO").
+// Tách MÀU từ chuỗi variation. Dừng ở dấu phẩy/ngoặc để KHÔNG vơ luôn Size:
+//  "[Color:Carbon Heather,Size:M,Size Type:Regular]" → "Carbon Heather"
+//  "Size: 11M\nColor: GREY" → "GREY";  "Color: BROWN COMBO" → "BROWN COMBO"
 function colorFromSize(size) {
-  const m = String(size || "").match(/colou?r\s*[:\-]?\s*([^\n|/]+)/i);
+  const m = String(size || "").match(/colou?r\s*[:\-]?\s*([^,\n|/\]]+)/i);
   return m ? m[1].trim() : "";
 }
-// Cùng sản phẩm VÀ cùng biến thể đã có ảnh → dùng lại, khỏi scrape.
-function imageOfSameItem(itemNumber, variation, excludeId) {
+// Khóa gom ảnh = MÀU (màu quyết định ảnh; size không đổi ảnh). Không có màu → "" (listing 1 ảnh / chỉ theo size).
+const imgKey = (size) => colorFromSize(size).toLowerCase();
+// Cùng sản phẩm VÀ cùng màu đã có ảnh → dùng lại, khỏi scrape.
+function imageOfSameItem(itemNumber, colorK, excludeId) {
   if (!itemNumber) return "";
   for (const o of db.prepare("SELECT id, image, raw, link, size FROM orders WHERE image!=''").all()) {
     if (o.id === excludeId) continue;
-    if (itemNoOf(o) === itemNumber && varOf(o.size) === variation) return o.image;
+    if (itemNoOf(o) === itemNumber && imgKey(o.size) === colorK) return o.image;
   }
   return "";
 }
-// Vừa có ảnh cho 1 biến thể → gán cho các đơn CÙNG sản phẩm & CÙNG biến thể đang thiếu ảnh (không đụng màu khác).
-function propagateImage(itemNumber, variation, url, excludeId) {
+// Vừa có ảnh cho 1 màu → gán cho các đơn CÙNG sản phẩm & CÙNG màu đang thiếu ảnh (không đụng màu khác).
+function propagateImage(itemNumber, colorK, url, excludeId) {
   if (!itemNumber || !url) return 0;
   let n = 0;
   const upd = db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?");
   for (const o of db.prepare("SELECT id, raw, link, size FROM orders WHERE image=''").all()) {
     if (o.id === excludeId) continue;
-    if (itemNoOf(o) === itemNumber && varOf(o.size) === variation) { upd.run(url, Date.now(), o.id); n++; }
+    if (itemNoOf(o) === itemNumber && imgKey(o.size) === colorK) { upd.run(url, Date.now(), o.id); n++; }
   }
   return n;
 }
@@ -344,12 +346,12 @@ let imgConsecBlocked = 0;
 const IMG_BLOCK_COOLDOWN = 10 * 60 * 1000;   // 10 phút
 function enqueueImage(orderId, itemNumber, size) {
   if (!itemNumber) return;
-  const variation = varOf(size);
-  // Cùng sản phẩm & CÙNG biến thể đã có ảnh → gán ngay, không cần gọi eBay.
-  const reuse = imageOfSameItem(itemNumber, variation, orderId);
+  const colorK = imgKey(size);
+  // Cùng sản phẩm & CÙNG màu đã có ảnh → gán ngay, không cần gọi eBay.
+  const reuse = imageOfSameItem(itemNumber, colorK, orderId);
   if (reuse) { db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), orderId); imgStats.ok++; return; }
   if (Date.now() < imgBlockedUntil) return;
-  imgQueue.push({ orderId, itemNumber, variation, color: colorFromSize(size) });
+  imgQueue.push({ orderId, itemNumber, colorK, color: colorFromSize(size) });
   while (imgWorkers < IMG_CONCURRENCY && imgQueue.length > imgWorkers) runImgWorker();
 }
 async function runImgWorker() {
@@ -357,11 +359,11 @@ async function runImgWorker() {
   try {
     while (imgQueue.length) {
       if (Date.now() < imgBlockedUntil) { imgQueue.length = 0; break; }
-      const { orderId, itemNumber, variation, color } = imgQueue.shift();
+      const { orderId, itemNumber, colorK, color } = imgQueue.shift();
       const { url, blocked } = await fetchEbayImage(itemNumber, { color });
       if (url) {
         db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), orderId);
-        propagateImage(itemNumber, variation, url, orderId);   // đơn cùng sản phẩm & cùng biến thể cũng có ảnh
+        propagateImage(itemNumber, colorK, url, orderId);   // đơn cùng sản phẩm & cùng màu cũng có ảnh
         imgStats.ok++; imgConsecBlocked = 0;
       } else {
         imgStats.fail++;
@@ -454,9 +456,9 @@ app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
-  const itNo = itemNoOf(o), variation = varOf(o.size);
-  // Cùng sản phẩm & cùng biến thể đã có ảnh → dùng lại ngay, không gọi eBay.
-  const reuse = imageOfSameItem(itNo, variation, o.id);
+  const itNo = itemNoOf(o), colorK = imgKey(o.size);
+  // Cùng sản phẩm & cùng màu đã có ảnh → dùng lại ngay, không gọi eBay.
+  const reuse = imageOfSameItem(itNo, colorK, o.id);
   if (reuse) {
     db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), o.id);
     return res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)), blocked: false, error: "" });
@@ -464,7 +466,7 @@ app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const { url, blocked } = await fetchEbayImage(itNo, { color: colorFromSize(o.size) });
   if (url) {
     db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
-    propagateImage(itNo, variation, url, o.id);
+    propagateImage(itNo, colorK, url, o.id);
   }
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)),
     blocked: !!blocked, error: url ? "" : (blocked ? "eBay đang chặn lấy ảnh — thử lại sau" : "Không tìm thấy ảnh cho đơn này") });
@@ -570,7 +572,7 @@ app.put("/api/orders/:id", requireAuth, (req, res) => {
   if ("deadline" in b) db.prepare("UPDATE orders SET overdue_notified=0 WHERE id=?").run(o.id);
   // Dán link ảnh thủ công → gán cho các đơn CÙNG SẢN PHẨM & CÙNG BIẾN THỂ đang thiếu ảnh.
   let imageSpread = 0;
-  if ("image" in b && String(b.image || "").trim()) imageSpread = propagateImage(itemNoOf(o), varOf(o.size), String(b.image).trim(), o.id);
+  if ("image" in b && String(b.image || "").trim()) imageSpread = propagateImage(itemNoOf(o), imgKey(o.size), String(b.image).trim(), o.id);
   // Admin/Lister added or changed the master note → ping the order processor(s) to read it.
   if ("masterNote" in b && String(b.masterNote || "").trim() && String(b.masterNote) !== String(o.master_note || "")) {
     let targets = [];
