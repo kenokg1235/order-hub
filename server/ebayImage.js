@@ -12,14 +12,33 @@ function metaContent(html, key) {
   return c ? c[1] : "";
 }
 
+const bigThumb = (url) => url ? url.replace(/s-l\d+\.(jpg|jpeg|png|webp)/i, "s-l500.$1") : url;
+
 export function extractEbayImage(html) {
   let url = metaContent(html, "twitter:image") || metaContent(html, "og:image");
   if (!url) {
     const m = html.match(/https?:\/\/i\.ebayimg\.com\/images\/g\/[^"'\s]+\/s-l\d+\.(?:jpg|jpeg|png|webp)/i);
     url = m ? m[0] : "";
   }
-  if (url) url = url.replace(/s-l\d+\.(jpg|jpeg|png|webp)/i, "s-l500.$1"); // light thumbnail
-  return url;
+  return bigThumb(url); // light thumbnail
+}
+
+// Ảnh THEO BIẾN THỂ (màu): với listing nhiều variant, tìm URL ảnh eBay ở GẦN tên màu nhất
+// trong HTML (khối dữ liệu biến thể thường để tên màu cạnh ảnh riêng). Không thấy đủ gần → "" (dùng ảnh mặc định).
+export function extractVariantImage(html, color) {
+  const c = String(color || "").trim();
+  if (!c || !html) return "";
+  const imgRe = /https?:\/\/i\.ebayimg\.com\/images\/g\/[^"'\s\\]+\/s-l\d+\.(?:jpg|jpeg|png|webp)/ig;
+  const imgs = []; let m;
+  while ((m = imgRe.exec(html))) imgs.push({ url: m[0], pos: m.index });
+  if (!imgs.length) return "";
+  const cEsc = c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const colorRe = new RegExp(cEsc, "ig");
+  let best = "", bestDist = Infinity, cm;
+  while ((cm = colorRe.exec(html))) {
+    for (const im of imgs) { const d = Math.abs(im.pos - cm.index); if (d < bestDist) { bestDist = d; best = im.url; } }
+  }
+  return (best && bestDist <= 1500) ? bigThumb(best) : "";   // chỉ nhận khi ảnh đủ gần tên màu
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,7 +46,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const BLOCK_RE = /Pardon Our Interruption|datadome|captcha-delivery/i;
 
 // Trả { url, blocked }. Có TIMEOUT (không để 1 request treo làm nghẽn hàng đợi) + 1 lần thử lại.
-export async function fetchEbayImage(itemNumber, { timeoutMs = 12000, retries = 1 } = {}) {
+export async function fetchEbayImage(itemNumber, { timeoutMs = 12000, retries = 1, color = "" } = {}) {
   if (!itemNumber) return { url: "", blocked: false };
   let blocked = false;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -41,7 +60,8 @@ export async function fetchEbayImage(itemNumber, { timeoutMs = 12000, retries = 
         const html = await r.text();
         if (BLOCK_RE.test(html)) blocked = true;
         else {
-          const img = extractEbayImage(html);
+          // Ưu tiên ảnh theo BIẾN THỂ (màu); không có màu / không tìm được → ảnh mặc định.
+          const img = (color && extractVariantImage(html, color)) || extractEbayImage(html);
           if (img) return { url: img, blocked: false };
         }
       }
