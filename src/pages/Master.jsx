@@ -424,6 +424,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       <div className="row" style={{ marginBottom: 14 }}>
         <h2 style={{ margin: 0 }}>Sheet Tổng</h2>
         <Badge color="blue">{filtered.length} đơn</Badge>
+        <Badge color="green" title="Tổng profit của TẤT CẢ đơn theo bộ lọc hiện tại (mọi trang)">💰 Tổng profit: ${(Math.round(filtered.reduce((s, o) => s + (Number(o.profit) || 0), 0) * 100) / 100).toLocaleString("en-US")}</Badge>
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 160 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Xem tháng">
           {months.map((m) => <option key={m} value={m}>📅 {m}{m === activeMonth ? " • hiện tại" : ""}</option>)}

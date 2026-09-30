@@ -310,6 +310,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <div className="row" style={{ marginBottom: 14 }}>
         <h2 style={{ margin: 0 }}>Sheet Con {!isAdmin && <span className="muted" style={{ fontSize: 14 }}>· {(currentUser.teamIds || []).map(teamName).join(", ")}</span>}</h2>
         <Badge color="blue">{list.length} đơn</Badge>
+        <Badge color="green" title="Tổng profit theo bộ lọc hiện tại (mọi trang)">💰 Tổng profit: ${round2(list.reduce((s, o) => s + (Number(o.profit) || 0), 0)).toLocaleString("en-US")}</Badge>
         <div className="spacer" />
         <select className="input" style={{ maxWidth: 150 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Xem tháng">
           {months.map((m) => <option key={m} value={m}>📅 {m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
