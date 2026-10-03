@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
+import { useImagePreview } from "../ImagePreview.jsx";
 import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
 import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
@@ -30,7 +31,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [colLefts, setColLefts] = useState([]);
   const tableRef = useRef(null);
   const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột: { label, text }
-  const [preview, setPreview] = useState(null); // {url,x,y} phóng lớn ảnh khi rê chuột
+  const { previewProps, PreviewLayer } = useImagePreview();   // phóng ảnh khi rê chuột (không re-render bảng)
   const [masterStatuses, setMasterStatuses] = useState([]);
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -248,7 +249,7 @@ export default function TeamSheet({ currentUser, teams }) {
     if (p.deliImage) return (
       <div style={{ marginTop: 3 }}>
         <img src={p.deliImage} alt="deli" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in", verticalAlign: "middle" }}
-          onMouseMove={(e) => setPreview({ url: p.deliImage, x: e.clientX, y: e.clientY })} onMouseLeave={() => setPreview(null)}
+          {...previewProps(p.deliImage)}
           onClick={() => window.open(p.deliImage, "_blank")} title="Bấm mở ảnh · rê chuột để phóng to" />
         <a className="btn sm" href={p.deliImage} download style={{ marginLeft: 4, padding: "1px 6px", fontSize: 11 }} title="Tải ảnh về">⬇</a>
         {canEdit && <button className="btn sm" onClick={() => removeDeli(p)} style={{ marginLeft: 3, padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh">✕</button>}
@@ -453,8 +454,7 @@ export default function TeamSheet({ currentUser, teams }) {
                     <td rowSpan={span}>{o.image
                       ? <a href={o.image} target="_blank" rel="noreferrer" title="Rê chuột để phóng lớn · bấm xem gốc">
                           <img src={o.image} alt="" style={{ width: 60, height: 60, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in" }}
-                            onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
-                            onMouseLeave={() => setPreview(null)} />
+                            {...previewProps(o.image)} />
                         </a>
                       : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ maxWidth: 220, whiteSpace: "normal" }}>{o.product}</td>
@@ -583,16 +583,7 @@ export default function TeamSheet({ currentUser, teams }) {
       {historyFor && (
         <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
       )}
-      {preview && (
-        <div style={{
-          position: "fixed", zIndex: 200, pointerEvents: "none", background: "#fff", padding: 6,
-          border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 50px rgba(0,0,0,.28)",
-          left: Math.min(preview.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 480),
-          top: Math.min(preview.y + 18, (typeof window !== "undefined" ? window.innerHeight : 800) - 480),
-        }}>
-          <img src={preview.url} alt="" style={{ width: 460, height: 460, objectFit: "contain", display: "block" }} />
-        </div>
-      )}
+      <PreviewLayer />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Button, Input, Modal, Badge } from "../ui.jsx";
 import { parseEbayCsv, parseOrderHubCsv } from "../ebayParser.js";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
+import { useImagePreview } from "../ImagePreview.jsx";
 import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
 import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
@@ -38,7 +39,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const [imgQ, setImgQ] = useState(null);        // tiến độ hàng đợi lấy ảnh
   const [adminNote, setAdminNote] = useState(""); // ghi chú Admin cho Lister xem
   const [noteEdit, setNoteEdit] = useState(false);
-  const [preview, setPreview] = useState(null);  // {url,x,y} hover-zoom of a product image
+  const { previewProps, PreviewLayer } = useImagePreview();   // phóng ảnh khi rê chuột (không re-render bảng)
   const { cellProps, Bar, viewCell } = useFormulaBar();
 
   async function loadOrders(m) {
@@ -289,7 +290,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
     if (p.deliImage) return (
       <span style={{ whiteSpace: "nowrap" }}>
         <img src={p.deliImage} alt="deli" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)", cursor: "zoom-in", verticalAlign: "middle" }}
-          onMouseMove={(e) => setPreview({ url: p.deliImage, x: e.clientX, y: e.clientY })} onMouseLeave={() => setPreview(null)}
+          {...previewProps(p.deliImage)}
           onClick={() => window.open(p.deliImage, "_blank")} title="Bấm mở · rê chuột phóng to" />
         <a className="btn sm" href={p.deliImage} download style={{ marginLeft: 4, padding: "1px 6px", fontSize: 11 }} title="Tải ảnh về gửi khách">⬇</a>
         {canEdit && <button className="btn sm" onClick={() => removeDeli(p)} style={{ marginLeft: 3, padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh">✕</button>}
@@ -591,8 +592,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                       <a href={o.image} target="_blank" rel="noreferrer" title="Bấm để xem ảnh gốc">
                         <img src={o.image} alt="" loading="lazy" decoding="async" style={{ width: 88, height: 88, objectFit: "contain",
                           background: "#fff", borderRadius: 8, border: "1px solid var(--border)", display: "block", cursor: "zoom-in" }}
-                          onMouseMove={(e) => setPreview({ url: o.image, x: e.clientX, y: e.clientY })}
-                          onMouseLeave={() => setPreview(null)} />
+                          {...previewProps(o.image)} />
                       </a>
                       {!ro && <div className="row" style={{ gap: 3, marginTop: 3 }}>
                         <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Dán link ảnh khác" onClick={() => setImageManual(o)}>✎</button>
@@ -699,16 +699,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
         <HistoryModal orderId={historyFor.id} orderLabel={historyFor.orderNo} onClose={() => setHistoryFor(null)} />
       )}
 
-      {preview && (
-        <div style={{
-          position: "fixed", zIndex: 200, pointerEvents: "none", background: "#fff", padding: 6,
-          border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 50px rgba(0,0,0,.28)",
-          left: Math.min(preview.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 480),
-          top: Math.min(preview.y + 18, (typeof window !== "undefined" ? window.innerHeight : 800) - 480),
-        }}>
-          <img src={preview.url} alt="" style={{ width: 460, height: 460, objectFit: "contain", display: "block" }} />
-        </div>
-      )}
+      <PreviewLayer />
     </div>
   );
 }
