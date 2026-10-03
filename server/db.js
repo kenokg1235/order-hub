@@ -142,6 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_period_created ON orders(period, created_a
 CREATE INDEX IF NOT EXISTS idx_audit_field_created  ON audit_log(field, created_at);
 CREATE INDEX IF NOT EXISTS idx_cardreq_requester    ON card_requests(requester_id);
 CREATE INDEX IF NOT EXISTS idx_cardreq_created      ON card_requests(created_at);
+CREATE INDEX IF NOT EXISTS idx_cardreq_period       ON card_requests(period);
 `);
 // Backfill order_no/line_key cho đơn cũ (mỗi đơn cũ là 1 dòng, order_no = id).
 {

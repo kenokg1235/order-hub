@@ -38,18 +38,19 @@ export default function Cards({ currentUser }) {
   );
   const [month, setMonth] = useState("");                 // tháng Mua thẻ (theo tháng đơn); "" chưa set, "all" = tất cả
   const [activeMonth, setActiveMonth] = useState("");
+  const [monthsList, setMonthsList] = useState([]);       // danh sách tháng (server trả) cho dropdown
   const [page, setPage] = useState(1);
   const PER_PAGE = 100;
   const [err, setErr] = useState("");
   const { cellProps, Bar } = useFormulaBar();
 
   const statusOptions = [...new Set([...lockStatuses, ...errorStatuses, ...cardStatuses])];
-  // Danh sách tháng: gộp các period của yêu cầu thẻ + tháng đơn đang hoạt động.
+  // Danh sách tháng cho dropdown — server trả (không phụ thuộc dữ liệu đang lọc) + tháng đang hoạt động.
   const months = useMemo(() => {
-    const set = new Set(reqs.map((r) => r.period).filter(Boolean));
+    const set = new Set(monthsList.filter(Boolean));
     if (activeMonth) set.add(activeMonth);
     return [...set].sort().reverse();
-  }, [reqs, activeMonth]);
+  }, [monthsList, activeMonth]);
   const T = (v) => String(v ?? "").toLowerCase();
   const txt = (val, f) => !f || T(val).includes(T(f));
   const filtered = useMemo(() => reqs.filter((r) => {
@@ -71,35 +72,44 @@ export default function Cards({ currentUser }) {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);   // giữ trang hợp lệ
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+  // Tải thẻ theo THÁNG (server lọc) → payload nhỏ, đỡ lag.
   async function load() {
     try {
-      setReqs((await api.get("/api/card-requests")).requests);
+      const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month || "all")}`);
+      setReqs(r.requests); if (r.months) setMonthsList(r.months);
+    } catch (e) { setErr(e.message); }
+  }
+  async function loadMeta() {
+    try {
       const s = (await api.get("/api/settings")).settings;
       setCardStatuses(s.cardStatuses || []);
       setLockStatuses(s.cardCountStatuses || []);
       setErrorStatuses(s.cardErrorStatuses || []);
       setStatusColors(s.statusColors || {});
-      try { const mo = await api.get("/api/months"); setActiveMonth(mo.activeMonth || ""); setMonth((cur) => cur || mo.activeMonth || "all"); } catch {}
-    } catch (e) { setErr(e.message); }
+    } catch {}
+    try { const mo = await api.get("/api/months"); setActiveMonth(mo.activeMonth || ""); setMonth((cur) => cur || mo.activeMonth || "all"); } catch {}
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { if (month) load(); }, [month]);   // đổi tháng → tải lại thẻ của tháng đó
 
   // Tự cập nhật mỗi 15s: yêu cầu mới / trạng thái / thẻ cấp đều hiện ngay,
   // chỉ CHỪA đúng dòng đang được focus (đang gõ thẻ) để không mất chữ.
   useEffect(() => {
+    if (!month) return;
     const t = setInterval(async () => {
       if (document.hidden) return;   // tab ẩn → không poll (giảm tải server)
       try {
-        const fresh = (await api.get("/api/card-requests")).requests;
+        const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month)}`);
+        if (r.months) setMonthsList(r.months);
         const editingId = document.activeElement?.closest?.("tr[data-rid]")?.getAttribute("data-rid") || null;
         setReqs((prev) => {
           const byId = new Map(prev.map((r) => [r.id, r]));
-          return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
+          return r.requests.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
         });
       } catch {}
     }, 15000);
     return () => clearInterval(t);
-  }, []);
+  }, [month]);
 
   async function update(id, body) {
     try { const { request } = await api.put(`/api/card-requests/${id}`, body); setReqs((p) => p.map((r) => r.id === id ? request : r)); }

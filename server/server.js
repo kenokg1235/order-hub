@@ -1369,25 +1369,31 @@ function cardFirstMonths() {
 }
 
 // List: managers (Admin / canBuyCard) see all + stats; employees see only their own.
+// Lọc theo THÁNG ở server (?month=YYYY-MM) để không trả hàng nghìn thẻ mỗi lần poll → đỡ lag.
 app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const u = req.user;
+  const month = String(req.query.month || "").trim();
+  const byMonth = month && month !== "all" ? " AND period=?" : "";
+  const mp = byMonth ? [month] : [];
   const statsMap = cardStatsMapCached();   // dùng cache 8s (tránh N+1 & gộp poll)
   const withStats = (r) => ({ ...cardOut(r), stats: statsFromMap(statsMap, r.card_value) });
+  // Danh sách tháng (cho dropdown) — nhẹ, luôn trả đầy đủ dù đang lọc 1 tháng.
+  const monthsFor = (where, params) => db.prepare(`SELECT DISTINCT period FROM card_requests WHERE period!=''${where}`).all(...params).map((r) => r.period).sort().reverse();
   // Admin sees every team's requests.
   if (u.role === "Admin") {
-    const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all();
-    return res.json({ requests: rows.map(withStats), manager: true });
+    const rows = db.prepare(`SELECT * FROM card_requests WHERE 1=1${byMonth} ORDER BY created_at DESC`).all(...mp);
+    return res.json({ requests: rows.map(withStats), manager: true, months: monthsFor("", []) });
   }
   // Card-buyer: manager view but scoped to own team(s) — teammates' requests + own.
   if (u.canBuyCard) {
     const mates = teammateIds(u.teamIds);
-    const rows = db.prepare("SELECT * FROM card_requests ORDER BY created_at DESC").all()
+    const rows = db.prepare(`SELECT * FROM card_requests WHERE 1=1${byMonth} ORDER BY created_at DESC`).all(...mp)
       .filter((r) => r.requester_id === u.id || mates.has(r.requester_id));
-    return res.json({ requests: rows.map(withStats), manager: true });
+    return res.json({ requests: rows.map(withStats), manager: true, months: monthsFor("", []) });
   }
   // Plain employee: only their own requests — kèm stats (đơn Đã Up / profit / balance) để tự theo dõi.
-  const rows = db.prepare("SELECT * FROM card_requests WHERE requester_id=? ORDER BY created_at DESC").all(u.id);
-  res.json({ requests: rows.map(withStats), manager: false });
+  const rows = db.prepare(`SELECT * FROM card_requests WHERE requester_id=?${byMonth} ORDER BY created_at DESC`).all(u.id, ...mp);
+  res.json({ requests: rows.map(withStats), manager: false, months: monthsFor(" AND requester_id=?", [u.id]) });
 });
 
 // Valid issued card values (for client-side validation in Sheet Con).
