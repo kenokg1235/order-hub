@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
-import { Badge } from "../ui.jsx";
+import { Badge, Button } from "../ui.jsx";
 
 // Team-scoped card statistics. The actual card value is HIDDEN (security);
 // teammates only see request / status / orders handled / profit stats.
@@ -24,11 +24,25 @@ export default function CardStats() {
   useEffect(() => { if (month) loadItems(month); }, [month]);
 
   const money = (n) => "$" + (Math.round((n || 0) * 100) / 100).toLocaleString("en-US");
-  const filtered = items.filter((r) => {
+  const filtered = useMemo(() => items.filter((r) => {
     const s = q.trim().toLowerCase();
     return !s || [r.content, r.requesterName, r.status].some((v) => String(v || "").toLowerCase().includes(s));
-  });
+  }), [items, q]);
   const totalProfit = items.reduce((s, r) => s + (r.stats?.profit || 0), 0);
+  // Phân trang 100 dòng/trang (team nhiều thẻ sẽ không render hết cùng lúc).
+  const PER_PAGE = 100;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  useEffect(() => { setPage(1); }, [q, month]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const paged = useMemo(() => filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE), [filtered, page]);
+  const Pager = () => totalPages <= 1 ? null : (
+    <div className="row" style={{ gap: 8, alignItems: "center", padding: "8px 0", flexWrap: "wrap" }}>
+      <Button sm disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹ Trước</Button>
+      <span className="muted" style={{ fontSize: 13 }}>Trang <b>{page}</b>/{totalPages} · {filtered.length} thẻ</span>
+      <Button sm disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Sau ›</Button>
+    </div>
+  );
 
   return (
     <div>
@@ -46,13 +60,14 @@ export default function CardStats() {
       <div className="muted" style={{ marginBottom: 14 }}>Xem thống kê thẻ của thành viên trong team. 🔒 Giá trị thẻ được ẩn vì bảo mật.</div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
+      <Pager />
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 920 }}>
           <thead><tr>
             <th>ID lệnh</th><th>Thẻ</th><th>Yêu cầu</th><th>NV yêu cầu</th><th>Trạng thái</th><th>Đơn đã xử lý (ID Order)</th><th>Thống kê</th>
           </tr></thead>
           <tbody>
-            {filtered.map((r) => (
+            {paged.map((r) => (
               <tr key={r.id}>
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>{r.hasCard ? <span className="badge" title="Giá trị thẻ ẩn">🔒 ••••</span> : <span className="muted">chưa cấp</span>}</td>
@@ -74,6 +89,7 @@ export default function CardStats() {
           </tbody>
         </table>
       </div>
+      <Pager />
     </div>
   );
 }

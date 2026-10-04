@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
 
@@ -6,6 +6,11 @@ import { Button, Badge } from "../ui.jsx";
 export default function Requests({ currentUser }) {
   const isAdmin = currentUser.role === "Admin";
   const [reqs, setReqs] = useState([]);
+  const [month, setMonth] = useState("");                 // lọc theo tháng (server) để không tải hết mọi tháng
+  const [activeMonth, setActiveMonth] = useState("");
+  const [monthsList, setMonthsList] = useState([]);
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 50;
   const [cardStatuses, setCardStatuses] = useState([]);
   const [lockStatuses, setLockStatuses] = useState([]);   // thẻ hợp lệ
   const [errorStatuses, setErrorStatuses] = useState([]); // thẻ lỗi
@@ -31,23 +36,41 @@ export default function Requests({ currentUser }) {
 
   async function load() {
     try {
-      setReqs((await api.get("/api/card-requests")).requests);
+      const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month || "all")}`);
+      setReqs(r.requests); if (r.months) setMonthsList(r.months);
+    } catch (e) { setErr(e.message); }
+  }
+  async function loadMeta() {
+    try {
       const s = (await api.get("/api/settings")).settings;
       setCardStatuses(s.cardStatuses || []);
       setLockStatuses(s.cardCountStatuses || []);
       setErrorStatuses(s.cardErrorStatuses || []);
-    } catch (e) { setErr(e.message); }
+    } catch {}
+    try { const mo = await api.get("/api/months"); setActiveMonth(mo.activeMonth || ""); setMonth((c) => c || mo.activeMonth || "all"); } catch {}
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { if (month) load(); }, [month]);
+  useEffect(() => { setPage(1); }, [month]);
 
-  // Tự cập nhật mỗi 15s: thẻ cấp về / trạng thái / yêu cầu mới hiện ngay, không cần F5.
-  // (Ô nhập "nội dung" là textarea uncontrolled nên refresh đầy đủ không làm mất chữ đang gõ.)
+  // Tự cập nhật mỗi 15s (bỏ qua khi tab ẩn): thẻ cấp về / trạng thái / yêu cầu mới hiện ngay.
   useEffect(() => {
+    if (!month) return;
     const t = setInterval(async () => {
-      try { setReqs((await api.get("/api/card-requests")).requests); } catch {}
+      if (document.hidden) return;
+      try { const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month)}`); setReqs(r.requests); if (r.months) setMonthsList(r.months); } catch {}
     }, 15000);
     return () => clearInterval(t);
-  }, []);
+  }, [month]);
+
+  const months = useMemo(() => {
+    const set = new Set(monthsList.filter(Boolean));
+    if (activeMonth) set.add(activeMonth);
+    return [...set].sort().reverse();
+  }, [monthsList, activeMonth]);
+  const totalPages = Math.max(1, Math.ceil(reqs.length / PER_PAGE));
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const paged = reqs.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   async function create() {
     if (!newContent.trim()) return;
@@ -71,12 +94,20 @@ export default function Requests({ currentUser }) {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <h2 style={{ margin: "0 0 4px" }}>Yêu cầu thẻ</h2>
+      <div className="row" style={{ marginBottom: 4, flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>Yêu cầu thẻ</h2>
+        <div className="spacer" />
+        <select className="input" style={{ maxWidth: 150 }} value={month} onChange={(e) => setMonth(e.target.value)} title="Tháng">
+          {months.map((m) => <option key={m} value={m}>📅 {m}{m === activeMonth ? " • hiện tại" : ""}</option>)}
+          <option value="all">Tất cả tháng</option>
+        </select>
+      </div>
       <div className="muted" style={{ marginBottom: 10 }}>Gửi yêu cầu thẻ — người mua sẽ cấp thẻ về đây. Bạn chỉ thấy yêu cầu của chính mình.</div>
       <div className="row" style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <Badge color="green">✅ {totals.completed} đơn Đã Up</Badge>
         <Badge color="green">💰 Tổng profit: ${Math.round(totals.profit * 100) / 100}</Badge>
         <Badge color="blue">💳 Tổng balance: ${Math.round(totals.balance * 100) / 100}</Badge>
+        <Badge color="blue">{reqs.length} yêu cầu</Badge>
       </div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
@@ -88,7 +119,14 @@ export default function Requests({ currentUser }) {
       </div>
 
       {reqs.length === 0 && <div className="muted">Chưa có yêu cầu nào.</div>}
-      {reqs.map((r) => (
+      {totalPages > 1 && (
+        <div className="row" style={{ gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+          <Button sm disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>‹ Trước</Button>
+          <span className="muted" style={{ fontSize: 13 }}>Trang <b>{page}</b>/{totalPages}</span>
+          <Button sm disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>Sau ›</Button>
+        </div>
+      )}
+      {paged.map((r) => (
         <div key={r.id} className="card" style={{ marginBottom: 12 }}>
           <div className="row" style={{ marginBottom: 8 }}>
             <b>Yêu cầu</b>
