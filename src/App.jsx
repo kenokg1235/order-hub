@@ -56,6 +56,22 @@ const NAV = [
   ]},
 ];
 
+// ── Định tuyến theo URL: mỗi mục có đường dẫn riêng (vd /master, /cards) → F5 ở nguyên trang ─────
+const ALL_PAGE_IDS = new Set(NAV.flatMap((g) => g.items.map((it) => it.id)));
+function pageFromPath() {
+  const seg = (typeof location !== "undefined" ? location.pathname : "/").replace(/^\/+/, "").split(/[/?#]/)[0];
+  return ALL_PAGE_IDS.has(seg) ? seg : "";
+}
+function defaultPageFor(user) {
+  return ["Admin", "Lister"].includes(user.role) ? "master" : user.role === "Buyer" ? "requests" : "team";
+}
+function accessiblePageIds(user, proxyOk) {
+  const ids = new Set();
+  if (!user) return ids;
+  for (const g of NAV) for (const it of g.items) if (it.access(user) && (it.id !== "proxy" || proxyOk)) ids.add(it.id);
+  return ids;
+}
+
 // Đếm số hàng khi "quét" (bôi đen) trên bảng — giống thanh trạng thái của Excel/Sheet.
 function SelectionCounter() {
   const [n, setN] = useState(0);
@@ -88,9 +104,22 @@ function SelectionCounter() {
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState("team");
+  const [page, setPage] = useState(() => pageFromPath());   // trang hiện tại lấy TỪ URL (F5 giữ nguyên)
   const [teams, setTeams] = useState([]);
   const [navOpen, setNavOpen] = useState(false);   // drawer trên điện thoại
+  const defPageRef = useRef("team");
+
+  // Chuyển trang + cập nhật URL (có lịch sử để back/forward được).
+  const navigate = (id) => {
+    setPage(id); setNavOpen(false);
+    try { if (location.pathname !== "/" + id) history.pushState(null, "", "/" + id); } catch {}
+  };
+  // Back/Forward của trình duyệt → đồng bộ trang.
+  useEffect(() => {
+    const onPop = () => setPage(pageFromPath() || defPageRef.current);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const [proxyHidden, setProxyHidden] = useState([]);
   async function loadTeams() {
@@ -144,13 +173,18 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
-  // Đặt trang mặc định CHỈ 1 LẦN khi đăng nhập — không reset khi user được refresh (vd sau khi thêm payout).
+  // Khi đăng nhập: GIỮ trang theo URL nếu hợp lệ & có quyền; nếu không thì về trang mặc định.
   const didLand = useRef(false);
   useEffect(() => {
     if (!user) { didLand.current = false; return; }
     if (didLand.current) return;
     didLand.current = true;
-    setPage(["Admin", "Lister"].includes(user.role) ? "master" : user.role === "Buyer" ? "requests" : "team");
+    const def = defaultPageFor(user); defPageRef.current = def;
+    const access = accessiblePageIds(user, true);   // proxyOk coi như true lúc này (ít ảnh hưởng)
+    const fromUrl = pageFromPath();
+    const p = (fromUrl && access.has(fromUrl)) ? fromUrl : def;
+    setPage(p);
+    try { history.replaceState(null, "", "/" + p); } catch {}
   }, [user]);
 
   async function logout() {
@@ -189,7 +223,7 @@ export default function App() {
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
                 color: "var(--muted)", padding: "4px 8px" }}>{g.group}</div>
               {g.items.map((it) => (
-                <div key={it.id} onClick={() => { setPage(it.id); setNavOpen(false); }}
+                <div key={it.id} onClick={() => navigate(it.id)}
                   style={{
                     display: "flex", alignItems: "center", gap: 9, padding: "8px 10px",
                     borderRadius: 8, cursor: "pointer", fontWeight: page === it.id ? 600 : 500,
