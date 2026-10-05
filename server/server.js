@@ -399,18 +399,21 @@ app.get("/api/image-queue", requireAuth, (req, res) => {
 // Master-sheet read: Admin/Lister/Leader-master → XEM TẤT CẢ đơn (mọi store);
 // nhưng chỉ SỬA được store mình quản lý (canEdit cho từng đơn). Vai trò khác → không thấy.
 app.get("/api/orders", requireAuth, (req, res) => {
+  const now = Date.now();
   const role = req.user.role;
   const canReadMaster = role === "Admin" || role === "Lister" || (role === "Leader" && req.user.canMaster);
-  if (!canReadMaster) return res.json({ orders: [] });
+  if (!canReadMaster) return res.json({ orders: [], now, delta: false });
   const month = req.query.month || getActiveMonth();
+  const since = Number(req.query.since) || 0;   // DELTA SYNC: chỉ đơn đổi từ mốc này
   const conds = [], params = [];
   if (month && month !== "all") { conds.push("period=?"); params.push(month); }
+  if (since > 0) { conds.push("updated_at >= ?"); params.push(since); }
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const { addr: addrCount, on: onCount } = orderAggsCached();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })) });
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })), now, delta: since > 0 });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
@@ -745,6 +748,7 @@ app.post("/api/undo", requireAuth, (req, res) => {
   } else {
     if (!db.prepare("SELECT 1 FROM purchases WHERE id=?").get(e.entity_id)) return res.json({ ok: false, message: "Thẻ không còn tồn tại." });
     db.prepare(`UPDATE purchases SET ${col}=? WHERE id=?`).run(val, e.entity_id);
+    touchOrder(e.order_id);
   }
   // Ghi lại bản hoàn tác (đánh dấu undone=1 để không bị undo tiếp), và đánh dấu thao tác gốc đã hoàn tác.
   db.prepare(`INSERT INTO audit_log (id,entity,entity_id,order_id,field,old_value,new_value,user_id,user_name,created_at,undone)
@@ -875,6 +879,8 @@ function pendingClaimsByOrders(orderIds) {
 const canSeePurchases = (user, o) => !!user && (user.role === "Admin" || (!!o.claimed_by && o.claimed_by === user.id));
 const orderFull = (o, user) => ({ ...orderOut(o), purchases: purchasesOf(o.id, !canSeePurchases(user, o)) });
 
+// Bump mốc updated_at của ĐƠN CHA → để delta-sync (poll) gửi lại đơn khi thẻ/con của nó đổi.
+function touchOrder(orderId) { if (orderId) db.prepare("UPDATE orders SET updated_at=? WHERE id=?").run(Date.now(), orderId); }
 // Record a single cell change (skips no-op edits). entity = order | purchase.
 function logChange(user, entity, entityId, orderId, field, oldVal, newVal) {
   if (String(oldVal ?? "") === String(newVal ?? "")) return;
@@ -884,24 +890,28 @@ function logChange(user, entity, entityId, orderId, field, oldVal, newVal) {
 }
 
 // Team-scoped orders (Admin = all; Leader/Member = own teams' divided orders).
+// DELTA SYNC: ?since=<ms> → chỉ trả đơn ĐÃ ĐỔI từ mốc đó (poll nhẹ, không gửi lại cả nghìn đơn mỗi 30s).
 app.get("/api/team-orders", requireAuth, (req, res) => {
+  const now = Date.now();
   const u = req.user;
   const month = req.query.month || getActiveMonth();
+  const since = Number(req.query.since) || 0;
   const conds = [], params = [];
   if (month && month !== "all") { conds.push("period=?"); params.push(month); }
   if (u.role === "Admin") { /* all teams */ }
   else if (u.role === "Leader" || u.role === "Member") {
     const teams = u.teamIds || [];
-    if (!teams.length) return res.json({ orders: [] });
+    if (!teams.length) return res.json({ orders: [], now, delta: since > 0 });
     conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams);
     conds.push("team!=''");
-  } else return res.json({ orders: [] });
+  } else return res.json({ orders: [], now, delta: since > 0 });
+  if (since > 0) { conds.push("updated_at >= ?"); params.push(since); }   // chỉ đơn mới đổi
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
   const { addr: addrCount, on: onCount } = orderAggsCached();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })) });
+  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })), now, delta: since > 0 });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
@@ -969,6 +979,7 @@ app.post("/api/orders/:id/claim-request", requireAuth, (req, res) => {
     return res.status(409).json({ error: "Bạn đã xin đơn này, đang chờ duyệt" });
   db.prepare(`INSERT INTO claim_requests (id,order_id,requester_id,requester_name,owner_id,status,created_at)
               VALUES (?,?,?,?,?, 'pending', ?)`).run(newId("clr"), o.id, req.user.id, req.user.name, o.claimed_by, Date.now());
+  touchOrder(o.id);   // delta-sync: hiện yêu cầu xin đơn cho người khác
   notify([o.claimed_by], "claim-request", `🙋 ${req.user.name} xin nhận đơn ${o.id} (${o.store}). Vào Sheet Con để duyệt.`, "", o.team ? [o.team] : []);
   res.json({ ok: true });
 });
@@ -1000,6 +1011,7 @@ app.post("/api/claim-requests/:id/reject", requireAuth, (req, res) => {
   if (!(isOwner || isMgr || isRequester)) return res.status(403).json({ error: "Không có quyền" });
   const selfCancel = isRequester && !isOwner && !isMgr;
   db.prepare("UPDATE claim_requests SET status=?, resolved_at=? WHERE id=?").run(selfCancel ? "canceled" : "rejected", Date.now(), cr.id);
+  if (o) touchOrder(o.id);   // delta-sync: gỡ yêu cầu khỏi đơn
   if (!selfCancel) notify([cr.requester_id], "claim-rejected", `❌ Yêu cầu xin đơn ${cr.order_id} bị từ chối.`, "", o && o.team ? [o.team] : []);
   res.json({ ok: true });
 });
@@ -1049,6 +1061,7 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
     .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.name || "", b.orderNumber || "", b.email || "",
          b.tracking || "", b.phone || "", b.zip || "", b.processStatus || "", Date.now());
   creditCardLedger(db.prepare("SELECT * FROM purchases WHERE id=?").get(id));
+  touchOrder(o.id);
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(id)) });
 });
 
@@ -1074,6 +1087,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   // stamp Time when the Order# value actually changes
   if ("orderNumber" in b && String(b.orderNumber) !== String(p.order_number || "")) { sets.push("order_time=?"); vals.push(Date.now()); }
   if (sets.length) db.prepare(`UPDATE purchases SET ${sets.join(",")} WHERE id=?`).run(...vals, p.id);
+  if (sets.length) touchOrder(p.order_id);   // delta-sync: báo đơn cha đã đổi
   creditCardLedger(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id));   // ghi Balance nếu đã "Đã xử lý"
   // Notify the store's Lister(s) when an order gets a tracking (process status → "Có Tracking").
   if ("processStatus" in b && b.processStatus === "Có Tracking" && p.process_status !== "Có Tracking") {
@@ -1091,6 +1105,7 @@ app.delete("/api/purchases/:pid", requireAuth, (req, res) => {
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới xóa thẻ" });
   removeDeliFiles(p.id);
   db.prepare("DELETE FROM purchases WHERE id=?").run(p.id);
+  touchOrder(p.order_id);
   res.json({ ok: true });
 });
 
@@ -1113,6 +1128,7 @@ app.post("/api/purchases/:pid/deli-image", requireAuth, (req, res) => {
   fs.writeFileSync(path.join(deliDir, `${p.id}.${ext}`), buf);
   const url = `/uploads/deli/${p.id}.${ext}?v=${Date.now()}`;
   db.prepare("UPDATE purchases SET deli_image=? WHERE id=?").run(url, p.id);
+  touchOrder(p.order_id);
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id), !canSeePurchases(req.user, o)) });
 });
 app.delete("/api/purchases/:pid/deli-image", requireAuth, (req, res) => {
@@ -1122,6 +1138,7 @@ app.delete("/api/purchases/:pid/deli-image", requireAuth, (req, res) => {
   if (!canSeePurchases(req.user, o) && !canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   removeDeliFiles(p.id);
   db.prepare("UPDATE purchases SET deli_image='' WHERE id=?").run(p.id);
+  touchOrder(p.order_id);
   res.json({ purchase: purchaseOut(db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id), !canSeePurchases(req.user, o)) });
 });
 

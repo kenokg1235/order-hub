@@ -42,8 +42,12 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const { previewProps, PreviewLayer } = useImagePreview();   // phóng ảnh khi rê chuột (không re-render bảng)
   const { cellProps, Bar, viewCell } = useFormulaBar();
 
+  const lastSync = useRef(0);   // mốc delta-sync (ms)
   async function loadOrders(m) {
-    try { setOrders((await api.get(`/api/orders?month=${encodeURIComponent(m || month)}`)).orders); } catch (e) { setErr(e.message); }
+    try {
+      const r = await api.get(`/api/orders?month=${encodeURIComponent(m || month)}`);
+      setOrders(r.orders); lastSync.current = r.now || Date.now();
+    } catch (e) { setErr(e.message); }
   }
   async function load() {
     try {
@@ -66,14 +70,23 @@ export default function Master({ currentUser, teams, refreshUser }) {
   // chỉ CHỪA đúng dòng đang được focus (đang gõ) để không mất chữ.
   useEffect(() => {
     if (!month) return;
+    let n = 0;
     const t = setInterval(async () => {
       if (document.hidden) return;   // tab ẩn → không poll (đỡ tải khi mở nhiều tab)
+      if (++n % 10 === 0) { loadOrders(month); return; }   // mỗi ~5 phút tải lại đầy đủ (bắt đơn bị xóa/chuyển tháng)
       try {
-        const fresh = (await api.get(`/api/orders?month=${encodeURIComponent(month)}`)).orders;
+        // DELTA: chỉ lấy đơn ĐÃ ĐỔI từ mốc trước → poll rất nhẹ.
+        const r = await api.get(`/api/orders?month=${encodeURIComponent(month)}&since=${lastSync.current || 0}`);
+        lastSync.current = r.now || lastSync.current;
+        if (!r.orders || !r.orders.length) return;
         const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
         setOrders((prev) => {
           const byId = new Map(prev.map((o) => [o.id, o]));
-          return fresh.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
+          for (const f of r.orders) {
+            if (editingId && String(f.id) === editingId && byId.has(f.id)) continue;
+            byId.set(f.id, f);
+          }
+          return [...byId.values()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         });
       } catch {}
     }, 30000);
