@@ -73,10 +73,11 @@ export default function Master({ currentUser, teams, refreshUser }) {
     let n = 0;
     const t = setInterval(async () => {
       if (document.hidden) return;   // tab ẩn → không poll (đỡ tải khi mở nhiều tab)
-      if (++n % 10 === 0) { loadOrders(month); return; }   // mỗi ~5 phút tải lại đầy đủ (bắt đơn bị xóa/chuyển tháng)
+      if (!lastSync.current) return;   // chưa tải xong lần đầu → KHÔNG poll (tránh full since=0 chồng chất → treo)
+      if (++n % 20 === 0) { loadOrders(month); return; }   // ~10 phút tải lại đầy đủ
       try {
         // DELTA: chỉ lấy đơn ĐÃ ĐỔI từ mốc trước → poll rất nhẹ.
-        const r = await api.get(`/api/orders?month=${encodeURIComponent(month)}&since=${lastSync.current || 0}`);
+        const r = await api.get(`/api/orders?month=${encodeURIComponent(month)}&since=${lastSync.current}`);
         lastSync.current = r.now || lastSync.current;
         if (!r.orders || !r.orders.length) return;
         const editingId = document.activeElement?.closest?.("tr[data-oid]")?.getAttribute("data-oid") || null;
