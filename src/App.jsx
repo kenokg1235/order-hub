@@ -123,6 +123,27 @@ export default function App() {
     return () => window.removeEventListener("orderhub:logout", onLogout);
   }, []);
 
+  // Tự cập nhật khi có bản mới (deploy): so phiên bản mỗi 2 phút; khác → reload để lấy bundle mới.
+  useEffect(() => {
+    let v0 = null;
+    const check = async () => {
+      if (document.hidden) return;
+      try {
+        const { v } = await api.get("/api/version");
+        if (v0 == null) { v0 = v; return; }
+        if (v && v !== v0) {
+          // Đừng reload khi đang gõ (mất chữ) — để lần kiểm tra sau.
+          const ae = document.activeElement;
+          const typing = ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
+          if (!typing) { try { window.location.reload(); } catch {} }
+        }
+      } catch {}
+    };
+    check();
+    const t = setInterval(check, 120000);
+    return () => clearInterval(t);
+  }, []);
+
   // Đặt trang mặc định CHỈ 1 LẦN khi đăng nhập — không reset khi user được refresh (vd sau khi thêm payout).
   const didLand = useRef(false);
   useEffect(() => {

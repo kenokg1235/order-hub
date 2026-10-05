@@ -2296,6 +2296,10 @@ app.post("/api/tracking/refresh", requireAuth, async (req, res) => {
 // index.html: no-cache → trình duyệt LUÔN kiểm tra bản mới → mỗi lần deploy tự nạp bundle mới (không cần Ctrl+F5).
 // assets/*-<hash>.js|css: tên có hash, bất biến → cache 1 năm.
 const dist = path.join(__dirname, "..", "dist");
+// Phiên bản build = hash của index.html (đổi khi có bundle mới). Client so để tự reload khi deploy.
+let BUILD_VERSION = String(Date.now());
+try { BUILD_VERSION = crypto.createHash("md5").update(fs.readFileSync(path.join(dist, "index.html"))).digest("hex").slice(0, 10); } catch {}
+app.get("/api/version", (req, res) => res.json({ v: BUILD_VERSION }));
 app.use(express.static(dist, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith("index.html")) res.setHeader("Cache-Control", "no-cache");
