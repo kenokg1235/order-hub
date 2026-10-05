@@ -2132,12 +2132,16 @@ setInterval(autoResetWorkSessionTick, 60000);
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
 // profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.
+let _lbCache = {};   // key(from|to|month) -> { at, payload } — leaderboard giống nhau cho mọi người xem → cache 20s
 app.get("/api/leaderboard", requireAuth, (req, res) => {
+  const from = String(req.query.from || "").trim(), to = String(req.query.to || "").trim();
+  const monthQ = String(req.query.month || "").trim();
+  const lbKey = `${from}|${to}|${monthQ}`;
+  const lc = _lbCache[lbKey];
+  if (lc && Date.now() - lc.at < 20000) return res.json(lc.payload);
   const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
   // KỲ: nếu có from/to → lọc theo NGÀY TẠO trong khoảng (giống Thống kê chi phí). Không thì theo tháng lịch (period).
-  const from = String(req.query.from || "").trim(), to = String(req.query.to || "").trim();
-  const monthQ = String(req.query.month || "").trim();
   const isAll = monthQ === "all";
   const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
   // Tháng lịch (dùng cho fallback THẺ khi chỉ chọn tháng, không có from/to).
@@ -2198,7 +2202,9 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   // Tổng để đối chiếu: Leaderboard chỉ tính đơn CÓ người nhận → đơn Đã Up chưa ai nhận không vào bảng.
   const allUp = scopeM(db.prepare("SELECT claimed_by, period, created_at, finalized_at FROM orders WHERE master_status='Đã Up'").all());
   const totals = { up: allUp.length, unclaimedUp: allUp.filter((o) => !o.claimed_by).length };
-  res.json({ leaderboard: rows, totals });
+  const payload = { leaderboard: rows, totals };
+  _lbCache[lbKey] = { at: Date.now(), payload };
+  res.json(payload);
 });
 
 // ── Tracking (AfterShip) ──────────────────────────────────────────────────────
@@ -2292,6 +2298,7 @@ setInterval(() => refreshTrackings().catch(() => {}), 3 * 60 * 60 * 1000);   // 
 setTimeout(() => refreshTrackings().catch(() => {}), 20000);
 
 // Tracking list for the current user (Admin = all Đã Up; Leader/Member = own teams).
+let _trackCache = {};   // scope -> { at, items } (cache 20s, dùng chung)
 app.get("/api/tracking", requireAuth, (req, res) => {
   const u = req.user;
   const cfg = getAftership();
@@ -2299,28 +2306,32 @@ app.get("/api/tracking", requireAuth, (req, res) => {
     aftership: cfg.enabled && cfg.keys.length > 0,
     quota: { keys: cfg.keys.length, limit: cfg.keys.length * FREE_LIMIT, used: cfg.keys.reduce((s, k) => s + keyUsage(k), 0) },
   };
-  let orders;
-  if (u.role === "Admin") orders = db.prepare("SELECT id,store,team FROM orders WHERE master_status='Đã Up'").all();
-  else if (u.role === "Leader" || u.role === "Member") {
-    const t = u.teamIds || [];
-    if (!t.length) return res.json({ items: [], ...meta });
-    const ph = t.map(() => "?").join(",");
-    orders = db.prepare(`SELECT id,store,team FROM orders WHERE master_status='Đã Up' AND team IN (${ph})`).all(...t);
-  } else return res.json({ items: [], ...meta });
+  let scope, teams = null;
+  if (u.role === "Admin") scope = "admin";
+  else if (u.role === "Leader" || u.role === "Member") { teams = u.teamIds || []; if (!teams.length) return res.json({ items: [], ...meta }); scope = "t:" + teams.slice().sort().join(","); }
+  else return res.json({ items: [], ...meta });
+  const cc = _trackCache[scope];
+  if (cc && Date.now() - cc.at < 20000) return res.json({ items: cc.items, ...meta });
 
+  const orders = teams
+    ? db.prepare(`SELECT id,store,team FROM orders WHERE master_status='Đã Up' AND team IN (${teams.map(() => "?").join(",")})`).all(...teams)
+    : db.prepare("SELECT id,store,team FROM orders WHERE master_status='Đã Up'").all();
   const oMap = Object.fromEntries(orders.map((o) => [o.id, o]));
   const ids = orders.map((o) => o.id);
-  if (!ids.length) return res.json({ items: [], ...meta });
-  const ph = ids.map(() => "?").join(",");
-  const purs = db.prepare(`SELECT order_id, tracking, order_number FROM purchases WHERE tracking!='' AND order_id IN (${ph})`).all(...ids);
-  const items = purs.map((p) => {
-    const sh = db.prepare("SELECT * FROM shipments WHERE tracking_number=?").get(p.tracking);
-    const o = oMap[p.order_id];
-    return {
-      trackingNumber: p.tracking, orderId: p.order_id, store: o.store, orderNumber: p.order_number,
-      tag: sh ? sh.tag : "", message: sh ? sh.message : "", checkedAt: sh ? sh.checked_at : 0,
-    };
-  });
+  let items = [];
+  if (ids.length) {
+    const chunk = (arr, n, fn) => { for (let i = 0; i < arr.length; i += n) fn(arr.slice(i, i + n)); };
+    const purs = [];
+    chunk(ids, 500, (c) => purs.push(...db.prepare(`SELECT order_id, tracking, order_number FROM purchases WHERE tracking!='' AND order_id IN (${c.map(() => "?").join(",")})`).all(...c)));
+    const tns = [...new Set(purs.map((p) => p.tracking).filter(Boolean))];
+    const shipMap = {};   // 1 truy vấn gộp thay vì N+1
+    chunk(tns, 500, (c) => { for (const sh of db.prepare(`SELECT * FROM shipments WHERE tracking_number IN (${c.map(() => "?").join(",")})`).all(...c)) shipMap[sh.tracking_number] = sh; });
+    items = purs.map((p) => {
+      const o = oMap[p.order_id], sh = shipMap[p.tracking];
+      return { trackingNumber: p.tracking, orderId: p.order_id, store: o.store, orderNumber: p.order_number, tag: sh ? sh.tag : "", message: sh ? sh.message : "", checkedAt: sh ? sh.checked_at : 0 };
+    });
+  }
+  _trackCache[scope] = { at: Date.now(), items };
   res.json({ items, ...meta });
 });
 
