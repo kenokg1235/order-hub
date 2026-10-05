@@ -300,12 +300,12 @@ function orderNoCounts() {
     m[r.order_no] = (m[r.order_no] || 0) + 1;
   return m;
 }
-// Cache ngắn (8s) cho 2 tổng hợp quét-toàn-bảng — gộp nhiều lần poll đồng thời, giảm tải CPU.
-let _orderAggCache = { at: 0, addr: null, on: null };
+// 2 tổng hợp quét-toàn-bảng được tính Ở NỀN (setInterval), request chỉ ĐỌC kết quả có sẵn
+// → KHÔNG request nào phải gánh việc quét bảng (không làm chậm poll khi đông người).
+let _orderAggCache = { at: 0, addr: {}, on: {} };
+function refreshOrderAggs() { try { _orderAggCache = { at: Date.now(), addr: allAddressCounts(), on: orderNoCounts() }; } catch {} }
 function orderAggsCached() {
-  const now = Date.now();
-  if (_orderAggCache.addr && now - _orderAggCache.at < 30000) return _orderAggCache;
-  _orderAggCache = { at: now, addr: allAddressCounts(), on: orderNoCounts() };
+  if (!_orderAggCache.at) refreshOrderAggs();   // lần đầu
   return _orderAggCache;
 }
 
@@ -1379,12 +1379,11 @@ function computeCardStatsMap() {
 }
 const EMPTY_CARD_STATS = { orders: [], profit: 0, completed: 0, balance: 0 };
 const statsFromMap = (map, card) => (card && map[card]) || EMPTY_CARD_STATS;
-// Cache ngắn (8s) — gộp nhiều lần poll đồng thời thành 1 lần tính, giảm tải CPU.
-let _cardStatsCache = { at: 0, map: null };
+// Tính Ở NỀN — request chỉ đọc map có sẵn (không gánh việc quét toàn bộ purchases).
+let _cardStatsCache = { at: 0, map: {} };
+function refreshCardStats() { try { _cardStatsCache = { at: Date.now(), map: computeCardStatsMap() }; } catch {} }
 function cardStatsMapCached() {
-  const now = Date.now();
-  if (_cardStatsCache.map && now - _cardStatsCache.at < 30000) return _cardStatsCache.map;
-  _cardStatsCache = { at: now, map: computeCardStatsMap() };
+  if (!_cardStatsCache.at) refreshCardStats();   // lần đầu
   return _cardStatsCache.map;
 }
 // card_value → earliest order period that used it ("first-used month"); robust to op order.
@@ -2310,5 +2309,10 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
   res.setHeader("Cache-Control", "no-cache, must-revalidate");
   res.sendFile(path.join(dist, "index.html"));
 });
+
+// Tính sẵn các tổng hợp nặng ở nền → request không bao giờ phải quét toàn bảng.
+refreshOrderAggs(); refreshCardStats();
+setInterval(refreshOrderAggs, 30000);
+setInterval(refreshCardStats, 30000);
 
 app.listen(PORT, () => console.log(`[order-hub] API on http://localhost:${PORT}`));
