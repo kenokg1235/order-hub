@@ -315,7 +315,7 @@ let _ordersFullCache = {};   // month -> { at, built:[...] }  (built: orderOut+p
 let _teamBaseCache = {};     // key   -> { at, rows, purMap, reqMap }
 function ordersFullBuilt(month) {
   const c = _ordersFullCache[month];
-  if (c && Date.now() - c.at < 5000) return c;
+  if (c && Date.now() - c.at < 20000) return c;
   const where = (month && month !== "all") ? "WHERE period=?" : "";
   const params = (month && month !== "all") ? [month] : [];
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
@@ -937,7 +937,7 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   // FULL: cache base (rows/purMap/reqMap) dùng-chung theo (team-set + tháng), 5s → nhiều người poll full chỉ query 1 lần.
   const key = `${month}|${teams ? teams.slice().sort().join(",") : "ALL"}`;
   let base = _teamBaseCache[key];
-  if (!base || Date.now() - base.at >= 5000) {
+  if (!base || Date.now() - base.at >= 20000) {
     const conds = [], params = [];
     if (month && month !== "all") { conds.push("period=?"); params.push(month); }
     if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
@@ -1432,30 +1432,35 @@ function cardFirstMonths() {
 
 // List: managers (Admin / canBuyCard) see all + stats; employees see only their own.
 // Lọc theo THÁNG ở server (?month=YYYY-MM) để không trả hàng nghìn thẻ mỗi lần poll → đỡ lag.
+let _cardReqCache = {};   // key(scope|month) -> { at, payload } — cache dùng-chung 20s cho danh sách thẻ
 app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const u = req.user;
   const month = String(req.query.month || "").trim();
+  const scopeKey = u.role === "Admin" ? "admin" : (u.canBuyCard ? `buyer:${(u.teamIds || []).slice().sort().join(",")}` : `emp:${u.id}`);
+  const key = `${scopeKey}|${month || "active"}`;
+  const c = _cardReqCache[key];
+  if (c && Date.now() - c.at < 20000) return res.json(c.payload);   // dùng chung: nhiều người poll cùng lúc chỉ tính 1 lần
+
   const byMonth = month && month !== "all" ? " AND period=?" : "";
   const mp = byMonth ? [month] : [];
-  const statsMap = cardStatsMapCached();   // dùng cache 8s (tránh N+1 & gộp poll)
+  const statsMap = cardStatsMapCached();
   const withStats = (r) => ({ ...cardOut(r), stats: statsFromMap(statsMap, r.card_value) });
-  // Danh sách tháng (cho dropdown) — nhẹ, luôn trả đầy đủ dù đang lọc 1 tháng.
   const monthsFor = (where, params) => db.prepare(`SELECT DISTINCT period FROM card_requests WHERE period!=''${where}`).all(...params).map((r) => r.period).sort().reverse();
-  // Admin sees every team's requests.
+  let payload;
   if (u.role === "Admin") {
     const rows = db.prepare(`SELECT * FROM card_requests WHERE 1=1${byMonth} ORDER BY created_at DESC`).all(...mp);
-    return res.json({ requests: rows.map(withStats), manager: true, months: monthsFor("", []) });
-  }
-  // Card-buyer: manager view but scoped to own team(s) — teammates' requests + own.
-  if (u.canBuyCard) {
+    payload = { requests: rows.map(withStats), manager: true, months: monthsFor("", []) };
+  } else if (u.canBuyCard) {
     const mates = teammateIds(u.teamIds);
     const rows = db.prepare(`SELECT * FROM card_requests WHERE 1=1${byMonth} ORDER BY created_at DESC`).all(...mp)
       .filter((r) => r.requester_id === u.id || mates.has(r.requester_id));
-    return res.json({ requests: rows.map(withStats), manager: true, months: monthsFor("", []) });
+    payload = { requests: rows.map(withStats), manager: true, months: monthsFor("", []) };
+  } else {
+    const rows = db.prepare(`SELECT * FROM card_requests WHERE requester_id=?${byMonth} ORDER BY created_at DESC`).all(u.id, ...mp);
+    payload = { requests: rows.map(withStats), manager: false, months: monthsFor(" AND requester_id=?", [u.id]) };
   }
-  // Plain employee: only their own requests — kèm stats (đơn Đã Up / profit / balance) để tự theo dõi.
-  const rows = db.prepare(`SELECT * FROM card_requests WHERE requester_id=?${byMonth} ORDER BY created_at DESC`).all(u.id, ...mp);
-  res.json({ requests: rows.map(withStats), manager: false, months: monthsFor(" AND requester_id=?", [u.id]) });
+  _cardReqCache[key] = { at: Date.now(), payload };
+  res.json(payload);
 });
 
 // Valid issued card values (for client-side validation in Sheet Con).
