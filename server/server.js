@@ -309,6 +309,24 @@ function orderAggsCached() {
   return _orderAggCache;
 }
 
+// Cache DÙNG CHUNG cho lần tải ĐẦY ĐỦ (since=0) — nhiều người poll full cùng lúc chỉ tính 1 lần (5s).
+// `now` trả về = thời điểm build cache (không phải now thật) để delta sau đó KHÔNG bỏ sót thay đổi.
+let _ordersFullCache = {};   // month -> { at, built:[...] }  (built: orderOut+purchases+addrCount+multiCount, CHƯA có canEdit)
+let _teamBaseCache = {};     // key   -> { at, rows, purMap, reqMap }
+function ordersFullBuilt(month) {
+  const c = _ordersFullCache[month];
+  if (c && Date.now() - c.at < 5000) return c;
+  const where = (month && month !== "all") ? "WHERE period=?" : "";
+  const params = (month && month !== "all") ? [month] : [];
+  const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
+  const purMap = purchasesByOrders(rows.map((o) => o.id));
+  const { addr, on } = orderAggsCached();
+  const built = rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addr[addrNorm(o.address)] || 0, multiCount: on[o.order_no] || 1 }));
+  const v = { at: Date.now(), built };
+  _ordersFullCache[month] = v;
+  return v;
+}
+
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
 function itemNoOf(o) {
   try { const it = JSON.parse(o.raw || "{}").itemNumber; if (it) return String(it); } catch {}
@@ -405,15 +423,18 @@ app.get("/api/orders", requireAuth, (req, res) => {
   if (!canReadMaster) return res.json({ orders: [], now, delta: false });
   const month = req.query.month || getActiveMonth();
   const since = Number(req.query.since) || 0;   // DELTA SYNC: chỉ đơn đổi từ mốc này
-  const conds = [], params = [];
-  if (month && month !== "all") { conds.push("period=?"); params.push(month); }
-  if (since > 0) { conds.push("updated_at >= ?"); params.push(since); }
-  const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
-  const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  // Sheet Tổng (Admin/Lister/Leader-master) là view quản lý → hiện đầy đủ read-back (tracking/order#/email…).
-  const purMap = purchasesByOrders(rows.map((o) => o.id));
-  const { addr: addrCount, on: onCount } = orderAggsCached();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })), now, delta: since > 0 });
+  if (since > 0) {
+    // DELTA: truy vấn trực tiếp (ít dòng, nhẹ).
+    const where = (month && month !== "all") ? "WHERE period=? AND updated_at >= ?" : "WHERE updated_at >= ?";
+    const params = (month && month !== "all") ? [month, since] : [since];
+    const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
+    const purMap = purchasesByOrders(rows.map((o) => o.id));
+    const { addr: addrCount, on: onCount } = orderAggsCached();
+    return res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })), now, delta: true });
+  }
+  // FULL: dùng cache dùng-chung (5s) → nhiều người poll full cùng lúc chỉ tính 1 lần.
+  const c = ordersFullBuilt(month);
+  res.json({ orders: c.built.map((o) => ({ ...o, canEdit: canEditMasterOrder(req.user, o) })), now: c.at, delta: false });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
@@ -896,22 +917,36 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
   const u = req.user;
   const month = req.query.month || getActiveMonth();
   const since = Number(req.query.since) || 0;
-  const conds = [], params = [];
-  if (month && month !== "all") { conds.push("period=?"); params.push(month); }
-  if (u.role === "Admin") { /* all teams */ }
-  else if (u.role === "Leader" || u.role === "Member") {
-    const teams = u.teamIds || [];
+  let teams = null;   // null = Admin (tất cả)
+  if (u.role === "Leader" || u.role === "Member") {
+    teams = u.teamIds || [];
     if (!teams.length) return res.json({ orders: [], now, delta: since > 0 });
-    conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams);
-    conds.push("team!=''");
-  } else return res.json({ orders: [], now, delta: since > 0 });
-  if (since > 0) { conds.push("updated_at >= ?"); params.push(since); }   // chỉ đơn mới đổi
-  const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
-  const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  const purMap = purchasesByOrders(rows.map((o) => o.id));
-  const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
+  } else if (u.role !== "Admin") return res.json({ orders: [], now, delta: since > 0 });
   const { addr: addrCount, on: onCount } = orderAggsCached();
-  res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 })), now, delta: since > 0 });
+  const buildOut = (rows, purMap, reqMap) => rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, !canSeePurchases(u, o))), claimRequests: reqMap.get(o.id) || [], addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1 }));
+
+  if (since > 0) {
+    // DELTA: truy vấn trực tiếp (ít dòng).
+    const conds = [], params = [];
+    if (month && month !== "all") { conds.push("period=?"); params.push(month); }
+    if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
+    conds.push("updated_at >= ?"); params.push(since);
+    const rows = db.prepare(`SELECT * FROM orders WHERE ${conds.join(" AND ")} ORDER BY created_at DESC`).all(...params);
+    return res.json({ orders: buildOut(rows, purchasesByOrders(rows.map((o) => o.id)), pendingClaimsByOrders(rows.map((o) => o.id))), now, delta: true });
+  }
+  // FULL: cache base (rows/purMap/reqMap) dùng-chung theo (team-set + tháng), 5s → nhiều người poll full chỉ query 1 lần.
+  const key = `${month}|${teams ? teams.slice().sort().join(",") : "ALL"}`;
+  let base = _teamBaseCache[key];
+  if (!base || Date.now() - base.at >= 5000) {
+    const conds = [], params = [];
+    if (month && month !== "all") { conds.push("period=?"); params.push(month); }
+    if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
+    const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
+    const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
+    base = { at: Date.now(), rows, purMap: purchasesByOrders(rows.map((o) => o.id)), reqMap: pendingClaimsByOrders(rows.map((o) => o.id)) };
+    _teamBaseCache[key] = base;
+  }
+  res.json({ orders: buildOut(base.rows, base.purMap, base.reqMap), now: base.at, delta: false });
 });
 
 // Employees a manager may distribute orders to (Admin = all; Leader = own teams).
