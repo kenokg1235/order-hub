@@ -2293,8 +2293,18 @@ app.post("/api/tracking/refresh", requireAuth, async (req, res) => {
 });
 
 // ── Serve built client in production ──────────────────────────────────────────
+// index.html: no-cache → trình duyệt LUÔN kiểm tra bản mới → mỗi lần deploy tự nạp bundle mới (không cần Ctrl+F5).
+// assets/*-<hash>.js|css: tên có hash, bất biến → cache 1 năm.
 const dist = path.join(__dirname, "..", "dist");
-app.use(express.static(dist));
-app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(dist, "index.html")));
+app.use(express.static(dist, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith("index.html")) res.setHeader("Cache-Control", "no-cache");
+    else if (filePath.includes(`${path.sep}assets${path.sep}`)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  },
+}));
+app.get(/^\/(?!api\/).*/, (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  res.sendFile(path.join(dist, "index.html"));
+});
 
 app.listen(PORT, () => console.log(`[order-hub] API on http://localhost:${PORT}`));
