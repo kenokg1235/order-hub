@@ -22,6 +22,17 @@ const app = express();
 app.use(compression());                    // nén gzip cho JSON API + file tĩnh
 app.use(express.json({ limit: "12mb" }));  // đủ cho ảnh deli dán vào (đã nén phía client)
 
+// Log request CHẬM (>150ms) để tìm endpoint gây nghẽn khi nhiều người dùng cùng lúc.
+// Xem bằng: pm2 logs orderhub | grep SLOW
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  res.on("finish", () => {
+    const ms = Date.now() - t0;
+    if (ms >= 150) console.log(`[SLOW ${ms}ms] ${req.method} ${req.originalUrl}`);
+  });
+  next();
+});
+
 // Thư mục lưu ảnh deli (upload) — phục vụ tĩnh, tồn tại qua các lần deploy (ngoài git).
 const uploadsDir = path.join(__dirname, "uploads");
 const deliDir = path.join(uploadsDir, "deli");
@@ -293,7 +304,7 @@ function orderNoCounts() {
 let _orderAggCache = { at: 0, addr: null, on: null };
 function orderAggsCached() {
   const now = Date.now();
-  if (_orderAggCache.addr && now - _orderAggCache.at < 8000) return _orderAggCache;
+  if (_orderAggCache.addr && now - _orderAggCache.at < 30000) return _orderAggCache;
   _orderAggCache = { at: now, addr: allAddressCounts(), on: orderNoCounts() };
   return _orderAggCache;
 }
@@ -1355,7 +1366,7 @@ const statsFromMap = (map, card) => (card && map[card]) || EMPTY_CARD_STATS;
 let _cardStatsCache = { at: 0, map: null };
 function cardStatsMapCached() {
   const now = Date.now();
-  if (_cardStatsCache.map && now - _cardStatsCache.at < 8000) return _cardStatsCache.map;
+  if (_cardStatsCache.map && now - _cardStatsCache.at < 30000) return _cardStatsCache.map;
   _cardStatsCache = { at: now, map: computeCardStatsMap() };
   return _cardStatsCache.map;
 }

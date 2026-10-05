@@ -16,7 +16,7 @@ export default function Notifications() {
     try { const d = await api.get("/api/notifications"); setList(d.notifications); setUnread(d.unread); } catch {}
   }
   async function loadTg() { try { setTg(await api.get("/api/telegram/status")); } catch {} }
-  useEffect(() => { loadCount(); loadTg(); const t = setInterval(loadCount, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { loadCount(); loadTg(); const t = setInterval(() => { if (!document.hidden) loadCount(); }, 30000); return () => clearInterval(t); }, []);
 
   function toggle() { const n = !open; setOpen(n); if (n) { loadCount(); loadTg(); } }
   async function markRead() { try { await api.post("/api/notifications/read", {}); setUnread(0); setList((l) => l.map((n) => ({ ...n, read: true }))); } catch {} }

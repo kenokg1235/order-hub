@@ -12,6 +12,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const db = new Database(path.join(__dirname, "data.db"));
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+// Tối ưu khi NHIỀU người dùng cùng lúc (giảm chờ khóa, đọc nhanh hơn, ghi nhẹ hơn).
+db.pragma("synchronous = NORMAL");      // an toàn với WAL, ghi nhanh hơn
+db.pragma("busy_timeout = 5000");       // chờ tối đa 5s thay vì lỗi ngay khi bận
+db.pragma("cache_size = -16000");       // ~16MB page cache trong RAM
+db.pragma("temp_store = MEMORY");
+try { db.pragma("mmap_size = 134217728"); } catch {}   // 128MB mmap (đọc nhanh)
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
@@ -96,7 +102,10 @@ CREATE INDEX IF NOT EXISTS idx_purchases_card  ON purchases(card);
 CREATE INDEX IF NOT EXISTS idx_orders_team     ON orders(team);
 CREATE INDEX IF NOT EXISTS idx_orders_store    ON orders(store);
 CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notif_user_created ON notifications(user_id, created_at);
 `);
+// Dọn thông báo quá cũ (>60 ngày) để bảng không phình to → mọi poll thông báo nhanh hơn.
+try { db.prepare("DELETE FROM notifications WHERE created_at < ?").run(Date.now() - 60 * 24 * 3600 * 1000); } catch {}
 
 // ── Migrations for pre-existing DBs (add columns if missing) ─────────────────
 function ensureColumn(table, col, decl) {

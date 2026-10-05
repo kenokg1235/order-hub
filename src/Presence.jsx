@@ -9,7 +9,7 @@ export default function Presence({ currentUser }) {
   const [open, setOpen] = useState(false);
 
   async function load() { try { setOnline((await api.get("/api/presence")).online); } catch {} }
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 30000); return () => clearInterval(t); }, []);
 
   return (
     <div style={{ marginBottom: 8 }}>
