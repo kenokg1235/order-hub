@@ -342,21 +342,15 @@ function teamBaseBuilt(month, teams) {
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
   const at = Date.now();
-  const { addr, on } = orderAggsCached();
-  // Admin xem KHÔNG mask → chuỗi JSON dựng sẵn (gửi bytes).
-  const adminJson = JSON.stringify({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), claimRequests: reqMap.get(o.id) || [], addrCount: addr[addrNorm(o.address)] || 0, multiCount: on[o.order_no] || 1 })), now: at, delta: false });
+  // adminJson CHỈ dựng cho view toàn bộ (teams=null, Admin dùng). Cache theo team không cần → khỏi stringify lãng phí.
+  let adminJson = null;
+  if (!teams) {
+    const { addr, on } = orderAggsCached();
+    adminJson = JSON.stringify({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), claimRequests: reqMap.get(o.id) || [], addrCount: addr[addrNorm(o.address)] || 0, multiCount: on[o.order_no] || 1 })), now: at, delta: false });
+  }
   const v = { at, rows, purMap, reqMap, adminJson };
   _teamBaseCache[key] = v;
   return v;
-}
-// Dựng sẵn các cache nặng Ở NỀN (mỗi 15s, < TTL 20s) → request KHÔNG bao giờ phải build → không còn 2s.
-function prebuildOrderCaches() {
-  try {
-    const month = getActiveMonth();
-    ordersFullBuilt(month);        // Sheet Tổng
-    teamBaseBuilt(month, null);    // Sheet Con (Admin xem tất cả)
-    for (const r of db.prepare("SELECT DISTINCT team FROM orders WHERE team!='' AND period=?").all(month)) teamBaseBuilt(month, [r.team]);
-  } catch {}
 }
 
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
@@ -881,9 +875,14 @@ function canTouchOrderTeam(user, order) {
   return false;
 }
 // A card is "valid" on an order only if it exists in the issued cards (Sheet Mua thẻ).
-function cardExists(card) {
-  return !!card && !!db.prepare("SELECT 1 FROM card_requests WHERE card_value=? LIMIT 1").get(card);
+// Tập card_value hợp lệ — cache (30s). Trước đây cardExists query DB MỖI purchase → N+1 nặng khi dựng cả nghìn đơn.
+let _validCardsCache = { at: 0, set: null };
+function validCardsSet() {
+  if (!_validCardsCache.set || Date.now() - _validCardsCache.at > 30000)
+    _validCardsCache = { at: Date.now(), set: new Set(db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value!=''").all().map((r) => r.card_value)) };
+  return _validCardsCache.set;
 }
+function cardExists(card) { return !!card && validCardsSet().has(card); }
 function purchaseOut(p, masked = false) {
   // Teammate khác xem được thông tin xử lý (tracking/order#/email…) nhưng KHÔNG thấy số thẻ.
   if (masked) return {
@@ -2390,8 +2389,5 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
 refreshOrderAggs(); refreshCardStats();
 setInterval(refreshOrderAggs, 30000);
 setInterval(refreshCardStats, 30000);
-// Dựng sẵn cache đơn (Sheet Tổng/Con) ở nền mỗi 15s → request luôn đọc cache, không bao giờ build 2s.
-prebuildOrderCaches();
-setInterval(prebuildOrderCaches, 15000);
 
 app.listen(PORT, () => console.log(`[order-hub] API on http://localhost:${PORT}`));
