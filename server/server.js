@@ -321,8 +321,11 @@ function ordersFullBuilt(month) {
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
   const purMap = purchasesByOrders(rows.map((o) => o.id));
   const { addr, on } = orderAggsCached();
+  const at = Date.now();
   const built = rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addr[addrNorm(o.address)] || 0, multiCount: on[o.order_no] || 1 }));
-  const v = { at: Date.now(), built };
+  // Admin: canEdit toàn bộ = true → chuỗi JSON dựng sẵn, request chỉ gửi bytes (không map/stringify lại).
+  const adminJson = JSON.stringify({ orders: built.map((o) => ({ ...o, canEdit: true })), now: at, delta: false });
+  const v = { at, built, adminJson };
   _ordersFullCache[month] = v;
   return v;
 }
@@ -336,7 +339,13 @@ function teamBaseBuilt(month, teams) {
   if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-  const v = { at: Date.now(), rows, purMap: purchasesByOrders(rows.map((o) => o.id)), reqMap: pendingClaimsByOrders(rows.map((o) => o.id)) };
+  const purMap = purchasesByOrders(rows.map((o) => o.id));
+  const reqMap = pendingClaimsByOrders(rows.map((o) => o.id));
+  const at = Date.now();
+  const { addr, on } = orderAggsCached();
+  // Admin xem KHÔNG mask → chuỗi JSON dựng sẵn (gửi bytes).
+  const adminJson = JSON.stringify({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), claimRequests: reqMap.get(o.id) || [], addrCount: addr[addrNorm(o.address)] || 0, multiCount: on[o.order_no] || 1 })), now: at, delta: false });
+  const v = { at, rows, purMap, reqMap, adminJson };
   _teamBaseCache[key] = v;
   return v;
 }
@@ -455,8 +464,9 @@ app.get("/api/orders", requireAuth, (req, res) => {
     const { addr: addrCount, on: onCount } = orderAggsCached();
     return res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })), now, delta: true });
   }
-  // FULL: dùng cache dùng-chung (5s) → nhiều người poll full cùng lúc chỉ tính 1 lần.
+  // FULL: cache dùng-chung. Admin gửi chuỗi JSON dựng sẵn (nhanh nhất); Lister/Leader map thêm canEdit.
   const c = ordersFullBuilt(month);
+  if (req.user.role === "Admin") return res.type("application/json").send(c.adminJson);
   res.json({ orders: c.built.map((o) => ({ ...o, canEdit: canEditMasterOrder(req.user, o) })), now: c.at, delta: false });
 });
 
@@ -957,8 +967,9 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
     const rows = db.prepare(`SELECT * FROM orders WHERE ${conds.join(" AND ")} ORDER BY created_at DESC`).all(...params);
     return res.json({ orders: buildOut(rows, purchasesByOrders(rows.map((o) => o.id)), pendingClaimsByOrders(rows.map((o) => o.id))), now, delta: true });
   }
-  // FULL: dùng base dựng-sẵn-ở-nền (dùng chung theo team-set + tháng) → request chỉ áp mask, không build nặng.
+  // FULL: Admin gửi chuỗi JSON dựng sẵn (không mask); thành viên build theo mask riêng (dataset nhỏ hơn).
   const base = teamBaseBuilt(month, teams);
+  if (u.role === "Admin") return res.type("application/json").send(base.adminJson);
   res.json({ orders: buildOut(base.rows, base.purMap, base.reqMap), now: base.at, delta: false });
 });
 
@@ -1452,7 +1463,7 @@ app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const scopeKey = u.role === "Admin" ? "admin" : (u.canBuyCard ? `buyer:${(u.teamIds || []).slice().sort().join(",")}` : `emp:${u.id}`);
   const key = `${scopeKey}|${month || "active"}`;
   const c = _cardReqCache[key];
-  if (c && Date.now() - c.at < 20000) return res.json(c.payload);   // dùng chung: nhiều người poll cùng lúc chỉ tính 1 lần
+  if (c && Date.now() - c.at < 20000) return res.type("application/json").send(c.json);   // gửi chuỗi dựng sẵn (không stringify lại)
 
   const byMonth = month && month !== "all" ? " AND period=?" : "";
   const mp = byMonth ? [month] : [];
@@ -1472,8 +1483,9 @@ app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
     const rows = db.prepare(`SELECT * FROM card_requests WHERE requester_id=?${byMonth} ORDER BY created_at DESC`).all(u.id, ...mp);
     payload = { requests: rows.map(withStats), manager: false, months: monthsFor(" AND requester_id=?", [u.id]) };
   }
-  _cardReqCache[key] = { at: Date.now(), payload };
-  res.json(payload);
+  const json = JSON.stringify(payload);
+  _cardReqCache[key] = { at: Date.now(), json };
+  res.type("application/json").send(json);
 });
 
 // Valid issued card values (for client-side validation in Sheet Con).
@@ -2151,7 +2163,7 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const monthQ = String(req.query.month || "").trim();
   const lbKey = `${from}|${to}|${monthQ}`;
   const lc = _lbCache[lbKey];
-  if (lc && Date.now() - lc.at < 20000) return res.json(lc.payload);
+  if (lc && Date.now() - lc.at < 20000) return res.type("application/json").send(lc.json);
   const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
   // KỲ: nếu có from/to → lọc theo NGÀY TẠO trong khoảng (giống Thống kê chi phí). Không thì theo tháng lịch (period).
@@ -2215,9 +2227,9 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   // Tổng để đối chiếu: Leaderboard chỉ tính đơn CÓ người nhận → đơn Đã Up chưa ai nhận không vào bảng.
   const allUp = scopeM(db.prepare("SELECT claimed_by, period, created_at, finalized_at FROM orders WHERE master_status='Đã Up'").all());
   const totals = { up: allUp.length, unclaimedUp: allUp.filter((o) => !o.claimed_by).length };
-  const payload = { leaderboard: rows, totals };
-  _lbCache[lbKey] = { at: Date.now(), payload };
-  res.json(payload);
+  const json = JSON.stringify({ leaderboard: rows, totals });
+  _lbCache[lbKey] = { at: Date.now(), json };
+  res.type("application/json").send(json);
 });
 
 // ── Tracking (AfterShip) ──────────────────────────────────────────────────────
