@@ -326,6 +326,29 @@ function ordersFullBuilt(month) {
   _ordersFullCache[month] = v;
   return v;
 }
+// Base dùng-chung cho team-orders full (rows/purMap/reqMap) theo (tháng + team-set). teams=null → Admin (tất cả).
+function teamBaseBuilt(month, teams) {
+  const key = `${month}|${teams ? teams.slice().sort().join(",") : "ALL"}`;
+  const c = _teamBaseCache[key];
+  if (c && Date.now() - c.at < 20000) return c;
+  const conds = [], params = [];
+  if (month && month !== "all") { conds.push("period=?"); params.push(month); }
+  if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
+  const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
+  const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
+  const v = { at: Date.now(), rows, purMap: purchasesByOrders(rows.map((o) => o.id)), reqMap: pendingClaimsByOrders(rows.map((o) => o.id)) };
+  _teamBaseCache[key] = v;
+  return v;
+}
+// Dựng sẵn các cache nặng Ở NỀN (mỗi 15s, < TTL 20s) → request KHÔNG bao giờ phải build → không còn 2s.
+function prebuildOrderCaches() {
+  try {
+    const month = getActiveMonth();
+    ordersFullBuilt(month);        // Sheet Tổng
+    teamBaseBuilt(month, null);    // Sheet Con (Admin xem tất cả)
+    for (const r of db.prepare("SELECT DISTINCT team FROM orders WHERE team!='' AND period=?").all(month)) teamBaseBuilt(month, [r.team]);
+  } catch {}
+}
 
 // eBay item number from a stored order (raw.itemNumber or parsed from link).
 function itemNoOf(o) {
@@ -934,18 +957,8 @@ app.get("/api/team-orders", requireAuth, (req, res) => {
     const rows = db.prepare(`SELECT * FROM orders WHERE ${conds.join(" AND ")} ORDER BY created_at DESC`).all(...params);
     return res.json({ orders: buildOut(rows, purchasesByOrders(rows.map((o) => o.id)), pendingClaimsByOrders(rows.map((o) => o.id))), now, delta: true });
   }
-  // FULL: cache base (rows/purMap/reqMap) dùng-chung theo (team-set + tháng), 5s → nhiều người poll full chỉ query 1 lần.
-  const key = `${month}|${teams ? teams.slice().sort().join(",") : "ALL"}`;
-  let base = _teamBaseCache[key];
-  if (!base || Date.now() - base.at >= 20000) {
-    const conds = [], params = [];
-    if (month && month !== "all") { conds.push("period=?"); params.push(month); }
-    if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
-    const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
-    const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
-    base = { at: Date.now(), rows, purMap: purchasesByOrders(rows.map((o) => o.id)), reqMap: pendingClaimsByOrders(rows.map((o) => o.id)) };
-    _teamBaseCache[key] = base;
-  }
+  // FULL: dùng base dựng-sẵn-ở-nền (dùng chung theo team-set + tháng) → request chỉ áp mask, không build nặng.
+  const base = teamBaseBuilt(month, teams);
   res.json({ orders: buildOut(base.rows, base.purMap, base.reqMap), now: base.at, delta: false });
 });
 
@@ -2365,5 +2378,8 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
 refreshOrderAggs(); refreshCardStats();
 setInterval(refreshOrderAggs, 30000);
 setInterval(refreshCardStats, 30000);
+// Dựng sẵn cache đơn (Sheet Tổng/Con) ở nền mỗi 15s → request luôn đọc cache, không bao giờ build 2s.
+prebuildOrderCaches();
+setInterval(prebuildOrderCaches, 15000);
 
 app.listen(PORT, () => console.log(`[order-hub] API on http://localhost:${PORT}`));
