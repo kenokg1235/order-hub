@@ -2170,12 +2170,10 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   const inRange = (ts) => { const d = dOf(ts); return (!from || d >= from) && (!to || d <= to); };
   // Tháng lịch (dùng cho fallback THẺ khi chỉ chọn tháng, không có from/to).
   const orderMonth = isAll ? "" : (from ? from.slice(0, 7) : (monthQ || getActiveMonth()));
-  // ĐƠN (Đã Up / Đã Cancel):
-  //  - Có KỲ (from/to): tính theo NGÀY CHỐT (finalized_at) trong khoảng → kỳ mới bắt đầu từ 0.
-  //  - Chỉ chọn THÁNG (không from/to): theo tháng lịch của đơn → khớp bảng ở Sheet Tổng.
+  // ĐƠN (Đã Up / Đã Cancel) & Profit: tính theo THÁNG của đơn (period) → KHỚP ĐÚNG Sheet Con & Sheet Tổng.
+  // (Số thẻ vẫn tính theo khoảng NGÀY của kỳ ở vòng lặp card_requests bên dưới.)
   const scopeM = (arr) => {
     if (isAll) return arr;
-    if (from || to) return arr.filter((o) => inRange(o.finalized_at || o.created_at));
     return orderMonth ? arr.filter((o) => o.period === orderMonth) : arr;
   };
 
