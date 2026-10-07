@@ -732,6 +732,13 @@ function oldCardRequestIds(cutoff) {
   return db.prepare("SELECT id, created_at FROM card_requests").all()
     .filter((r) => ymOf(r.created_at) < cutoff).map((r) => r.id);
 }
+// Xóa dữ liệu xong phải reset cache dùng-chung để Sheet Tổng/Con/thẻ/leaderboard không còn hiện đơn đã xóa.
+function invalidateOrderCaches() {
+  _ordersFullCache = {}; _teamBaseCache = {}; _cardReqCache = {};
+  _lbCache = {}; _trackCache = {}; _validCardsCache = { at: 0, set: null };
+  try { refreshOrderAggs(); } catch {}
+  try { refreshCardStats(); } catch {}
+}
 // Xem trước số lượng sẽ xóa.
 app.get("/api/cleanup-old", requireAdmin, (req, res) => {
   const cutoff = cleanupCutoff();
@@ -740,11 +747,15 @@ app.get("/api/cleanup-old", requireAdmin, (req, res) => {
   const months = db.prepare("SELECT DISTINCT period FROM orders WHERE period!='' AND period < ? ORDER BY period").all(cutoff).map((r) => r.period);
   res.json({ activeMonth: getActiveMonth(), retentionMonths: getSetting("retentionMonths", 2), cutoff, orders, cardRequests, months });
 });
-// Thực hiện xóa.
+// Thực hiện xóa. Có thể TÁCH RA: chỉ xóa đơn (Sheet Tổng + Con) hoặc chỉ xóa yêu cầu thẻ.
+//   body { orders?: bool, cards?: bool } — mặc định (không truyền) = xóa cả hai (giữ tương thích cũ).
 app.post("/api/cleanup-old", requireAdmin, (req, res) => {
   const cutoff = cleanupCutoff();
-  const orderIds = db.prepare("SELECT id FROM orders WHERE period!='' AND period < ?").all(cutoff).map((o) => o.id);
-  const reqIds = oldCardRequestIds(cutoff);
+  const hasFlags = ("orders" in (req.body || {})) || ("cards" in (req.body || {}));
+  const doOrders = hasFlags ? !!req.body.orders : true;
+  const doCards = hasFlags ? !!req.body.cards : true;
+  const orderIds = doOrders ? db.prepare("SELECT id FROM orders WHERE period!='' AND period < ?").all(cutoff).map((o) => o.id) : [];
+  const reqIds = doCards ? oldCardRequestIds(cutoff) : [];
   const delAudit = db.prepare("DELETE FROM audit_log WHERE order_id=?");
   const delOrder = db.prepare("DELETE FROM orders WHERE id=?");      // purchases cascade via FK
   const delReq = db.prepare("DELETE FROM card_requests WHERE id=?");
@@ -753,6 +764,7 @@ app.post("/api/cleanup-old", requireAdmin, (req, res) => {
     for (const id of orderIds) { delAudit.run(id); delOrder.run(id); ordersDeleted++; }
     for (const id of reqIds) { delReq.run(id); cardRequestsDeleted++; }
   })();
+  if (ordersDeleted || cardRequestsDeleted) invalidateOrderCaches();
   res.json({ ok: true, cutoff, ordersDeleted, cardRequestsDeleted });
 });
 

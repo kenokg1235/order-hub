@@ -94,35 +94,71 @@ function CleanupEditor({ months, onSaveMonths }) {
   const [n, setN] = useState(months);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [prev, setPrev] = useState(null);   // { cutoff, orders, cardRequests, months }
+  const [delOrders, setDelOrders] = useState(true);    // mặc định: dọn đơn (Sheet Tổng + Con)
+  const [delCards, setDelCards] = useState(false);     // mặc định: GIỮ dữ liệu thẻ
   useEffect(() => setN(months), [months]);
+
+  async function preview() {
+    setMsg("");
+    try { setPrev(await api.get("/api/cleanup-old")); }
+    catch (e) { setMsg(e.message); }
+  }
+  useEffect(() => { preview(); /* eslint-disable-next-line */ }, []);
+
   async function run() {
     setMsg("");
+    const p = prev || (await api.get("/api/cleanup-old"));
+    setPrev(p);
+    if (!delOrders && !delCards) { setMsg("Hãy chọn ít nhất một loại dữ liệu để dọn."); return; }
+    const nOrders = delOrders ? p.orders : 0;
+    const nCards = delCards ? p.cardRequests : 0;
+    if (!nOrders && !nCards) { setMsg(`Không có dữ liệu cũ để dọn (mốc xóa: trước ${p.cutoff}).`); return; }
+    const lines = [];
+    if (delOrders) lines.push(`• ${p.orders} đơn hàng — Sheet Tổng + Sheet Con (+ thẻ xử lý + lịch sử)`);
+    if (delCards) lines.push(`• ${p.cardRequests} yêu cầu thẻ (Mua thẻ)`);
+    if (confirm(`Dọn dữ liệu cũ?\n\nSẽ XÓA VĨNH VIỄN dữ liệu các tháng TRƯỚC ${p.cutoff}` +
+      (p.months?.length ? ` (${p.months.join(", ")})` : "") + `:\n` + lines.join("\n") + `\n\n` +
+      (delOrders && !delCards ? "✅ GIỮ nguyên dữ liệu thẻ (yêu cầu thẻ, số dư).\n" : "") +
+      `Giữ lại: payout, chi phí, số dư thẻ.\nKHÔNG thể hoàn tác.`) === false) return;
     try {
-      const p = await api.get("/api/cleanup-old");
-      if (!p.orders && !p.cardRequests) { setMsg(`Không có dữ liệu cũ để dọn (mốc xóa: trước ${p.cutoff}).`); return; }
-      if (!confirm(`Dọn dữ liệu cũ?\n\nSẽ XÓA VĨNH VIỄN dữ liệu các tháng TRƯỚC ${p.cutoff}` +
-        (p.months?.length ? ` (${p.months.join(", ")})` : "") + `:\n` +
-        `• ${p.orders} đơn hàng (+ thẻ xử lý + lịch sử)\n` +
-        `• ${p.cardRequests} yêu cầu thẻ\n\n` +
-        `Giữ lại: payout, chi phí.\nKHÔNG thể hoàn tác.`)) return;
       setBusy(true);
-      const r = await api.post("/api/cleanup-old", {});
-      setMsg(`✅ Đã xóa ${r.ordersDeleted} đơn + ${r.cardRequestsDeleted} yêu cầu thẻ (trước ${r.cutoff}).`);
+      const r = await api.post("/api/cleanup-old", { orders: delOrders, cards: delCards });
+      const parts = [];
+      if (delOrders) parts.push(`${r.ordersDeleted} đơn`);
+      if (delCards) parts.push(`${r.cardRequestsDeleted} yêu cầu thẻ`);
+      setMsg(`✅ Đã xóa ${parts.join(" + ")} (trước ${r.cutoff}).`);
+      preview();
     } catch (e) { setMsg(e.message); } finally { setBusy(false); }
   }
+
+  const ck = { display: "flex", alignItems: "center", gap: 6, cursor: "pointer" };
   return (
     <div className="card" style={{ marginBottom: 16, borderColor: "var(--red)" }}>
       <div style={{ fontWeight: 700, marginBottom: 6 }}>🧹 Dọn dữ liệu cũ</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-        Giữ <b>tháng hiện tại + {n} tháng trước</b>; xóa <b>đơn hàng, thẻ xử lý, yêu cầu thẻ</b> của các tháng cũ hơn.
-        <b> Payout &amp; chi phí KHÔNG bị xóa.</b> Vd giữ 2: ở tháng 9 sẽ xóa dữ liệu tháng 6 trở về trước.
+        Giữ <b>tháng hiện tại + {n} tháng trước</b>; xóa dữ liệu của các tháng cũ hơn.
+        <b> Payout, chi phí &amp; số dư thẻ KHÔNG bị xóa.</b> Vd giữ 2: ở tháng 9 sẽ xóa dữ liệu tháng 6 trở về trước.
       </div>
       <div className="row" style={{ gap: 8, marginBottom: 12 }}>
         <span className="muted">Giữ lại (số tháng trước):</span>
         <input className="input" type="number" min="0" style={{ width: 80 }} value={n} onChange={(e) => setN(e.target.value)} />
-        <Button onClick={() => onSaveMonths(Math.max(0, Number(n) || 0))}>Lưu</Button>
+        <Button onClick={() => { onSaveMonths(Math.max(0, Number(n) || 0)); setTimeout(preview, 400); }}>Lưu</Button>
       </div>
-      <Button variant="danger" disabled={busy} onClick={run}>{busy ? "Đang dọn…" : "🧹 Dọn dữ liệu cũ ngay"}</Button>
+
+      <div style={{ fontSize: 13, marginBottom: 8 }}>Chọn loại dữ liệu cần dọn (mốc xóa: <b>trước {prev?.cutoff ?? "…"}</b>):</div>
+      <div className="row" style={{ gap: 18, marginBottom: 12, flexWrap: "wrap" }}>
+        <label style={ck}>
+          <input type="checkbox" checked={delOrders} onChange={(e) => setDelOrders(e.target.checked)} />
+          <span>📄 Đơn hàng — <b>Sheet Tổng + Sheet Con</b>{prev ? ` (${prev.orders})` : ""}</span>
+        </label>
+        <label style={ck}>
+          <input type="checkbox" checked={delCards} onChange={(e) => setDelCards(e.target.checked)} />
+          <span>💳 Yêu cầu thẻ — <b>Mua thẻ</b>{prev ? ` (${prev.cardRequests})` : ""}</span>
+        </label>
+      </div>
+
+      <Button variant="danger" disabled={busy} onClick={run}>{busy ? "Đang dọn…" : "🧹 Dọn dữ liệu đã chọn"}</Button>
       {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
     </div>
   );
