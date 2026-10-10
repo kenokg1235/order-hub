@@ -136,8 +136,15 @@ export default function App() {
   useEffect(() => {
     (async () => {
       if (getToken()) {
-        try { const { user } = await api.get("/api/auth/me"); setUser(user); }
-        catch { setToken(""); }
+        // Lỗi MẠNG/timeout (server bận) KHÔNG được xóa token → tránh logout oan cả team khi đông người.
+        // Chỉ 401 thật mới hết phiên: api.js tự xóa token khi 401, nên getToken() rỗng = dừng, về Login.
+        for (let attempt = 0; attempt < 6; attempt++) {
+          try { const { user } = await api.get("/api/auth/me"); setUser(user); break; }
+          catch {
+            if (!getToken()) break;                              // 401 thật → thực sự hết phiên
+            await new Promise((r) => setTimeout(r, 2500));       // lỗi mạng/chậm → GIỮ token, thử lại
+          }
+        }
       }
       setLoading(false);
     })();
