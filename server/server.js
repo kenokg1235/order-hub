@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
+import { monitorEventLoopDelay } from "perf_hooks";
 import db from "./db.js";
 import { fetchEbayImage } from "./ebayImage.js";
 import {
@@ -24,16 +25,33 @@ const app = express();
 app.use(compression({ level: 1, threshold: 1024 }));   // nén gzip cho JSON API + file tĩnh
 app.use(express.json({ limit: "12mb" }));  // đủ cho ảnh deli dán vào (đã nén phía client)
 
-// Log request CHẬM (>150ms) để tìm endpoint gây nghẽn khi nhiều người dùng cùng lúc.
-// Xem bằng: pm2 logs orderhub | grep SLOW
+// Log request CHẬM (>150ms) + BẮT THỦ PHẠM chặn event-loop (>1s) khi cả team trắng màn.
+//   pm2 logs orderhub | grep SLOW      → request chậm
+//   pm2 logs orderhub | grep BLOCK     → thao tác chặn loop (cả hệ thống đứng) — kèm nhân viên nào
 app.use((req, res, next) => {
   const t0 = Date.now();
   res.on("finish", () => {
     const ms = Date.now() - t0;
-    if (ms >= 150) console.log(`[SLOW ${ms}ms] ${req.method} ${req.originalUrl}`);
+    if (ms < 150) return;
+    const who = req.user ? `${req.user.name}/${req.user.role}` : "?";
+    const sz = req.headers["content-length"] ? ` body=${req.headers["content-length"]}B` : "";
+    // >1s = đủ để chặn loop → cả team có thể trắng màn trong lúc này. Đánh dấu BLOCK để dễ tìm.
+    const tag = ms >= 1000 ? `BLOCK ${ms}ms` : `SLOW ${ms}ms`;
+    console.log(`[${tag}] ${req.method} ${req.originalUrl} — ${who}${sz}`);
   });
   next();
 });
+// Bộ đo độ trễ event-loop: nếu loop bị kẹt > 1s (do thao tác đồng bộ nặng ở đâu đó, kể cả tác vụ
+// nền), log ra để biết server từng đứng hình — đối chiếu với [BLOCK] ngay trước đó để tìm nguyên nhân.
+try {
+  const h = monitorEventLoopDelay({ resolution: 50 });
+  h.enable();
+  setInterval(() => {
+    const maxMs = h.max / 1e6;
+    if (maxMs >= 1000) console.log(`[EVLOOP] loop bị kẹt tới ${Math.round(maxMs)}ms trong 10s qua → cả team có thể đã trắng màn`);
+    h.reset();
+  }, 10000);
+} catch {}
 
 // Thư mục lưu ảnh deli (upload) — phục vụ tĩnh, tồn tại qua các lần deploy (ngoài git).
 const uploadsDir = path.join(__dirname, "uploads");
