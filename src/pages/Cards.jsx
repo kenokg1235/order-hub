@@ -101,7 +101,13 @@ export default function Cards({ currentUser }) {
       try {
         const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month)}`);
         if (r.months) setMonthsList(r.months);
-        const editingId = document.activeElement?.closest?.("tr[data-rid]")?.getAttribute("data-rid") || null;
+        // Chỉ CHỪA dòng khi đang GÕ ở ô text/textarea (sợ mất chữ). KHÔNG chừa khi chỉ focus <select>
+        // trạng thái — vì select giữ focus sau khi chọn → nếu chừa thì dòng vừa đổi KHÔNG BAO GIỜ tự
+        // cập nhật (phải F5). Cho poll cập nhật bình thường dòng có select.
+        const ae = document.activeElement;
+        const isTyping = ae && (ae.tagName === "TEXTAREA" ||
+          (ae.tagName === "INPUT" && /^(text|search|number|email|tel|url|password|)$/i.test(ae.getAttribute("type") || "")));
+        const editingId = isTyping ? (ae.closest?.("tr[data-rid]")?.getAttribute("data-rid") || null) : null;
         setReqs((prev) => {
           const byId = new Map(prev.map((r) => [r.id, r]));
           return r.requests.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);

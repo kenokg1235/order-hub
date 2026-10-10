@@ -1534,6 +1534,7 @@ app.post("/api/card-requests", requireAuth, blockLister, (req, res) => {
   db.prepare(`INSERT INTO card_requests (id,requester_id,requester_name,content,card_value,status,seq,period,created_at,updated_at)
               VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .run(id, req.user.id, req.user.name, String(req.body.content || ""), "", "", seq, getActiveMonth(), now, now);
+  _cardReqCache = {};
   notify(cardManagersForRequester(req.user.id), "card-request", `🎴 Yêu cầu thẻ mới từ ${req.user.name}: ${String(req.body.content || "").slice(0, 80)}`, "", userTeams(req.user.id));
   res.json({ request: cardOut(db.prepare("SELECT * FROM card_requests WHERE id=?").get(id)) });
 });
@@ -1562,7 +1563,7 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   if ("status" in b && (isOwner || isManager)) { sets.push("status=?"); vals.push(b.status); }
   if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
   if ("adminNote" in b && isManager) { sets.push("admin_note=?"); vals.push(String(b.adminNote || "")); }
-  if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); }
+  if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); _cardReqCache = {}; }   // reset cache → poll thấy trạng thái mới ngay, không chờ hết 20s
   // notify: card issued → requester; status changed → card managers
   if ("card" in b && b.card && !r.card_value)
     notify([r.requester_id], "card-issued", `✅ Thẻ đã được cấp cho yêu cầu của bạn: ${b.card}`);
@@ -1581,6 +1582,7 @@ app.delete("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   if (r.card_value && req.user.role !== "Admin")
     return res.status(409).json({ error: "Đã cấp thẻ — không thể xóa (giữ lại để đối chiếu)" });
   db.prepare("DELETE FROM card_requests WHERE id=?").run(r.id);
+  _cardReqCache = {};
   res.json({ ok: true });
 });
 
