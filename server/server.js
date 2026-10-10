@@ -19,7 +19,9 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(compression());                    // nén gzip cho JSON API + file tĩnh
+// VPS 1 nhân: nén mức 1 (nhanh ~3-4x so với mặc định 6, payload chỉ lớn hơn chút)
+// → giảm CPU tranh với truy vấn DB khi đông người. threshold 1KB: delta nhỏ không nén.
+app.use(compression({ level: 1, threshold: 1024 }));   // nén gzip cho JSON API + file tĩnh
 app.use(express.json({ limit: "12mb" }));  // đủ cho ảnh deli dán vào (đã nén phía client)
 
 // Log request CHẬM (>150ms) để tìm endpoint gây nghẽn khi nhiều người dùng cùng lúc.
