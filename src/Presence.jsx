@@ -1,15 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 
 const roleLabel = { Admin: "Admin", Leader: "Leader", Lister: "Listing", Member: "Member", Buyer: "Mua thẻ" };
 
-// Hiển thị thành viên đang online (hoạt động trong 2 phút gần đây). Poll mỗi 30s.
+// Hiển thị thành viên đang online (hoạt động trong 2 phút gần đây). Poll mỗi 60s.
 export default function Presence({ currentUser }) {
   const [online, setOnline] = useState([]);
   const [open, setOpen] = useState(false);
+  const busy = useRef(false);   // chặn request CHỒNG NHAU: lúc server chậm, không bồi thêm → đỡ cạn khe kết nối
 
-  async function load() { try { setOnline((await api.get("/api/presence")).online); } catch {} }
-  useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 30000); return () => clearInterval(t); }, []);
+  async function load() {
+    if (busy.current) return;
+    busy.current = true;
+    try { setOnline((await api.get("/api/presence")).online); } catch {} finally { busy.current = false; }
+  }
+  useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 60000); return () => clearInterval(t); }, []);
 
   return (
     <div style={{ marginBottom: 8 }}>

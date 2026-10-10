@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api.js";
 import { Button } from "./ui.jsx";
 
 // Bell + badge in the sidebar footer. Opens a panel with notifications and the
-// Telegram linking flow. Polls the unread count every 30s.
+// Telegram linking flow. Polls the unread count every 60s.
 export default function Notifications() {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState([]);
@@ -11,12 +11,15 @@ export default function Notifications() {
   const [tg, setTg] = useState({ linked: false, enabled: false });
   const [link, setLink] = useState(null);   // { code, botUsername }
   const [msg, setMsg] = useState("");
+  const busy = useRef(false);   // chặn request CHỒNG NHAU: server chậm thì không bồi thêm → đỡ cạn khe kết nối
 
   async function loadCount() {
-    try { const d = await api.get("/api/notifications"); setList(d.notifications); setUnread(d.unread); } catch {}
+    if (busy.current) return;
+    busy.current = true;
+    try { const d = await api.get("/api/notifications"); setList(d.notifications); setUnread(d.unread); } catch {} finally { busy.current = false; }
   }
   async function loadTg() { try { setTg(await api.get("/api/telegram/status")); } catch {} }
-  useEffect(() => { loadCount(); loadTg(); const t = setInterval(() => { if (!document.hidden) loadCount(); }, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { loadCount(); loadTg(); const t = setInterval(() => { if (!document.hidden) loadCount(); }, 60000); return () => clearInterval(t); }, []);
 
   function toggle() { const n = !open; setOpen(n); if (n) { loadCount(); loadTg(); } }
   async function markRead() { try { await api.post("/api/notifications/read", {}); setUnread(0); setList((l) => l.map((n) => ({ ...n, read: true }))); } catch {} }

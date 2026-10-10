@@ -335,7 +335,7 @@ let _ordersFullCache = {};   // month -> { at, built:[...] }  (built: orderOut+p
 let _teamBaseCache = {};     // key   -> { at, rows, purMap, reqMap }
 function ordersFullBuilt(month) {
   const c = _ordersFullCache[month];
-  if (c && Date.now() - c.at < 20000) return c;
+  if (c && Date.now() - c.at < 60000) return c;   // 60s: giảm số lần BUILD nặng (delta vẫn giữ tươi)
   const where = (month && month !== "all") ? "WHERE period=?" : "";
   const params = (month && month !== "all") ? [month] : [];
   const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params);
@@ -353,7 +353,7 @@ function ordersFullBuilt(month) {
 function teamBaseBuilt(month, teams) {
   const key = `${month}|${teams ? teams.slice().sort().join(",") : "ALL"}`;
   const c = _teamBaseCache[key];
-  if (c && Date.now() - c.at < 20000) return c;
+  if (c && Date.now() - c.at < 60000) return c;   // 60s: giảm số lần BUILD nặng (delta vẫn giữ tươi)
   const conds = [], params = [];
   if (month && month !== "all") { conds.push("period=?"); params.push(month); }
   if (teams) { conds.push(`team IN (${teams.map(() => "?").join(",")})`); params.push(...teams); conds.push("team!=''"); }
