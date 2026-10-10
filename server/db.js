@@ -148,6 +148,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_master_final ON orders(master_status, fina
 CREATE INDEX IF NOT EXISTS idx_orders_claimed       ON orders(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_orders_period        ON orders(period);
 CREATE INDEX IF NOT EXISTS idx_orders_period_created ON orders(period, created_at);
+-- DELTA-SYNC (poll): WHERE period=? AND updated_at>=? — nếu không có index này, mỗi lần poll
+-- của mỗi nhân viên phải QUÉT TOÀN BỘ đơn trong tháng → càng đông người + tháng càng nhiều đơn càng lag.
+CREATE INDEX IF NOT EXISTS idx_orders_period_updated ON orders(period, updated_at);
+CREATE INDEX IF NOT EXISTS idx_orders_updated        ON orders(updated_at);
 CREATE INDEX IF NOT EXISTS idx_audit_field_created  ON audit_log(field, created_at);
 CREATE INDEX IF NOT EXISTS idx_cardreq_requester    ON card_requests(requester_id);
 CREATE INDEX IF NOT EXISTS idx_cardreq_created      ON card_requests(created_at);
