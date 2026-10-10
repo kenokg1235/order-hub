@@ -13,12 +13,24 @@ import fs from "fs";
 import { monitorEventLoopDelay } from "perf_hooks";
 import db from "./db.js";
 import { fetchEbayImage } from "./ebayImage.js";
+import { encCard, decCard, cardKeySet, isEncrypted } from "./cardCrypto.js";
 import {
   newId, createSession, destroySession, userFromReq,
   publicUser, requireAuth, requireAdmin, allowedStores,
 } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Nạp biến môi trường từ ~/order-hub/.env (nếu có) — để ORDERHUB_CARD_KEY tồn tại qua
+// restart/deploy mà KHÔNG nằm trong code/git. Không cần thư viện ngoài.
+try {
+  const envPath = path.join(__dirname, "..", ".env");
+  if (fs.existsSync(envPath)) for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+} catch {}
+
 const app = express();
 // VPS 1 nhân: nén mức 1 (nhanh ~3-4x so với mặc định 6, payload chỉ lớn hơn chút)
 // → giảm CPU tranh với truy vấn DB khi đông người. threshold 1KB: delta nhỏ không nén.
@@ -798,11 +810,13 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
   const canView = u.role === "Admin" || canTouchOrderTeam(u, o) || (u.role === "Lister" && (u.storeNames || []).includes(o.store));
   if (!canView) return res.status(403).json({ error: "Không có quyền" });
   let rows = db.prepare("SELECT * FROM audit_log WHERE order_id=? ORDER BY created_at DESC").all(o.id);
-  if (!canSeePurchases(u, o)) {   // che số thẻ với người không phải Admin/người nhận (vẫn thấy "đã đổi thẻ")
-    const mask = (v) => (v ? "••• (ẩn)" : v);
-    rows = rows.map((r) => (r.entity === "purchase" && r.field === "card")
-      ? { ...r, old_value: mask(r.old_value), new_value: mask(r.new_value) } : r);
-  }
+  const canSee = canSeePurchases(u, o);
+  const mask = (v) => (v ? "••• (ẩn)" : v);
+  rows = rows.map((r) => (r.entity === "purchase" && r.field === "card")
+    // Người được xem: giải mã để đọc được; người khác: che hẳn.
+    ? (canSee ? { ...r, old_value: decCard(r.old_value), new_value: decCard(r.new_value) }
+              : { ...r, old_value: mask(r.old_value), new_value: mask(r.new_value) })
+    : r);
   res.json({ history: rows.map((r) => ({
     entity: r.entity, field: r.field, oldValue: r.old_value, newValue: r.new_value,
     userName: r.user_name, createdAt: r.created_at,
@@ -925,7 +939,7 @@ function purchaseOut(p, masked = false) {
     deliImage: p.deli_image || "",
   };
   return {
-    id: p.id, orderId: p.order_id, card: p.card, amount: p.amount, name: p.name,
+    id: p.id, orderId: p.order_id, card: decCard(p.card), amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
     phone: p.phone, zip: p.zip, processStatus: p.process_status,
     cardValid: !p.card || cardExists(p.card), orderTime: p.order_time, hidden: false,
@@ -1148,7 +1162,7 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   const id = newId("pur");
   db.prepare(`INSERT INTO purchases (id,order_id,card,amount,name,order_number,email,tracking,phone,zip,process_status,created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, o.id, String(b.card || "").trim(), Number(b.amount) || 0, b.name || "", b.orderNumber || "", b.email || "",
+    .run(id, o.id, encCard(String(b.card || "").trim()), Number(b.amount) || 0, b.name || "", b.orderNumber || "", b.email || "",
          b.tracking || "", b.phone || "", b.zip || "", b.processStatus || "", Date.now());
   creditCardLedger(db.prepare("SELECT * FROM purchases WHERE id=?").get(id));
   touchOrder(o.id);
@@ -1164,13 +1178,14 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const map = { card: "card", amount: "amount", name: "name", orderNumber: "order_number", email: "email",
     tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status" };
   // Must have a valid issued card before entering any other field.
-  const effCard = ("card" in b) ? String(b.card || "") : p.card;
+  // effCard = GIÁ TRỊ ĐÃ MÃ HÓA (để so với validCardsSet vốn cũng là ciphertext).
+  const effCard = ("card" in b) ? encCard(String(b.card || "").trim()) : p.card;
   const touchesOther = Object.keys(b).some((k) => k !== "card" && k in map);
   if (touchesOther && !(effCard && cardExists(effCard)))
     return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
-    const nv = col === "amount" ? (Number(b[k]) || 0) : (k === "card" ? String(b[k] || "").trim() : b[k]);
+    const nv = col === "amount" ? (Number(b[k]) || 0) : (k === "card" ? effCard : b[k]);
     logChange(req.user, "purchase", p.id, p.order_id, k, p[col], nv);
     sets.push(`${col}=?`); vals.push(nv);
   }
@@ -1398,7 +1413,7 @@ const cardCode = (seq) => "MT-" + String(seq || 0).padStart(4, "0");   // human-
 function cardOut(r) {
   return {
     id: r.id, seq: r.seq, code: cardCode(r.seq), requesterId: r.requester_id, requesterName: r.requester_name,
-    content: r.content, card: r.card_value, status: r.status, period: r.period || "", adminNote: r.admin_note || "",
+    content: r.content, card: decCard(r.card_value), status: r.status, period: r.period || "", adminNote: r.admin_note || "",
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -1521,7 +1536,7 @@ app.get("/api/card-requests", requireAuth, blockLister, (req, res) => {
 
 // Valid issued card values (for client-side validation in Sheet Con).
 app.get("/api/card-values", requireAuth, blockLister, (req, res) => {
-  res.json({ cards: db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value!=''").all().map((r) => r.card_value) });
+  res.json({ cards: db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value!=''").all().map((r) => decCard(r.card_value)) });
 });
 
 // Employee creates a request.
@@ -1561,14 +1576,15 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   const sets = [], vals = [];
   if ("content" in b && (isOwner || u.role === "Admin")) { sets.push("content=?"); vals.push(b.content); }
   if ("status" in b && (isOwner || isManager)) { sets.push("status=?"); vals.push(b.status); }
-  if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
+  if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(encCard(String(b.card || "").trim())); }
   if ("adminNote" in b && isManager) { sets.push("admin_note=?"); vals.push(String(b.adminNote || "")); }
   if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); _cardReqCache = {}; }   // reset cache → poll thấy trạng thái mới ngay, không chờ hết 20s
   // notify: card issued → requester; status changed → card managers
+  // KHÔNG đưa số thẻ (plaintext) vào thông báo — tránh rò ra bảng notifications.
   if ("card" in b && b.card && !r.card_value)
-    notify([r.requester_id], "card-issued", `✅ Thẻ đã được cấp cho yêu cầu của bạn: ${b.card}`);
+    notify([r.requester_id], "card-issued", `✅ Thẻ đã được cấp cho yêu cầu của bạn (xem ở mục Yêu cầu thẻ).`);
   if ("status" in b && b.status && b.status !== r.status)
-    notify(cardManagersForRequester(r.requester_id), "card-status", `🔄 Trạng thái thẻ "${r.card_value || r.content || r.requester_name}" → ${b.status} (NV ${r.requester_name})`, "", userTeams(r.requester_id));
+    notify(cardManagersForRequester(r.requester_id), "card-status", `🔄 Trạng thái thẻ "${r.content || r.requester_name}" → ${b.status} (NV ${r.requester_name})`, "", userTeams(r.requester_id));
   const updated = db.prepare("SELECT * FROM card_requests WHERE id=?").get(r.id);
   res.json({ request: isManager ? cardOutFull(updated) : cardOut(updated) });
 });
@@ -2416,6 +2432,33 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
   res.setHeader("Cache-Control", "no-cache, must-revalidate");
   res.sendFile(path.join(dist, "index.html"));
 });
+
+// ── Mã hóa AT-REST cho thẻ: migrate 1 lần dữ liệu CŨ (plaintext → ciphertext) khi có khóa ──
+// Idempotent: giá trị đã mã hóa thì bỏ qua. Deterministic nên join/so khớp vẫn chạy sau migrate.
+function migrateEncryptCards() {
+  if (!cardKeySet()) {
+    console.log("[cards] ⚠️  ORDERHUB_CARD_KEY chưa đặt → thẻ đang lưu DẠNG THƯỜNG (chưa mã hóa). Đặt khóa trong .env để bật mã hóa.");
+    return;
+  }
+  let n = 0;
+  db.transaction(() => {
+    for (const r of db.prepare("SELECT id, card_value FROM card_requests WHERE card_value!=''").all())
+      if (!isEncrypted(r.card_value)) { db.prepare("UPDATE card_requests SET card_value=? WHERE id=?").run(encCard(r.card_value), r.id); n++; }
+    for (const r of db.prepare("SELECT id, card FROM purchases WHERE card!=''").all())
+      if (!isEncrypted(r.card)) { db.prepare("UPDATE purchases SET card=? WHERE id=?").run(encCard(r.card), r.id); n++; }
+    for (const r of db.prepare("SELECT purchase_id, card FROM card_ledger WHERE card!=''").all())
+      if (!isEncrypted(r.card)) { db.prepare("UPDATE card_ledger SET card=? WHERE purchase_id=?").run(encCard(r.card), r.purchase_id); n++; }
+    // Lịch sử sửa thẻ trong audit_log cũng chứa số thẻ dạng thường → mã hóa nốt.
+    for (const r of db.prepare("SELECT id, old_value, new_value FROM audit_log WHERE entity='purchase' AND field='card'").all()) {
+      const ov = r.old_value && !isEncrypted(r.old_value) ? encCard(r.old_value) : r.old_value;
+      const nv = r.new_value && !isEncrypted(r.new_value) ? encCard(r.new_value) : r.new_value;
+      if (ov !== r.old_value || nv !== r.new_value) { db.prepare("UPDATE audit_log SET old_value=?, new_value=? WHERE id=?").run(ov, nv, r.id); n++; }
+    }
+  })();
+  _validCardsCache = { at: 0, set: null };   // reset cache sau khi đổi giá trị thẻ
+  console.log(n ? `[cards] 🔒 Đã mã hóa ${n} giá trị thẻ hiện có (at-rest).` : "[cards] 🔒 Mã hóa thẻ đã bật — không còn dữ liệu cũ cần mã hóa.");
+}
+migrateEncryptCards();
 
 // Tính sẵn các tổng hợp nặng ở nền → request không bao giờ phải quét toàn bảng.
 refreshOrderAggs(); refreshCardStats();
