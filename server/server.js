@@ -13,7 +13,7 @@ import fs from "fs";
 import { monitorEventLoopDelay } from "perf_hooks";
 import db from "./db.js";
 import { fetchEbayImage } from "./ebayImage.js";
-import { encCard, decCard, cardKeySet, isEncrypted } from "./cardCrypto.js";
+import { encCard, decCard, cardKeyLoaded, loadKey, checkTokenFor, isEncrypted } from "./cardCrypto.js";
 import {
   newId, createSession, destroySession, userFromReq,
   publicUser, requireAuth, requireAdmin, allowedStores,
@@ -929,6 +929,8 @@ function validCardsSet() {
   return _validCardsCache.set;
 }
 function cardExists(card) { return !!card && validCardsSet().has(card); }
+// Đang khóa thẻ + request có GHI số thẻ non-empty → chặn (tránh ghi plaintext khi chưa có khóa trong RAM).
+const cardLocked = (b) => !cardKeyLoaded() && !!b && ("card" in b) && String(b.card || "").trim() !== "";
 function purchaseOut(p, masked = false) {
   // Teammate khác xem được thông tin xử lý (tracking/order#/email…) nhưng KHÔNG thấy số thẻ.
   if (masked) return {
@@ -1159,6 +1161,7 @@ app.post("/api/orders/:id/purchases", requireAuth, (req, res) => {
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới thêm thẻ" });
   const b = req.body || {};
+  if (cardLocked(b)) return res.status(423).json({ error: "Thẻ đang khóa — Admin cần nhập khóa thẻ trước khi cấp/sửa thẻ." });
   const id = newId("pur");
   db.prepare(`INSERT INTO purchases (id,order_id,card,amount,name,order_number,email,tracking,phone,zip,process_status,created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -1175,6 +1178,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(p.order_id);
   if (!canSeePurchases(req.user, o)) return res.status(403).json({ error: "Chỉ người nhận đơn mới sửa thẻ" });
   const b = req.body || {};
+  if (cardLocked(b)) return res.status(423).json({ error: "Thẻ đang khóa — Admin cần nhập khóa thẻ trước khi cấp/sửa thẻ." });
   const map = { card: "card", amount: "amount", name: "name", orderNumber: "order_number", email: "email",
     tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status" };
   // Must have a valid issued card before entering any other field.
@@ -1539,6 +1543,24 @@ app.get("/api/card-values", requireAuth, blockLister, (req, res) => {
   res.json({ cards: db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value!=''").all().map((r) => decCard(r.card_value)) });
 });
 
+// ── Khóa thẻ: trạng thái + mở khóa (nhập khóa bằng tay, chỉ giữ trong RAM, KHÔNG lưu đĩa) ──
+app.get("/api/cards/lock-status", requireAuth, (req, res) => {
+  res.json({ locked: !cardKeyLoaded(), configured: !!getSetting("cardKeyCheck", "") });
+});
+app.post("/api/cards/unlock", requireAdmin, (req, res) => {
+  const key = String((req.body || {}).key || "");
+  const token = getSetting("cardKeyCheck", "");
+  if (!token) {                                   // chưa từng đặt khóa → đặt lần đầu bằng khóa này
+    if (!loadKey(key)) return res.status(400).json({ error: "Khóa không hợp lệ (quá ngắn)." });
+    setSetting("cardKeyCheck", checkTokenFor(key));
+  } else if (!loadKey(key, token)) {              // đã có token → phải khớp
+    return res.status(400).json({ error: "Sai khóa — thẻ vẫn đang khóa." });
+  }
+  _cardReqCache = {}; _validCardsCache = { at: 0, set: null };   // reset cache để thẻ hiện lại đúng
+  try { refreshCardStats(); } catch {}
+  res.json({ ok: true, locked: false });
+});
+
 // Employee creates a request.
 app.post("/api/card-requests", requireAuth, blockLister, (req, res) => {
   const id = newId("req"), now = Date.now();
@@ -1563,6 +1585,7 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   const isOwner = r.requester_id === u.id;
   if (!isManager && !isOwner) return res.status(403).json({ error: "Không có quyền" });
   const b = req.body || {};
+  if (cardLocked(b)) return res.status(423).json({ error: "Thẻ đang khóa — Admin cần nhập khóa thẻ trước khi cấp thẻ." });
   // Chống gian lận: khi trạng thái hiện tại thuộc nhóm "thẻ hợp lệ" (vd Live/Sai bill) thì đã KHÓA —
   // nhân viên chỉ được đổi qua lại TRONG nhóm hợp lệ, không được chuyển sang nhóm khác (vd thẻ lỗi)
   // để né chỉ số đơn/thẻ. Nhóm thẻ lỗi/khác KHÔNG khóa (đổi sang hợp lệ thoải mái). Admin toàn quyền.
@@ -2436,8 +2459,8 @@ app.get(/^\/(?!api\/).*/, (req, res) => {
 // ── Mã hóa AT-REST cho thẻ: migrate 1 lần dữ liệu CŨ (plaintext → ciphertext) khi có khóa ──
 // Idempotent: giá trị đã mã hóa thì bỏ qua. Deterministic nên join/so khớp vẫn chạy sau migrate.
 function migrateEncryptCards() {
-  if (!cardKeySet()) {
-    console.log("[cards] ⚠️  ORDERHUB_CARD_KEY chưa đặt → thẻ đang lưu DẠNG THƯỜNG (chưa mã hóa). Đặt khóa trong .env để bật mã hóa.");
+  if (!cardKeyLoaded()) {
+    console.log("[cards] ⏭️  Chưa mở khóa → bỏ qua migrate (dữ liệu thẻ hiện có vẫn ở trạng thái đã mã hóa trước đó).");
     return;
   }
   let n = 0;
@@ -2458,6 +2481,22 @@ function migrateEncryptCards() {
   _validCardsCache = { at: 0, set: null };   // reset cache sau khi đổi giá trị thẻ
   console.log(n ? `[cards] 🔒 Đã mã hóa ${n} giá trị thẻ hiện có (at-rest).` : "[cards] 🔒 Mã hóa thẻ đã bật — không còn dữ liệu cũ cần mã hóa.");
 }
+// ── Khóa thẻ: nạp từ env nếu có (lần đầu / chế độ cũ), còn không thì CHỜ Admin nhập tay (an toàn) ──
+function initCardKey() {
+  const envKey = process.env.ORDERHUB_CARD_KEY || "";
+  const stored = getSetting("cardKeyCheck", "");   // token xác minh (KHÔNG phải khóa), lưu trên đĩa được
+  if (envKey) {
+    if (loadKey(envKey, stored || null)) {
+      if (!stored) setSetting("cardKeyCheck", checkTokenFor(envKey));   // lần đầu: lưu token để sau xác minh khóa nhập tay
+      console.log("[cards] 🔓 Khóa thẻ nạp từ môi trường (ORDERHUB_CARD_KEY đang có trên server).");
+    } else {
+      console.log("[cards] ❌ ORDERHUB_CARD_KEY không khớp khóa đã dùng → bỏ qua, chờ nhập tay.");
+    }
+  } else {
+    console.log("[cards] 🔒 CHƯA mở khóa — Admin nhập khóa qua web để xem/ghi thẻ (khóa KHÔNG lưu trên đĩa).");
+  }
+}
+initCardKey();
 migrateEncryptCards();
 
 // Tính sẵn các tổng hợp nặng ở nền → request không bao giờ phải quét toàn bảng.

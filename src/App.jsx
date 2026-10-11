@@ -3,6 +3,7 @@ import { api, getToken, setToken } from "./api.js";
 import { Button } from "./ui.jsx";
 import Notifications from "./Notifications.jsx";
 import Presence from "./Presence.jsx";
+import CardUnlock from "./CardUnlock.jsx";
 import Login from "./pages/Login.jsx";
 import Users from "./pages/Users.jsx";
 import Teams from "./pages/Teams.jsx";
@@ -254,6 +255,7 @@ export default function App() {
 
       {/* Content */}
       <main className="app-main" style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
+        <CardUnlock currentUser={user} />
         {page === "users"    && <Users teams={teams} />}
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}
