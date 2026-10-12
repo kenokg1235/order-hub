@@ -50,6 +50,9 @@ async function main() {
     if (allowed) {
       res.setHeader("Access-Control-Allow-Origin", ALLOW_ORIGIN);
       res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+      // Chrome Private Network Access: cho phép trang PUBLIC gọi tới địa chỉ LAN này.
+      res.setHeader("Access-Control-Allow-Private-Network", "true");
       res.setHeader("Vary", "Origin");
     }
     if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
