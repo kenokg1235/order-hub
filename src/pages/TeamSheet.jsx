@@ -118,6 +118,10 @@ export default function TeamSheet({ currentUser, teams }) {
   );
   const fMulti = (key, opts, searchable = false) => <MultiFilter options={opts} value={cf[key] || []} onChange={(v) => setF(key, v)} searchable={searchable} />;
 
+  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). p.card giờ là ciphertext.
+  const cardCiphers = useMemo(() => (orders || []).flatMap((o) => (o.purchases || []).map((p) => p && p.card)).filter(Boolean), [orders]);
+  const { text: cardText, rev } = useCardDecrypt(cardCiphers);
+
   const list = useMemo(() => {
     const T = (v) => String(v ?? "").toLowerCase();
     const s = q.trim().toLowerCase();
@@ -130,7 +134,7 @@ export default function TeamSheet({ currentUser, teams }) {
     else if (filter === "mine") arr = arr.filter((o) => o.claimedBy === currentUser.id);
     return arr.filter((o) => {
       if (s && ![o.orderNo, o.id, o.store, o.product, o.address, o.masterStatus, o.claimedName, o.note1, o.note2, o.note3, o.note4].some((v) => T(v).includes(s))
-            && !(o.purchases || []).some((p) => [p.card, p.name, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
+            && !(o.purchases || []).some((p) => [cardText(p.card), p.name, p.orderNumber, p.email, p.tracking, p.phone, p.zip].some((v) => T(v).includes(s)))) return false;
       if (cfa("masterStatus").length && !cfa("masterStatus").some((v) => v === "__empty" ? !o.masterStatus : o.masterStatus === v)) return false;
       if (cfa("store").length && !cfa("store").includes(o.store)) return false;
       if (!txt(o.orderNo, cf.id)) return false;
@@ -145,11 +149,13 @@ export default function TeamSheet({ currentUser, teams }) {
       if (!txt(o.staffNote, cf.staffNote)) return false;
       if (!txt(o.claimedName, cf.claimedName)) return false;
       for (const nf of ["note1", "note2", "note3", "note4"]) if (!txt(o[nf], cf[nf])) return false;
-      for (const pf of ["card", "amount", "name", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
+      // Lọc cột Thẻ theo SỐ THẬT (giải mã); các cột khác giữ nguyên.
+      if (cf.card && !(o.purchases || []).some((p) => T(cardText(p.card)).includes(T(cf.card)))) return false;
+      for (const pf of ["amount", "name", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
       if (cfa("procStatus").length && !cfa("procStatus").some((v) => v === "__empty" ? !(o.purchases || []).some((p) => p.processStatus) : (o.purchases || []).some((p) => p.processStatus === v))) return false;
       return true;
     });
-  }, [orders, filter, teamFilter, currentUser.id, q, cf]);
+  }, [orders, filter, teamFilter, currentUser.id, q, cf, rev]);
 
   // Optional sort by deadline (DD/MM). Empty deadlines always go last.
   const deadlineKey = (d) => { const m = String(d || "").match(/(\d{1,2})\s*\/\s*(\d{1,2})/); return m ? (+m[2]) * 100 + (+m[1]) : Infinity; };
@@ -256,9 +262,6 @@ export default function TeamSheet({ currentUser, teams }) {
       else setErr(e.message);
     }
   }
-  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). p.card giờ là ciphertext.
-  const cardCiphers = useMemo(() => (orders || []).flatMap((o) => (o.purchases || []).map((p) => p && p.card)).filter(Boolean), [orders]);
-  const { text: cardText } = useCardDecrypt(cardCiphers);
   async function removePurchase(p) {
     if (!confirm("Xóa thẻ/hàng này?")) return;
     try { await api.del(`/api/purchases/${p.id}`); delPur(p.orderId, p.id); } catch (e) { setErr(e.message); }

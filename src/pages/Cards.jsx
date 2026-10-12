@@ -55,18 +55,21 @@ export default function Cards({ currentUser }) {
   }, [monthsList, activeMonth]);
   const T = (v) => String(v ?? "").toLowerCase();
   const txt = (val, f) => !f || T(val).includes(T(f));
+  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). r.card giờ là ciphertext.
+  const cardCiphers = useMemo(() => reqs.map((r) => r.card).filter(Boolean), [reqs]);
+  const { text: cardText, rev } = useCardDecrypt(cardCiphers);
   const filtered = useMemo(() => reqs.filter((r) => {
     if (month && month !== "all" && (r.period || "") !== month) return false;
     if (cf.status === "__empty") { if (r.status) return false; }
     else if (cf.status && r.status !== cf.status) return false;
     if (!txt(r.code, cf.code)) return false;
-    if (!txt(r.card, cf.card)) return false;
+    if (!txt(cardText(r.card), cf.card)) return false;   // lọc theo SỐ THẬT (đã giải mã) — chạy khi ở LAN
     if (!txt(r.content, cf.content)) return false;
     if (!txt(r.requesterName, cf.requesterName)) return false;
     if (!txt(r.adminNote, cf.adminNote)) return false;
     if (!txt((r.stats?.orders || []).join(", "), cf.orders)) return false;
     return true;
-  }), [reqs, month, cf]);
+  }), [reqs, month, cf, rev]);
 
   // Phân trang 100 hàng/trang.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
@@ -123,9 +126,6 @@ export default function Cards({ currentUser }) {
     try { const { request } = await api.put(`/api/card-requests/${id}`, body); setReqs((p) => p.map((r) => r.id === id ? request : r)); }
     catch (e) { setErr(e.message); }
   }
-  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). r.card giờ là ciphertext.
-  const cardCiphers = useMemo(() => reqs.map((r) => r.card).filter(Boolean), [reqs]);
-  const { text: cardText } = useCardDecrypt(cardCiphers);
   // Cấp/sửa thẻ: số thật → mã hóa trong trình duyệt; mã đã có → giữ nguyên; không khóa → báo lỗi.
   async function saveCard(r, v) {
     const cur = cardText(r.card);
