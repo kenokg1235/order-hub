@@ -7,6 +7,8 @@ import { useImagePreview } from "../ImagePreview.jsx";
 import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
 import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
+import { useCardDecrypt } from "../useLanKey.js";
+import { prepareCardForSave } from "../cardKeyLan.js";
 
 // Sheet Con — team members process their divided orders. One order groups 1+ card
 // rows (purchases); order-level cells use rowSpan. Master status drives row colour.
@@ -240,9 +242,23 @@ export default function TeamSheet({ currentUser, teams }) {
   }
   async function addPurchase(o) { try { addPur(o.id, (await api.post(`/api/orders/${o.id}/purchases`, {})).purchase); } catch (e) { setErr(e.message); } }
   async function savePurchase(p, field, value) {
-    if (String(value) === String(p[field] ?? "")) return;
-    try { setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { [field]: value })).purchase); } catch (e) { setErr(e.message); }
+    try {
+      if (field === "card") {
+        const v = await prepareCardForSave(value);          // số thật → mã hóa; MÃ đã có → giữ nguyên
+        if (String(v) === String(p.card ?? "")) return;     // không đổi (so sánh ciphertext)
+        setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { card: v })).purchase);
+      } else {
+        if (String(value) === String(p[field] ?? "")) return;
+        setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { [field]: value })).purchase);
+      }
+    } catch (e) {
+      if (e.code === "NO_LAN_KEY") setErr("Cần khóa LAN (ở văn phòng) để nhập số thẻ thật — hoặc dán MÃ đã cấp.");
+      else setErr(e.message);
+    }
   }
+  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). p.card giờ là ciphertext.
+  const cardCiphers = useMemo(() => (orders || []).flatMap((o) => (o.purchases || []).map((p) => p && p.card)).filter(Boolean), [orders]);
+  const { text: cardText } = useCardDecrypt(cardCiphers);
   async function removePurchase(p) {
     if (!confirm("Xóa thẻ/hàng này?")) return;
     try { await api.del(`/api/purchases/${p.id}`); delPur(p.orderId, p.id); } catch (e) { setErr(e.message); }
@@ -551,7 +567,8 @@ export default function TeamSheet({ currentUser, teams }) {
                       <input className="input" style={{ padding: "4px 6px", width: 130,
                         borderColor: p.card && !p.cardValid ? "var(--red)" : undefined,
                         background: p.card && !p.cardValid ? "var(--red-bg)" : undefined }}
-                        defaultValue={p.card} title={p.card && !p.cardValid ? "Thẻ chưa được cấp trong Sheet Mua thẻ" : ""}
+                        key={"pc" + p.id + "|" + cardText(p.card)} defaultValue={cardText(p.card)}
+                        placeholder="Dán MÃ hoặc nhập thẻ…" title={p.card && !p.cardValid ? "Thẻ chưa được cấp trong Sheet Mua thẻ" : ""}
                         {...cellProps("Thẻ", (v) => savePurchase(p, "card", v))} />
                       {p.card && !p.cardValid && <div style={{ color: "var(--red)", fontSize: 10 }}>✗ chưa cấp</div>}
                       {locked && !p.card && <div className="muted" style={{ fontSize: 10 }}>Nhập thẻ để mở các ô →</div>}

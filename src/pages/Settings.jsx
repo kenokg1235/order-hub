@@ -49,6 +49,8 @@ export default function Settings() {
 
       <CleanupEditor months={s.retentionMonths ?? 2} onSaveMonths={(v) => saveList("retentionMonths", v)} />
 
+      <LanKeyEditor url={s.lanKeyUrl || ""} onSave={(v) => saveList("lanKeyUrl", v)} />
+
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
         card={[...new Set([...(s.cardStatuses || []), ...(s.cardCountStatuses || []), ...(s.cardErrorStatuses || [])])]}
         colors={s.statusColors || {}} onSave={(m) => saveList("statusColors", m)} />
@@ -159,6 +161,37 @@ function CleanupEditor({ months, onSaveMonths }) {
       </div>
 
       <Button variant="danger" disabled={busy} onClick={run}>{busy ? "Đang dọn…" : "🧹 Dọn dữ liệu đã chọn"}</Button>
+      {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
+    </div>
+  );
+}
+
+function LanKeyEditor({ url, onSave }) {
+  const [v, setV] = useState(url);
+  const [msg, setMsg] = useState("");
+  useEffect(() => setV(url), [url]);
+  async function test() {
+    setMsg("Đang kiểm tra…");
+    try {
+      const base = String(v || "").replace(/\/+$/, "");
+      const r = await fetch(base + "/ping", { cache: "no-store" });
+      setMsg((await r.text()).trim() === "ok" ? "✅ Kết nối được dịch vụ khóa LAN (bạn đang ở văn phòng)." : "⚠️ Phản hồi lạ — kiểm tra lại địa chỉ.");
+    } catch { setMsg("❌ Không kết nối được (không ở LAN, dịch vụ chưa chạy, hoặc chưa cài chứng chỉ CA)."); }
+  }
+  return (
+    <div className="card" style={{ marginBottom: 16, borderColor: "var(--primary)" }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>🔐 Dịch vụ khóa thẻ (LAN)</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        Địa chỉ dịch vụ khóa chạy trên máy Admin trong văn phòng. Trình duyệt lấy khóa từ đây để
+        <b> xem/cấp số thẻ thật</b>. Ngoài LAN (hoặc dịch vụ tắt) → thẻ hiện <b>🔒</b>, chỉ dán được mã.
+        Vd: <code>https://192.168.100.44:8443</code>
+      </div>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <input className="input" style={{ flex: 1, minWidth: 260 }} value={v} placeholder="https://192.168.x.x:8443"
+          onChange={(e) => setV(e.target.value)} />
+        <Button onClick={test}>Kiểm tra</Button>
+        <Button variant="primary" onClick={() => { onSave(String(v || "").trim()); setMsg("Đã lưu ✓ (tải lại trang để áp dụng)"); }}>Lưu</Button>
+      </div>
       {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
     </div>
   );

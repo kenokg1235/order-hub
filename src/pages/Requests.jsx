@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
+import { useCardDecrypt } from "../useLanKey.js";
 
 // Sheet Yêu cầu thẻ — each employee sees only their own requests + the card issued back.
 export default function Requests({ currentUser }) {
@@ -86,6 +87,10 @@ export default function Requests({ currentUser }) {
     try { await api.del(`/api/card-requests/${id}`); load(); } catch (e) { setErr(e.message); }
   }
 
+  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). r.card giờ là ciphertext.
+  const cardCiphers = useMemo(() => reqs.map((r) => r.card).filter(Boolean), [reqs]);
+  const { text: cardText } = useCardDecrypt(cardCiphers);
+
   const totals = reqs.reduce((a, r) => ({
     completed: a.completed + (r.stats?.completed || 0),
     profit: a.profit + (r.stats?.profit || 0),
@@ -143,9 +148,9 @@ export default function Requests({ currentUser }) {
             <div className="row" style={{ gap: 6 }}>
               <span className="muted">Thẻ được cấp:</span>
               {r.card ? <>
-                <Badge color="green">{r.card}</Badge>
-                <button className="btn sm" onClick={() => copyCard(r.card)} title="Copy thẻ để dán vào Sheet Con">
-                  {copied === String(r.card).trim() ? "✓ Đã copy" : "📋 Copy"}
+                <Badge color="green">{cardText(r.card)}</Badge>
+                <button className="btn sm" onClick={() => copyCard(r.card)} title="Copy MÃ (dạng mã hóa) để dán vào Sheet Con">
+                  {copied === String(r.card).trim() ? "✓ Đã copy" : "📋 Copy mã"}
                 </button>
               </> : <span className="muted">Chưa cấp</span>}
             </div>

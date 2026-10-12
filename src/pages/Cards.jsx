@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Badge, Button } from "../ui.jsx";
 import { api } from "../api.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
+import { useCardDecrypt } from "../useLanKey.js";
+import { prepareCardForSave } from "../cardKeyLan.js";
 
 // Sheet Mua thẻ — Admin + card-buyers issue cards against requests and see stats.
 export default function Cards({ currentUser }) {
@@ -121,6 +123,16 @@ export default function Cards({ currentUser }) {
     try { const { request } = await api.put(`/api/card-requests/${id}`, body); setReqs((p) => p.map((r) => r.id === id ? request : r)); }
     catch (e) { setErr(e.message); }
   }
+  // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). r.card giờ là ciphertext.
+  const cardCiphers = useMemo(() => reqs.map((r) => r.card).filter(Boolean), [reqs]);
+  const { text: cardText } = useCardDecrypt(cardCiphers);
+  // Cấp/sửa thẻ: số thật → mã hóa trong trình duyệt; mã đã có → giữ nguyên; không khóa → báo lỗi.
+  async function saveCard(r, v) {
+    const cur = cardText(r.card);
+    if (v === cur) return;
+    try { update(r.id, { card: await prepareCardForSave(v) }); }
+    catch (e) { if (e.code === "NO_LAN_KEY") setErr("Cần ở văn phòng (có khóa LAN) để cấp số thẻ thật — hoặc dán MÃ đã cấp."); else setErr(e.message); }
+  }
 
   // Cộng theo TỪNG THẺ (distinct card_value) — tránh nhân đôi khi 1 thẻ xuất hiện ở nhiều dòng yêu cầu.
   const { totalProfit, totalBalance } = useMemo(() => {
@@ -185,10 +197,11 @@ export default function Cards({ currentUser }) {
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
                   <div className="row" style={{ gap: 4 }}>
-                    <input className="input" style={{ padding: "5px 8px", width: 160 }} defaultValue={r.card}
-                      placeholder="Nhập thẻ cấp…" {...cellProps("Thẻ", (v) => { if (v !== r.card) update(r.id, { card: v }); })} />
-                    {r.card && <button className="btn sm" title="Copy thẻ" onClick={() => copyCard(r)} style={{ whiteSpace: "nowrap" }}>
-                      {copiedId === r.id ? "✓" : "📋"}
+                    <input key={"c" + r.id + "|" + cardText(r.card)} className="input" style={{ padding: "5px 8px", width: 160 }}
+                      defaultValue={cardText(r.card)}
+                      placeholder="Nhập thẻ cấp…" {...cellProps("Thẻ", (v) => saveCard(r, v))} />
+                    {r.card && <button className="btn sm" title="Copy MÃ (dạng mã hóa) để dán vào Sheet Con" onClick={() => copyCard(r)} style={{ whiteSpace: "nowrap" }}>
+                      {copiedId === r.id ? "✓" : "📋 mã"}
                     </button>}
                   </div>
                 </td>
