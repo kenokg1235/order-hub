@@ -60,7 +60,7 @@ export default function Requests({ currentUser }) {
     const t = setInterval(async () => {
       if (document.hidden) return;
       try { const r = await api.get(`/api/card-requests?month=${encodeURIComponent(month)}`); setReqs(r.requests); if (r.months) setMonthsList(r.months); } catch {}
-    }, 30000);
+    }, 10000);
     return () => clearInterval(t);
   }, [month]);
 

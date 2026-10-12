@@ -118,7 +118,7 @@ export default function Cards({ currentUser }) {
           return r.requests.map((f) => (editingId && String(f.id) === editingId && byId.has(f.id)) ? byId.get(f.id) : f);
         });
       } catch {}
-    }, 30000);
+    }, 10000);
     return () => clearInterval(t);
   }, [month]);
 
