@@ -3,7 +3,8 @@ import { api, getToken, setToken } from "./api.js";
 import { Button } from "./ui.jsx";
 import Notifications from "./Notifications.jsx";
 import Presence from "./Presence.jsx";
-import { initLanKey } from "./cardKeyLan.js";
+import { initLanKey, setCheckToken, computeCheckToken, tryRestoreManualKey } from "./cardKeyLan.js";
+import CardKeyEntry from "./CardKeyEntry.jsx";
 import Login from "./pages/Login.jsx";
 import Users from "./pages/Users.jsx";
 import Teams from "./pages/Teams.jsx";
@@ -130,7 +131,17 @@ export default function App() {
     try {
       const s = (await api.get("/api/settings")).settings || {};
       setProxyHidden(s.proxyHiddenTeams || []);
-      initLanKey(s.lanKeyUrl || "");   // lấy khóa thẻ từ dịch vụ LAN (chỉ thành công khi ở văn phòng + dịch vụ chạy)
+      setCheckToken(s.cardKeyCheck || "");   // token xác minh khóa nhập tay (Cách B), không bí mật
+      const ok = await initLanKey(s.lanKeyUrl || "");   // khóa từ dịch vụ LAN (chỉ được khi ở văn phòng + dịch vụ chạy)
+      if (ok) {
+        // Máy văn phòng (Admin) có khóa LAN → nếu chưa có token xác minh thì tính & lưu để remote dùng Cách B.
+        if (!s.cardKeyCheck && user?.role === "Admin") {
+          const t = await computeCheckToken();
+          if (t) { try { await api.put("/api/settings/cardKeyCheck", { value: t }); setCheckToken(t); } catch {} }
+        }
+      } else {
+        await tryRestoreManualKey();   // làm từ xa: khôi phục khóa đã nhập tay trong phiên này
+      }
     } catch {}
   }
   // Lấy lại thông tin user (vd khi Lister tự thêm store mới → cập nhật storeNames).
@@ -259,6 +270,7 @@ export default function App() {
 
       {/* Content */}
       <main className="app-main" style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
+        <CardKeyEntry currentUser={user} />
         {page === "users"    && <Users teams={teams} />}
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}

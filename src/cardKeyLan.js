@@ -64,3 +64,52 @@ export async function prepareCardForSave(input) {
   if (!_ready || !_cipher) { const e = new Error("NO_LAN_KEY"); e.code = "NO_LAN_KEY"; throw e; }
   return _cipher.encCard(v);
 }
+
+// ───────────────── CÁCH B: nhập khóa thẻ THỦ CÔNG trên trình duyệt (làm từ xa) ─────────────────
+// Khóa chỉ nằm trong RAM phiên này (sessionStorage, xóa khi đóng trình duyệt), KHÔNG gửi VPS, KHÔNG lưu đĩa.
+// Có xác minh bằng "token kiểm tra" (= mã hóa tất định một chuỗi cố định bằng khóa đúng, lưu ở settings,
+// KHÔNG bí mật) để chặn nhập sai khóa làm hỏng/ghi lệch dữ liệu thẻ.
+const CHECK_PLAIN = "orderhub-card-key-check-v1";
+const SS_KEY = "oh.ck";                    // tên mục trong sessionStorage
+let _checkToken = "";                       // token kiểm tra lấy từ settings.cardKeyCheck
+let _manual = false;                        // khóa hiện tại do nhập tay (để biết có thể gỡ)
+
+export function setCheckToken(t) { _checkToken = String(t || ""); }
+export function hasCheckToken() { return !!_checkToken; }
+export function isManualKey() { return _manual; }
+
+// Máy VĂN PHÒNG (có khóa LAN) tính token kiểm tra để Admin lưu lên settings cho remote verify.
+export async function computeCheckToken() {
+  if (!_cipher) return "";
+  try { return await _cipher.encCard(CHECK_PLAIN); } catch { return ""; }
+}
+
+// Nhập khóa tay. Bắt buộc có token kiểm tra + khớp mới chấp nhận (an toàn tuyệt đối với dữ liệu).
+export async function setManualKey(key) {
+  const k = String(key || "").trim();
+  if (k.length < 8) return { ok: false, error: "Khóa không hợp lệ (quá ngắn)." };
+  if (!_checkToken) return { ok: false, error: "Chưa thiết lập xác minh — cần mở thẻ ở văn phòng (máy Admin) một lần trước." };
+  let cipher, t = "";
+  try { cipher = await makeCardCipher(k); t = await cipher.encCard(CHECK_PLAIN); } catch { return { ok: false, error: "Khóa không hợp lệ." }; }
+  if (t !== _checkToken) return { ok: false, error: "Sai khóa thẻ." };
+  _cipher = cipher; _ready = true; _manual = true; _cache.clear();
+  try { sessionStorage.setItem(SS_KEY, k); } catch {}
+  emit();
+  return { ok: true };
+}
+
+// GỠ KHÓA tức thì: xóa khỏi RAM + sessionStorage → thẻ khóa lại ngay. Dùng khi rời máy/nghi ngờ.
+export function clearManualKey() {
+  _cipher = null; _ready = false; _manual = false; _cache.clear();
+  try { sessionStorage.removeItem(SS_KEY); } catch {}
+  emit();
+}
+
+// Khôi phục khóa tay đã nhập trong PHIÊN này (khi LAN không có) — gọi lúc khởi động nếu chưa ready.
+export async function tryRestoreManualKey() {
+  if (_ready) return true;
+  let k = ""; try { k = sessionStorage.getItem(SS_KEY) || ""; } catch {}
+  if (!k) return false;
+  const r = await setManualKey(k);
+  return r.ok;
+}
