@@ -49,7 +49,8 @@ export default function Settings() {
 
       <CleanupEditor months={s.retentionMonths ?? 2} onSaveMonths={(v) => saveList("retentionMonths", v)} />
 
-      <LanKeyEditor url={s.lanKeyUrl || ""} onSave={(v) => saveList("lanKeyUrl", v)} />
+      <LanKeyEditor url={s.lanKeyUrl || ""} onSave={(v) => saveList("lanKeyUrl", v)}
+        label={s.cardKeyLabel || "Key"} onSaveLabel={(v) => saveList("cardKeyLabel", v)} />
 
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
         card={[...new Set([...(s.cardStatuses || []), ...(s.cardCountStatuses || []), ...(s.cardErrorStatuses || [])])]}
@@ -166,10 +167,13 @@ function CleanupEditor({ months, onSaveMonths }) {
   );
 }
 
-function LanKeyEditor({ url, onSave }) {
+function LanKeyEditor({ url, onSave, label, onSaveLabel }) {
   const [v, setV] = useState(url);
   const [msg, setMsg] = useState("");
+  const [lbl, setLbl] = useState(label);
+  const [lblMsg, setLblMsg] = useState("");
   useEffect(() => setV(url), [url]);
+  useEffect(() => setLbl(label), [label]);
   async function test() {
     setMsg("Đang kiểm tra…");
     try {
@@ -193,6 +197,19 @@ function LanKeyEditor({ url, onSave }) {
         <Button variant="primary" onClick={() => { onSave(String(v || "").trim()); setMsg("Đã lưu ✓ (tải lại trang để áp dụng)"); }}>Lưu</Button>
       </div>
       {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
+
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 14, paddingTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Nhãn ô nhập khóa (làm từ xa)</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Chữ hiển thị cạnh ô nhập khóa cho người làm từ xa. Để ngắn gọn, kín đáo (mặc định “Key”).
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input className="input" style={{ maxWidth: 200 }} value={lbl} placeholder="Key"
+            onChange={(e) => setLbl(e.target.value)} />
+          <Button variant="primary" onClick={() => { onSaveLabel(String(lbl || "").trim() || "Key"); setLblMsg("Đã lưu ✓ (tải lại trang để áp dụng)"); }}>Lưu</Button>
+        </div>
+        {lblMsg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{lblMsg}</div>}
+      </div>
     </div>
   );
 }

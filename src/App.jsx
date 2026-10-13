@@ -124,6 +124,7 @@ export default function App() {
   }, []);
 
   const [proxyHidden, setProxyHidden] = useState([]);
+  const [cardKeyLabel, setCardKeyLabel] = useState("Key");
   async function loadTeams() {
     try { setTeams((await api.get("/api/teams")).teams); } catch {}
   }
@@ -131,6 +132,7 @@ export default function App() {
     try {
       const s = (await api.get("/api/settings")).settings || {};
       setProxyHidden(s.proxyHiddenTeams || []);
+      setCardKeyLabel(s.cardKeyLabel || "Key");
       setCheckToken(s.cardKeyCheck || "");   // token xác minh khóa nhập tay (Cách B), không bí mật
       const ok = await initLanKey(s.lanKeyUrl || "");   // khóa từ dịch vụ LAN (chỉ được khi ở văn phòng + dịch vụ chạy)
       if (ok) {
@@ -270,7 +272,7 @@ export default function App() {
 
       {/* Content */}
       <main className="app-main" style={{ flex: 1, overflowY: "auto", padding: "22px 26px" }}>
-        <CardKeyEntry currentUser={user} />
+        <CardKeyEntry currentUser={user} label={cardKeyLabel} />
         {page === "users"    && <Users teams={teams} />}
         {page === "teams"    && <Teams teams={teams} reloadTeams={loadTeams} />}
         {page === "stores"   && <Stores />}

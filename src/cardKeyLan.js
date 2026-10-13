@@ -87,11 +87,11 @@ export async function computeCheckToken() {
 // Nhập khóa tay. Bắt buộc có token kiểm tra + khớp mới chấp nhận (an toàn tuyệt đối với dữ liệu).
 export async function setManualKey(key) {
   const k = String(key || "").trim();
-  if (k.length < 8) return { ok: false, error: "Khóa không hợp lệ (quá ngắn)." };
-  if (!_checkToken) return { ok: false, error: "Chưa thiết lập xác minh — cần mở thẻ ở văn phòng (máy Admin) một lần trước." };
+  if (k.length < 8) return { ok: false, error: "Không hợp lệ" };
+  if (!_checkToken) return { ok: false, error: "Chưa sẵn sàng" };
   let cipher, t = "";
-  try { cipher = await makeCardCipher(k); t = await cipher.encCard(CHECK_PLAIN); } catch { return { ok: false, error: "Khóa không hợp lệ." }; }
-  if (t !== _checkToken) return { ok: false, error: "Sai khóa thẻ." };
+  try { cipher = await makeCardCipher(k); t = await cipher.encCard(CHECK_PLAIN); } catch { return { ok: false, error: "Không hợp lệ" }; }
+  if (t !== _checkToken) return { ok: false, error: "Sai" };
   _cipher = cipher; _ready = true; _manual = true; _cache.clear();
   try { sessionStorage.setItem(SS_KEY, k); } catch {}
   emit();
