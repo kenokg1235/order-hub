@@ -23,11 +23,61 @@ export function extractEbayImage(html) {
   return bigThumb(url); // light thumbnail
 }
 
-// Ảnh THEO BIẾN THỂ (màu): với listing nhiều variant, tìm URL ảnh eBay ở GẦN tên màu nhất
-// trong HTML (khối dữ liệu biến thể thường để tên màu cạnh ảnh riêng). Không thấy đủ gần → "" (dùng ảnh mặc định).
+// So khớp tên màu: bỏ hoa/thường + khoảng trắng + dấu để "Multi-Color" == "Multi Color".
+const squeezeColor = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// ebayPictureUrl (…/z/<imageId>/$_57.JPG) → thumbnail chuẩn i.ebayimg.com/images/g/<id>/s-l500.jpg
+function picToThumb(picUrl) {
+  if (!picUrl) return "";
+  const m = picUrl.match(/\/z\/([^/]+)\//) || picUrl.match(/\/g\/([^/]+)\//);
+  return m ? `https://i.ebayimg.com/images/g/${m[1]}/s-l500.jpg` : bigThumb(picUrl);
+}
+
+// Dữ liệu biến thể eBay hiện đại: tên màu → matchingVariationIds (menuItemMap),
+// và mỗi variationId → ảnh riêng (photosWithAltText). Đây là map CHÍNH XÁC (không đoán).
+function colorMenuItems(html) {
+  const out = [];
+  const re = /"valueName":"([^"]+)","displayName":"[^"]*","matchingVariationIds":\[([0-9,]+)\]/g;
+  let m; while ((m = re.exec(html))) out.push({ name: m[1], ids: m[2].split(",") });
+  return out;
+}
+function variationImageMap(html) {
+  const map = new Map();
+  const re = /"variationId":"(\d+)"[\s\S]{0,400}?"ebayPictureUrl":"([^"]+)"/g;
+  let m; while ((m = re.exec(html))) if (!map.has(m[1])) map.set(m[1], m[2]);
+  return map;
+}
+function matchColorItem(items, color) {
+  const sq = squeezeColor(color);
+  if (sq.length < 2) return null;
+  let hit = items.find((x) => squeezeColor(x.name) === sq);                 // khớp đúng
+  if (hit) return hit;
+  // tên màu là PHẦN ĐẦU của chuỗi order (order kèm size…) → tên dài nhất (cụ thể nhất)
+  const nameStarts = items.filter((x) => { const xn = squeezeColor(x.name); return xn.length >= 4 && sq.startsWith(xn); })
+    .sort((a, b) => squeezeColor(b.name).length - squeezeColor(a.name).length);
+  if (nameStarts.length) return nameStarts[0];
+  // order là PHẦN ĐẦU của tên màu (viết tắt) → chỉ nhận khi DUY NHẤT (tránh mơ hồ "Blue")
+  const qStarts = items.filter((x) => sq.length >= 4 && squeezeColor(x.name).startsWith(sq));
+  return qStarts.length === 1 ? qStarts[0] : null;
+}
+
+// Ảnh THEO BIẾN THỂ (màu). Ưu tiên map chính xác từ dữ liệu biến thể; không có (listing kiểu cũ)
+// → dự phòng heuristic "ảnh gần tên màu nhất". Không chắc → "" (để dùng ảnh mặc định).
 export function extractVariantImage(html, color) {
   const c = String(color || "").trim();
   if (!c || !html) return "";
+  // 1) Map chính xác (eBay hiện đại). Nếu listing CÓ dữ liệu biến thể thì đây là nguồn
+  //    có thẩm quyền: khớp được → trả ảnh đúng; không khớp → "" (dùng ảnh mặc định),
+  //    KHÔNG đoán mò bằng heuristic (tránh gắn nhầm ảnh biến thể khác).
+  const items = colorMenuItems(html);
+  if (items.length) {
+    const hit = matchColorItem(items, c);
+    if (!hit) return "";
+    const imgMap = variationImageMap(html);
+    for (const id of hit.ids) { const u = imgMap.get(id); if (u) return picToThumb(u); }
+    return "";
+  }
+  // 2) Listing kiểu CŨ (không có dữ liệu biến thể): ảnh ở GẦN tên màu nhất (chỉ nhận khi đủ gần)
   const imgRe = /https?:\/\/i\.ebayimg\.com\/images\/g\/[^"'\s\\]+\/s-l\d+\.(?:jpg|jpeg|png|webp)/ig;
   const imgs = []; let m;
   while ((m = imgRe.exec(html))) imgs.push({ url: m[0], pos: m.index });
@@ -38,7 +88,7 @@ export function extractVariantImage(html, color) {
   while ((cm = colorRe.exec(html))) {
     for (const im of imgs) { const d = Math.abs(im.pos - cm.index); if (d < bestDist) { bestDist = d; best = im.url; } }
   }
-  return (best && bestDist <= 1500) ? bigThumb(best) : "";   // chỉ nhận khi ảnh đủ gần tên màu
+  return (best && bestDist <= 1500) ? bigThumb(best) : "";
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
