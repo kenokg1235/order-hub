@@ -414,11 +414,16 @@ function imageOfSameItem(itemNumber, colorK, excludeId) {
   return "";
 }
 // Vừa có ảnh cho 1 màu → gán cho các đơn CÙNG sản phẩm & CÙNG màu đang thiếu ảnh (không đụng màu khác).
-function propagateImage(itemNumber, colorK, url, excludeId) {
+// Gán ảnh cho các đơn CÙNG sản phẩm & CÙNG màu. Mặc định chỉ điền đơn còn THIẾU ảnh;
+// overwrite=true → ghi đè cả đơn đã có ảnh (dùng khi "lấy lại ảnh" để sửa ảnh sai hàng loạt).
+function propagateImage(itemNumber, colorK, url, excludeId, overwrite = false) {
   if (!itemNumber || !url) return 0;
   let n = 0;
   const upd = db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?");
-  for (const o of db.prepare("SELECT id, raw, link, size FROM orders WHERE image=''").all()) {
+  const rows = overwrite
+    ? db.prepare("SELECT id, raw, link, size FROM orders").all()
+    : db.prepare("SELECT id, raw, link, size FROM orders WHERE image=''").all();
+  for (const o of rows) {
     if (o.id === excludeId) continue;
     if (itemNoOf(o) === itemNumber && imgKey(o.size) === colorK) { upd.run(url, Date.now(), o.id); n++; }
   }
@@ -554,16 +559,19 @@ app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   if (!canEditMasterOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   const itNo = itemNoOf(o), colorK = imgKey(o.size);
-  // Cùng sản phẩm & cùng màu đã có ảnh → dùng lại ngay, không gọi eBay.
-  const reuse = imageOfSameItem(itNo, colorK, o.id);
-  if (reuse) {
-    db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), o.id);
-    return res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)), blocked: false, error: "" });
+  const force = !!(req.body && req.body.force);   // "lấy lại ảnh": bỏ qua cache, gọi thẳng eBay để sửa ảnh sai
+  // Cùng sản phẩm & cùng màu đã có ảnh → dùng lại ngay, không gọi eBay (trừ khi ép lấy lại).
+  if (!force) {
+    const reuse = imageOfSameItem(itNo, colorK, o.id);
+    if (reuse) {
+      db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(reuse, Date.now(), o.id);
+      return res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)), blocked: false, error: "" });
+    }
   }
   const { url, blocked } = await fetchEbayImage(itNo, { color: colorFromSize(o.size) });
   if (url) {
     db.prepare("UPDATE orders SET image=?, updated_at=? WHERE id=?").run(url, Date.now(), o.id);
-    propagateImage(itNo, colorK, url, o.id);
+    propagateImage(itNo, colorK, url, o.id, force);   // ép lấy lại → ghi đè cả đơn cùng sản phẩm+màu
   }
   res.json({ order: orderOut(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id)),
     blocked: !!blocked, error: url ? "" : (blocked ? "eBay đang chặn lấy ảnh — thử lại sau" : "Không tìm thấy ảnh cho đơn này") });

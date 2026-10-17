@@ -158,9 +158,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
       if (r.imageSpread > 0) { setErr(`✓ Đã gán ảnh cho ${r.imageSpread} đơn khác cùng sản phẩm.`); loadOrders(month); }
     } catch (e) { setErr(e.message); }
   }
-  async function fetchOneImage(id) {
+  async function fetchOneImage(id, force = false) {
     try {
-      const r = await api.post(`/api/orders/${id}/fetch-image`, {});
+      const r = await api.post(`/api/orders/${id}/fetch-image`, force ? { force: true } : {});
       const order = r.order;
       if (r.error) setErr(r.error); else setErr("");
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...order } : o)));
@@ -609,6 +609,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
                           {...previewProps(o.image)} />
                       </a>
                       {!ro && <div className="row" style={{ gap: 3, marginTop: 3 }}>
+                        <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Lấy lại ảnh đúng biến thể (sửa ảnh sai) — áp cho cả đơn cùng sản phẩm+màu" onClick={() => fetchOneImage(o.id, true)}>🖼️</button>
                         <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Dán link ảnh khác" onClick={() => setImageManual(o)}>✎</button>
                         <button className="btn sm" style={{ padding: "1px 6px", fontSize: 11 }} title="Xóa ảnh" onClick={() => patch(o.id, { image: "" })}>✕</button>
                       </div>}
