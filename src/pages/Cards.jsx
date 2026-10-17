@@ -58,6 +58,9 @@ export default function Cards({ currentUser }) {
   // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). r.card giờ là ciphertext.
   const cardCiphers = useMemo(() => reqs.map((r) => r.card).filter(Boolean), [reqs]);
   const { text: cardText, rev } = useCardDecrypt(cardCiphers);
+  // "🔒"/"…" chỉ là glyph hiển thị khi chưa giải mã — không phải nội dung sửa được.
+  const isLockedText = (t) => t === "🔒" || t === "…";
+  const cardCellValue = (r) => { const t = cardText(r && r.card); return isLockedText(t) ? "" : t; };
   const filtered = useMemo(() => reqs.filter((r) => {
     if (month && month !== "all" && (r.period || "") !== month) return false;
     if (cf.status === "__empty") { if (r.status) return false; }
@@ -128,9 +131,11 @@ export default function Cards({ currentUser }) {
   }
   // Cấp/sửa thẻ: số thật → mã hóa trong trình duyệt; mã đã có → giữ nguyên; không khóa → báo lỗi.
   async function saveCard(r, v) {
-    const cur = cardText(r.card);
-    if (v === cur) return;
-    try { update(r.id, { card: await prepareCardForSave(v) }); }
+    const raw = String(v || "").trim();
+    // Ô đang KHÓA (không key) để trống → đừng xóa thẻ đã cấp (ô trống chỉ là chỗ dán MÃ mới).
+    if (raw === "" && r.card && isLockedText(cardText(r.card))) return;
+    if (raw === cardText(r.card)) return;
+    try { update(r.id, { card: await prepareCardForSave(raw) }); }
     catch (e) { if (e.code === "NO_LAN_KEY") setErr("Cần ở văn phòng (có khóa LAN) để cấp số thẻ thật — hoặc dán MÃ đã cấp."); else setErr(e.message); }
   }
 
@@ -197,9 +202,9 @@ export default function Cards({ currentUser }) {
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
                   <div className="row" style={{ gap: 4 }}>
-                    <input key={"c" + r.id + "|" + cardText(r.card)} className="input" style={{ padding: "5px 8px", width: 160 }}
-                      defaultValue={cardText(r.card)}
-                      placeholder="Nhập thẻ cấp…" {...cellProps("Thẻ", (v) => saveCard(r, v))} />
+                    <input key={"c" + r.id + "|" + (r.card || "")} className="input" style={{ padding: "5px 8px", width: 160 }}
+                      defaultValue={cardCellValue(r)}
+                      placeholder={r.card && isLockedText(cardText(r.card)) ? "🔒 Đã cấp — dán MÃ để đổi" : "Nhập thẻ cấp…"} {...cellProps("Thẻ", (v) => saveCard(r, v))} />
                     {r.card && <button className="btn sm" title="Copy MÃ (dạng mã hóa) để dán vào Sheet Con" onClick={() => copyCard(r)} style={{ whiteSpace: "nowrap" }}>
                       {copiedId === r.id ? "✓" : "📋 mã"}
                     </button>}

@@ -121,6 +121,10 @@ export default function TeamSheet({ currentUser, teams }) {
   // Giải mã thẻ phía trình duyệt (chỉ khi ở LAN + có khóa). p.card giờ là ciphertext.
   const cardCiphers = useMemo(() => (orders || []).flatMap((o) => (o.purchases || []).map((p) => p && p.card)).filter(Boolean), [orders]);
   const { text: cardText, rev } = useCardDecrypt(cardCiphers);
+  // "🔒"/"…" là GLYPH hiển thị khi chưa giải mã được, KHÔNG phải nội dung sửa được.
+  const isLockedText = (t) => t === "🔒" || t === "…";
+  // Giá trị ĐƯA VÀO ô nhập: nếu đang khóa (không key) thì để TRỐNG (tránh dán MÃ bị dính "🔒" phía trước).
+  const cardCellValue = (p) => { const t = cardText(p && p.card); return isLockedText(t) ? "" : t; };
 
   const list = useMemo(() => {
     const T = (v) => String(v ?? "").toLowerCase();
@@ -250,7 +254,10 @@ export default function TeamSheet({ currentUser, teams }) {
   async function savePurchase(p, field, value) {
     try {
       if (field === "card") {
-        const v = await prepareCardForSave(value);          // số thật → mã hóa; MÃ đã có → giữ nguyên
+        const raw = String(value || "").trim();
+        // Ô đang KHÓA (không key) để trống → đừng xóa thẻ cũ (ô trống chỉ là chỗ dán MÃ mới).
+        if (raw === "" && p.card && isLockedText(cardText(p.card))) return;
+        const v = await prepareCardForSave(raw);            // MÃ đã có → giữ nguyên; số thật → mã hóa (cần key)
         if (String(v) === String(p.card ?? "")) return;     // không đổi (so sánh ciphertext)
         setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { card: v })).purchase);
       } else {
@@ -570,8 +577,9 @@ export default function TeamSheet({ currentUser, teams }) {
                       <input className="input" style={{ padding: "4px 6px", width: 130,
                         borderColor: p.card && !p.cardValid ? "var(--red)" : undefined,
                         background: p.card && !p.cardValid ? "var(--red-bg)" : undefined }}
-                        key={"pc" + p.id + "|" + cardText(p.card)} defaultValue={cardText(p.card)}
-                        placeholder="Dán MÃ hoặc nhập thẻ…" title={p.card && !p.cardValid ? "Thẻ chưa được cấp trong Sheet Mua thẻ" : ""}
+                        key={"pc" + p.id + "|" + (p.card || "")} defaultValue={cardCellValue(p)}
+                        placeholder={p.card && isLockedText(cardText(p.card)) ? "🔒 Đã có thẻ — dán MÃ để đổi" : "Dán MÃ hoặc nhập thẻ…"}
+                        title={p.card && !p.cardValid ? "Thẻ chưa được cấp trong Sheet Mua thẻ" : ""}
                         {...cellProps("Thẻ", (v) => savePurchase(p, "card", v))} />
                       {p.card && !p.cardValid && <div style={{ color: "var(--red)", fontSize: 10 }}>✗ chưa cấp</div>}
                       {locked && !p.card && <div className="muted" style={{ fontSize: 10 }}>Nhập thẻ để mở các ô →</div>}
