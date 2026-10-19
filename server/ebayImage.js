@@ -33,11 +33,14 @@ function picToThumb(picUrl) {
   return m ? `https://i.ebayimg.com/images/g/${m[1]}/s-l500.jpg` : bigThumb(picUrl);
 }
 
-// Dữ liệu biến thể eBay hiện đại: tên màu → matchingVariationIds (menuItemMap),
-// và mỗi variationId → ảnh riêng (photosWithAltText). Đây là map CHÍNH XÁC (không đoán).
+// Tách chuỗi thành các TỪ đã chuẩn hóa (bỏ hoa/thường + ký tự lạ). "Blue & Lavender" → ["blue","lavender"]
+const wordsOf = (s) => String(s || "").toLowerCase().split(/\s+/).map((w) => w.replace(/[^a-z0-9]/g, "")).filter(Boolean);
+
+// ── Chiến lược 1: menuItemMap (tên màu → matchingVariationIds) + variationId → ebayPictureUrl ──
+// Regex linh hoạt (chịu được đảo thứ tự field): bắt valueName rồi tìm matchingVariationIds trong ~300 ký tự.
 function colorMenuItems(html) {
   const out = [];
-  const re = /"valueName":"([^"]+)","displayName":"[^"]*","matchingVariationIds":\[([0-9,]+)\]/g;
+  const re = /"valueName":"([^"]+)"[\s\S]{0,300}?"matchingVariationIds":\[([0-9,]+)\]/g;
   let m; while ((m = re.exec(html))) out.push({ name: m[1], ids: m[2].split(",") });
   return out;
 }
@@ -60,35 +63,46 @@ function matchColorItem(items, color) {
   const qStarts = items.filter((x) => sq.length >= 4 && squeezeColor(x.name).startsWith(sq));
   return qStarts.length === 1 ? qStarts[0] : null;
 }
+function variantByMenu(html, color) {
+  const items = colorMenuItems(html);
+  if (!items.length) return null;                 // không có menuItemMap → để chiến lược khác xử lý
+  const hit = matchColorItem(items, color);
+  if (hit) {
+    const imgMap = variationImageMap(html);
+    for (const id of hit.ids) { const u = imgMap.get(id); if (u) return picToThumb(u); }
+  }
+  return "";                                       // CÓ menuItemMap nhưng không ra ảnh → "" (đừng đoán)
+}
 
-// Ảnh THEO BIẾN THỂ (màu). Ưu tiên map chính xác từ dữ liệu biến thể; không có (listing kiểu cũ)
-// → dự phòng heuristic "ảnh gần tên màu nhất". Không chắc → "" (để dùng ảnh mặc định).
+// ── Chiến lược 2: photosWithAltText — mỗi ảnh có imageAltText thường BẮT ĐẦU bằng tên màu ──
+// ("Black Carhartt J140 …"). Khớp màu ở ĐẦU alt (từ 0 hoặc sau 1 từ như NWT/Mens) → tránh dính
+// "brown logo patch" ở giữa câu. Trả ảnh của biến thể đúng; không có listing này → null.
+function variantByAlt(html, color) {
+  const re = /"ebayPictureUrl":"([^"]+)"\}\s*,\s*"imageAltText":"([^"]*)"/g;
+  const photos = []; let m;
+  while ((m = re.exec(html))) photos.push({ url: m[1], alt: m[2] });
+  if (!photos.length) return null;                 // listing không có cấu trúc này
+  const c = wordsOf(color);
+  if (!c.length) return "";
+  const startsWith = (altWords) => [0, 1].some((s) => {
+    if (altWords.length - s < c.length) return false;
+    for (let i = 0; i < c.length; i++) if (altWords[s + i] !== c[i]) return false;
+    return true;
+  });
+  for (const p of photos) if (startsWith(wordsOf(p.alt))) return picToThumb(p.url);
+  return "";                                       // CÓ ảnh-có-alt nhưng không khớp màu → "" (dùng mặc định)
+}
+
+// Ảnh THEO BIẾN THỂ (màu) — CHỈ từ dữ liệu có thẩm quyền của eBay, KHÔNG đoán mò (đoán hay gắn
+// nhầm ảnh màu khác → gửi nhầm hàng). Không xác định được → "" để dùng ẢNH MẶC ĐỊNH.
 export function extractVariantImage(html, color) {
   const c = String(color || "").trim();
   if (!c || !html) return "";
-  // 1) Map chính xác (eBay hiện đại). Nếu listing CÓ dữ liệu biến thể thì đây là nguồn
-  //    có thẩm quyền: khớp được → trả ảnh đúng; không khớp → "" (dùng ảnh mặc định),
-  //    KHÔNG đoán mò bằng heuristic (tránh gắn nhầm ảnh biến thể khác).
-  const items = colorMenuItems(html);
-  if (items.length) {
-    const hit = matchColorItem(items, c);
-    if (!hit) return "";
-    const imgMap = variationImageMap(html);
-    for (const id of hit.ids) { const u = imgMap.get(id); if (u) return picToThumb(u); }
-    return "";
-  }
-  // 2) Listing kiểu CŨ (không có dữ liệu biến thể): ảnh ở GẦN tên màu nhất (chỉ nhận khi đủ gần)
-  const imgRe = /https?:\/\/i\.ebayimg\.com\/images\/g\/[^"'\s\\]+\/s-l\d+\.(?:jpg|jpeg|png|webp)/ig;
-  const imgs = []; let m;
-  while ((m = imgRe.exec(html))) imgs.push({ url: m[0], pos: m.index });
-  if (!imgs.length) return "";
-  const cEsc = c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const colorRe = new RegExp(cEsc, "ig");
-  let best = "", bestDist = Infinity, cm;
-  while ((cm = colorRe.exec(html))) {
-    for (const im of imgs) { const d = Math.abs(im.pos - cm.index); if (d < bestDist) { bestDist = d; best = im.url; } }
-  }
-  return (best && bestDist <= 1500) ? bigThumb(best) : "";
+  const byMenu = variantByMenu(html, c);           // chiến lược 1 (menuItemMap)
+  if (byMenu !== null) return byMenu;
+  const byAlt = variantByAlt(html, c);             // chiến lược 2 (alt-text theo màu)
+  if (byAlt !== null) return byAlt;
+  return "";                                        // listing không lộ dữ liệu biến thể → ảnh mặc định
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
