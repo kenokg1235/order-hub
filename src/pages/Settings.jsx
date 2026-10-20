@@ -3,7 +3,7 @@ import { api } from "../api.js";
 import { Button } from "../ui.jsx";
 import ColorPicker from "../ColorPicker.jsx";
 import { lockCards } from "../cardKeyLan.js";
-import { ORDER_COLUMNS, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
+import { ORDER_COLUMNS, PROCESS_PICK_COLUMNS, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
 
 // Admin-configurable status lists + Telegram. The status lists drive dropdowns
 // across the order & card sheets (master status, process status, card status).
@@ -171,29 +171,37 @@ function CleanupEditor({ months, onSaveMonths }) {
   );
 }
 
-// Chọn cột khi XUẤT CSV (Sheet Tổng). Hub ID + Mã đơn luôn có sẵn (để import lại khớp đúng).
+// Chọn cột khi XUẤT CSV. Hub ID + Mã đơn luôn có sẵn (để import lại khớp đúng).
 function ExportColumnsEditor({ cols, onSave }) {
-  const pickable = ORDER_COLUMNS.filter((c) => !c.match);   // bỏ Hub ID + Mã đơn (luôn xuất)
+  const orderCols = ORDER_COLUMNS.filter((c) => !c.match);   // bỏ Hub ID + Mã đơn (luôn xuất)
+  const procCols = PROCESS_PICK_COLUMNS;
+  const allKeys = [...orderCols, ...procCols].map((c) => c.key);
   const [sel, setSel] = useState(() => new Set(Array.isArray(cols) && cols.length ? cols : DEFAULT_EXPORT_KEYS));
   const [msg, setMsg] = useState("");
   useEffect(() => { if (Array.isArray(cols) && cols.length) setSel(new Set(cols)); }, [cols]);
   const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-  const save = () => { onSave(pickable.map((c) => c.key).filter((k) => sel.has(k))); setMsg("Đã lưu ✓"); setTimeout(() => setMsg(""), 1500); };
+  const save = () => { onSave(allKeys.filter((k) => sel.has(k))); setMsg("Đã lưu ✓"); setTimeout(() => setMsg(""), 1500); };
+  const group = (list) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+      {list.map((c) => (
+        <label key={c.key} className="row" style={{ gap: 5, cursor: "pointer", fontSize: 13, minWidth: 120 }}>
+          <input type="checkbox" checked={sel.has(c.key)} onChange={() => toggle(c.key)} /> {c.label}
+        </label>
+      ))}
+    </div>
+  );
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>📤 Cột khi Xuất CSV (Sheet Tổng)</div>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>📤 Cột khi Xuất CSV</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-        Tích các cột muốn xuất. <b>Hub ID</b> và <b>Mã đơn</b> luôn được thêm đầu file để import cập nhật lại khớp đúng.
+        Tích các cột muốn xuất. <b>Hub ID</b> và <b>Mã đơn</b> luôn được thêm đầu file để import lại khớp đúng.
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
-        {pickable.map((c) => (
-          <label key={c.key} className="row" style={{ gap: 5, cursor: "pointer", fontSize: 13, minWidth: 120 }}>
-            <input type="checkbox" checked={sel.has(c.key)} onChange={() => toggle(c.key)} /> {c.label}
-          </label>
-        ))}
-      </div>
-      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, margin: "4px 0 6px" }}>Thông tin đơn hàng (Sheet Tổng)</div>
+      {group(orderCols)}
+      <div style={{ fontWeight: 600, fontSize: 13, margin: "12px 0 6px" }}>Thông tin xử lý (Sheet Con)</div>
+      {group(procCols)}
+      <div className="row" style={{ gap: 8, marginTop: 12 }}>
         <Button variant="primary" onClick={save}>Lưu</Button>
         {msg && <span className="badge green">{msg}</span>}
       </div>

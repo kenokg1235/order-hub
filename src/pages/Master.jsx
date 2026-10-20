@@ -29,7 +29,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const [sel, setSel] = useState(new Set());
   const [q, setQ] = useState("");
   const [importOpen, setImportOpen] = useState(false);
-  const [updateOpen, setUpdateOpen] = useState(false);
+  const [updateMode, setUpdateMode] = useState(null);   // null | "order" | "process"
   const [exportCols, setExportCols] = useState(DEFAULT_EXPORT_KEYS);
   const [editing, setEditing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
@@ -474,7 +474,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
         {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
         {isAdmin && <Button onClick={exportCsv} title="Tải CSV các đơn đang lọc (cột theo Cấu hình)">📤 Xuất CSV</Button>}
-        {isAdmin && <Button onClick={() => setUpdateOpen(true)} title="Dán/tải CSV để cập nhật đơn theo Mã đơn">📥 Cập nhật CSV</Button>}
+        {isAdmin && <Button onClick={() => setUpdateMode("order")} title="Cập nhật thông tin ĐƠN HÀNG theo Mã đơn (store, địa chỉ, trạng thái, note…)">📥 Nhập đơn hàng</Button>}
+        {isAdmin && <Button onClick={() => setUpdateMode("process")} title="Cập nhật thông tin XỬ LÝ theo Mã đơn (Order#, tracking, trạng thái xử lý…)">📥 Nhập xử lý</Button>}
         <Button onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
         {pinned && (
@@ -722,9 +723,9 @@ export default function Master({ currentUser, teams, refreshUser }) {
         <ImportModal currentUser={currentUser} stores={stores}
           onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); setPolling(12); refreshUser?.(); }} />
       )}
-      {updateOpen && (
-        <UpdateImportModal onClose={() => setUpdateOpen(false)}
-          onDone={() => { setUpdateOpen(false); loadOrders(month); }} />
+      {updateMode && (
+        <UpdateImportModal mode={updateMode} onClose={() => setUpdateMode(null)}
+          onDone={() => { setUpdateMode(null); loadOrders(month); }} />
       )}
       {editing && (
         <OrderModal order={editing} currentUser={currentUser} stores={stores}
@@ -878,10 +879,13 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
   );
 }
 
-// Import CẬP NHẬT đơn theo Mã đơn (Admin). Dán hoặc tải CSV; chỉ cập nhật cột trùng tên.
-function UpdateImportModal({ onClose, onDone }) {
+// Import CẬP NHẬT theo Mã đơn (Admin). mode="order" (Sheet Tổng) | "process" (Sheet Con / xử lý).
+function UpdateImportModal({ mode, onClose, onDone }) {
+  const isProc = mode === "process";
+  const endpoint = isProc ? "/api/purchases/update-import" : "/api/orders/update-import";
+  const title = isProc ? "Nhập thông tin XỬ LÝ (theo Mã đơn)" : "Nhập thông tin ĐƠN HÀNG (theo Mã đơn)";
   const [text, setText] = useState("");
-  const [parsed, setParsed] = useState(null);   // { updates, matchedCols, unknownCols } | { error }
+  const [parsed, setParsed] = useState(null);   // { updates, matchedCols, unknownCols, otherGroupCols } | null
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
@@ -889,7 +893,7 @@ function UpdateImportModal({ onClose, onDone }) {
   function doParse(txt) {
     setText(txt);
     if (!String(txt).trim()) { setParsed(null); setErr(""); return; }
-    const p = parseUpdateCsv(txt);
+    const p = parseUpdateCsv(txt, mode);
     if (p.error) { setErr(p.error); setParsed(null); } else { setErr(""); setParsed(p); }
   }
   function onFile(e) {
@@ -901,12 +905,12 @@ function UpdateImportModal({ onClose, onDone }) {
   async function doUpdate() {
     if (!parsed?.updates?.length) { setErr("Chưa có dòng nào để cập nhật"); return; }
     setBusy(true); setErr("");
-    try { setResult(await api.post("/api/orders/update-import", { updates: parsed.updates })); }
+    try { setResult(await api.post(endpoint, { updates: parsed.updates })); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
 
   return (
-    <Modal title="Cập nhật đơn từ CSV (theo Mã đơn)" onClose={onClose}
+    <Modal title={title} onClose={onClose}
       footer={result
         ? <Button variant="primary" onClick={onDone}>Xong</Button>
         : <>
@@ -918,14 +922,18 @@ function UpdateImportModal({ onClose, onDone }) {
       {result ? (
         <div>
           <div className="badge green" style={{ marginBottom: 10 }}>Cập nhật xong ✓</div>
-          <div>Khớp &amp; cập nhật: <b>{result.matched}</b> đơn · Không tìm thấy: <b>{result.notFound}</b> · Dòng đã sửa: {result.rows}</div>
+          <div>Khớp &amp; cập nhật: <b>{result.matched}</b> đơn · Không tìm thấy: <b>{result.notFound}</b>
+            {isProc && typeof result.created === "number" && <> · Tạo dòng xử lý mới: <b>{result.created}</b></>}
+            {" "}· Dòng đã sửa: {result.rows}</div>
         </div>
       ) : (
         <>
           <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
-            Khớp đơn theo cột <b>Mã đơn</b> (hoặc <b>Hub ID</b> nếu có — chính xác từng dòng). Chỉ cập nhật các cột
-            <b> trùng tên</b> với Sheet Tổng; ô trống được bỏ qua (không xóa dữ liệu cũ). Mẹo: bấm <b>📤 Xuất CSV</b>,
-            sửa trong Google Sheet, rồi tải lại vào đây.
+            Khớp đơn theo cột <b>Mã đơn</b> (hoặc <b>Hub ID</b> nếu có — chính xác từng dòng). Chỉ cập nhật cột
+            <b> trùng tên</b> thuộc nhóm <b>{isProc ? "XỬ LÝ (Sheet Con)" : "ĐƠN HÀNG (Sheet Tổng)"}</b>; ô trống bỏ qua.
+            {isProc
+              ? " Ghi vào dòng thẻ đầu tiên của đơn (chưa có thì tạo mới, KHÔNG đụng số thẻ)."
+              : " Mẹo: bấm 📤 Xuất CSV, sửa trong Google Sheet rồi tải lại."}
           </div>
           <div className="field">
             <label className="label">Tải file .csv</label>
@@ -933,13 +941,16 @@ function UpdateImportModal({ onClose, onDone }) {
           </div>
           <div className="field">
             <label className="label">…hoặc dán nội dung CSV (gồm dòng tiêu đề)</label>
-            <textarea className="input" rows={6} value={text} placeholder="Hub ID,Mã đơn,Trạng thái,Ghi chú tổng…"
+            <textarea className="input" rows={6} value={text}
+              placeholder={isProc ? "Mã đơn,Order#,Tracking,Trạng thái xử lý…" : "Hub ID,Mã đơn,Trạng thái,Ghi chú tổng…"}
               onChange={(e) => doParse(e.target.value)} style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
           </div>
           {parsed && (
             <div style={{ fontSize: 13 }}>
               <div className="badge blue">{parsed.updates.length} đơn sẽ cập nhật</div>
               <div style={{ marginTop: 6 }}>Cột cập nhật: <b>{parsed.matchedCols.join(", ") || "—"}</b></div>
+              {parsed.otherGroupCols?.length > 0 &&
+                <div className="muted" style={{ marginTop: 4 }}>Bỏ qua cột nhóm khác: {parsed.otherGroupCols.join(", ")}</div>}
               {parsed.unknownCols.length > 0 &&
                 <div className="muted" style={{ marginTop: 4 }}>Bỏ qua cột lạ: {parsed.unknownCols.join(", ")}</div>}
             </div>

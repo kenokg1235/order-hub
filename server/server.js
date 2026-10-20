@@ -605,6 +605,55 @@ app.post("/api/orders/update-import", requireAdmin, (req, res) => {
   res.json({ ok: true, matched, notFound, rows: touched.size });
 });
 
+// Import XỬ LÝ (Admin): khớp đơn theo Hub ID/Mã đơn → cập nhật dòng THẺ đầu tiên của mỗi đơn (Sheet Con).
+// Chưa có dòng thẻ → tạo mới (card rỗng). KHÔNG đụng số thẻ (mã hóa). Fields = camelCase như API purchase.
+const PROC_IMPORT_FIELDS = new Set(["name", "order_number", "email", "tracking", "phone", "zip", "amount", "process_status"]);
+app.post("/api/purchases/update-import", requireAdmin, (req, res) => {
+  const list = Array.isArray(req.body.updates) ? req.body.updates : [];
+  let matched = 0, notFound = 0, created = 0; const touched = new Set();
+  const byId = db.prepare("SELECT * FROM orders WHERE id=?");
+  const byNo = db.prepare("SELECT * FROM orders WHERE order_no=?");
+  const firstPur = db.prepare("SELECT * FROM purchases WHERE order_id=? ORDER BY created_at ASC, id ASC LIMIT 1");
+  const tx = db.transaction((rows) => {
+    for (const u of rows) {
+      const set = (u && u.set) || {};
+      const fields = Object.keys(set).filter((f) => PROC_IMPORT_FIELDS.has(f));
+      if (!fields.length) continue;
+      let lines = [];
+      if (u.id) lines = byId.all(String(u.id).trim());
+      if (!lines.length && u.orderNo) lines = byNo.all(String(u.orderNo).trim());
+      if (!lines.length) { notFound++; continue; }
+      for (const o of lines) {
+        let p = firstPur.get(o.id);
+        if (!p) {
+          const pid = newId("pur");
+          db.prepare(`INSERT INTO purchases (id,order_id,card,amount,name,order_number,email,tracking,phone,zip,process_status,created_at)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(pid, o.id, "", Number(set.amount) || 0, set.name || "", set.order_number || "", set.email || "",
+                 set.tracking || "", set.phone || "", set.zip || "", set.process_status || "", Date.now());
+          created++;
+          p = db.prepare("SELECT * FROM purchases WHERE id=?").get(pid);
+        } else {
+          const sets = [], vals = [];
+          for (const f of fields) {
+            let v = set[f]; if (f === "amount") v = Number(v) || 0;
+            logChange(req.user, "purchase", p.id, o.id, f, p[f], v);
+            sets.push(`${f}=?`); vals.push(v);
+          }
+          if ("order_number" in set && String(set.order_number) !== String(p.order_number || "")) { sets.push("order_time=?"); vals.push(Date.now()); }
+          db.prepare(`UPDATE purchases SET ${sets.join(",")} WHERE id=?`).run(...vals, p.id);
+        }
+        const fresh = db.prepare("SELECT * FROM purchases WHERE id=?").get(p.id);
+        if (fresh.card) creditCardLedger(fresh);   // chỉ ghi Balance khi có thẻ
+        touchOrder(o.id); touched.add(o.id);
+      }
+      matched++;
+    }
+  });
+  tx(list);
+  res.json({ ok: true, matched, notFound, created, rows: touched.size });
+});
+
 // Fetch cover image for one order (manual refresh).
 app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
