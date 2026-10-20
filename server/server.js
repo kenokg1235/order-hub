@@ -565,6 +565,46 @@ app.post("/api/orders/import", requireAuth, (req, res) => {
   res.json({ ok: true, inserted, duplicates, skipped, total: rows.length });
 });
 
+// Import CẬP NHẬT (Admin): khớp đơn theo Hub ID (đúng từng dòng) hoặc Mã đơn (order_no → mọi dòng của đơn),
+// rồi ghi các cột cấp đơn trong whitelist. KHÔNG tạo đơn mới, KHÔNG đụng thẻ/Sheet Con.
+const UPDATE_IMPORT_FIELDS = new Set(["store", "address", "cust_phone", "qty", "product", "link", "size", "color",
+  "profit", "deadline", "master_status", "master_note", "cancel_reason", "staff_note", "urgent_note",
+  "note1", "note2", "note3", "note4", "image"]);
+app.post("/api/orders/update-import", requireAdmin, (req, res) => {
+  const list = Array.isArray(req.body.updates) ? req.body.updates : [];
+  let matched = 0, notFound = 0; const touched = new Set();
+  const byId = db.prepare("SELECT * FROM orders WHERE id=?");
+  const byNo = db.prepare("SELECT * FROM orders WHERE order_no=?");
+  const tx = db.transaction((rows) => {
+    for (const u of rows) {
+      const set = (u && u.set) || {};
+      const fields = Object.keys(set).filter((f) => UPDATE_IMPORT_FIELDS.has(f));
+      if (!fields.length) continue;
+      let targets = [];
+      if (u.id) targets = byId.all(String(u.id).trim());
+      if (!targets.length && u.orderNo) targets = byNo.all(String(u.orderNo).trim());
+      if (!targets.length) { notFound++; continue; }
+      for (const o of targets) {
+        const sets = [], vals = [];
+        for (const f of fields) {
+          let v = set[f]; if (f === "profit") v = Number(v) || 0;
+          logChange(req.user, "order", o.id, o.id, f, o[f], v);
+          sets.push(`${f}=?`); vals.push(v);
+        }
+        if ("master_status" in set && set.master_status !== o.master_status && ["Đã Up", "Đã Cancel"].includes(String(set.master_status))) {
+          sets.push("finalized_at=?"); vals.push(Date.now());
+        }
+        sets.push("updated_at=?"); vals.push(Date.now());
+        db.prepare(`UPDATE orders SET ${sets.join(",")} WHERE id=?`).run(...vals, o.id);
+        touched.add(o.id);
+      }
+      matched++;
+    }
+  });
+  tx(list);
+  res.json({ ok: true, matched, notFound, rows: touched.size });
+});
+
 // Fetch cover image for one order (manual refresh).
 app.post("/api/orders/:id/fetch-image", requireAuth, async (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);

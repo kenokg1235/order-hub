@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { api } from "../api.js";
 import { Button, Input, Modal, Badge } from "../ui.jsx";
 import { parseEbayCsv, parseOrderHubCsv } from "../ebayParser.js";
+import { buildOrderCsv, parseUpdateCsv, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
 import { rowBg } from "../statusColors.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import { useImagePreview } from "../ImagePreview.jsx";
@@ -28,6 +29,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const [sel, setSel] = useState(new Set());
   const [q, setQ] = useState("");
   const [importOpen, setImportOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [exportCols, setExportCols] = useState(DEFAULT_EXPORT_KEYS);
   const [editing, setEditing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [pinned, setPinned] = useState(true);
@@ -58,6 +61,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
       setStatusColors(s.statusColors || {});
       setCancelReasons(s.cancelReasons || []);
       setAdminNote(s.adminNoteForLister || "");
+      if (Array.isArray(s.exportColumns) && s.exportColumns.length) setExportCols(s.exportColumns);
       const mo = await api.get("/api/months");
       setMonths(mo.months); setActiveMonth(mo.activeMonth); setLastClose(mo.lastClose);
       setMonth((cur) => cur || mo.activeMonth);
@@ -144,6 +148,16 @@ export default function Master({ currentUser, teams, refreshUser }) {
 
   async function fetchAllImages() {
     try { await api.post("/api/orders/fetch-images", {}); setPolling(15); } catch (e) { setErr(e.message); }
+  }
+  // Xuất CSV các đơn ĐANG LỌC theo cột đã cấu hình (luôn kèm Hub ID + Mã đơn để import lại khớp đúng).
+  function exportCsv() {
+    const csv = buildOrderCsv(filtered, exportCols);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `orderhub-${month || "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
   // Dán link ảnh thủ công (khi eBay chặn lấy tự động).
   async function setImageManual(o) {
@@ -459,6 +473,8 @@ export default function Master({ currentUser, teams, refreshUser }) {
         )}
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
         {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
+        {isAdmin && <Button onClick={exportCsv} title="Tải CSV các đơn đang lọc (cột theo Cấu hình)">📤 Xuất CSV</Button>}
+        {isAdmin && <Button onClick={() => setUpdateOpen(true)} title="Dán/tải CSV để cập nhật đơn theo Mã đơn">📥 Cập nhật CSV</Button>}
         <Button onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
         {pinned && (
@@ -706,6 +722,10 @@ export default function Master({ currentUser, teams, refreshUser }) {
         <ImportModal currentUser={currentUser} stores={stores}
           onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); setPolling(12); refreshUser?.(); }} />
       )}
+      {updateOpen && (
+        <UpdateImportModal onClose={() => setUpdateOpen(false)}
+          onDone={() => { setUpdateOpen(false); loadOrders(month); }} />
+      )}
       {editing && (
         <OrderModal order={editing} currentUser={currentUser} stores={stores}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); refreshUser?.(); }} />
@@ -851,6 +871,79 @@ function ImportModal({ currentUser, stores, onClose, onDone }) {
             </div>
           </div>
           {parsed && <div className="badge blue">Đọc được {parsed.count} đơn</div>}
+          {err && <div style={{ color: "var(--red)", marginTop: 10 }}>{err}</div>}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// Import CẬP NHẬT đơn theo Mã đơn (Admin). Dán hoặc tải CSV; chỉ cập nhật cột trùng tên.
+function UpdateImportModal({ onClose, onDone }) {
+  const [text, setText] = useState("");
+  const [parsed, setParsed] = useState(null);   // { updates, matchedCols, unknownCols } | { error }
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState(null);
+
+  function doParse(txt) {
+    setText(txt);
+    if (!String(txt).trim()) { setParsed(null); setErr(""); return; }
+    const p = parseUpdateCsv(txt);
+    if (p.error) { setErr(p.error); setParsed(null); } else { setErr(""); setParsed(p); }
+  }
+  function onFile(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => doParse(String(reader.result));
+    reader.readAsText(file, "utf-8");
+  }
+  async function doUpdate() {
+    if (!parsed?.updates?.length) { setErr("Chưa có dòng nào để cập nhật"); return; }
+    setBusy(true); setErr("");
+    try { setResult(await api.post("/api/orders/update-import", { updates: parsed.updates })); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal title="Cập nhật đơn từ CSV (theo Mã đơn)" onClose={onClose}
+      footer={result
+        ? <Button variant="primary" onClick={onDone}>Xong</Button>
+        : <>
+            <Button onClick={onClose}>Hủy</Button>
+            <Button variant="primary" disabled={busy || !parsed?.updates?.length} onClick={doUpdate}>
+              {busy ? "Đang cập nhật…" : `Cập nhật ${parsed?.updates?.length || 0} đơn`}
+            </Button>
+          </>}>
+      {result ? (
+        <div>
+          <div className="badge green" style={{ marginBottom: 10 }}>Cập nhật xong ✓</div>
+          <div>Khớp &amp; cập nhật: <b>{result.matched}</b> đơn · Không tìm thấy: <b>{result.notFound}</b> · Dòng đã sửa: {result.rows}</div>
+        </div>
+      ) : (
+        <>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
+            Khớp đơn theo cột <b>Mã đơn</b> (hoặc <b>Hub ID</b> nếu có — chính xác từng dòng). Chỉ cập nhật các cột
+            <b> trùng tên</b> với Sheet Tổng; ô trống được bỏ qua (không xóa dữ liệu cũ). Mẹo: bấm <b>📤 Xuất CSV</b>,
+            sửa trong Google Sheet, rồi tải lại vào đây.
+          </div>
+          <div className="field">
+            <label className="label">Tải file .csv</label>
+            <input type="file" accept=".csv,text/csv" onChange={onFile} />
+          </div>
+          <div className="field">
+            <label className="label">…hoặc dán nội dung CSV (gồm dòng tiêu đề)</label>
+            <textarea className="input" rows={6} value={text} placeholder="Hub ID,Mã đơn,Trạng thái,Ghi chú tổng…"
+              onChange={(e) => doParse(e.target.value)} style={{ resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
+          </div>
+          {parsed && (
+            <div style={{ fontSize: 13 }}>
+              <div className="badge blue">{parsed.updates.length} đơn sẽ cập nhật</div>
+              <div style={{ marginTop: 6 }}>Cột cập nhật: <b>{parsed.matchedCols.join(", ") || "—"}</b></div>
+              {parsed.unknownCols.length > 0 &&
+                <div className="muted" style={{ marginTop: 4 }}>Bỏ qua cột lạ: {parsed.unknownCols.join(", ")}</div>}
+            </div>
+          )}
           {err && <div style={{ color: "var(--red)", marginTop: 10 }}>{err}</div>}
         </>
       )}

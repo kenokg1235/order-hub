@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { Button } from "../ui.jsx";
 import ColorPicker from "../ColorPicker.jsx";
 import { lockCards } from "../cardKeyLan.js";
+import { ORDER_COLUMNS, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
 
 // Admin-configurable status lists + Telegram. The status lists drive dropdowns
 // across the order & card sheets (master status, process status, card status).
@@ -49,6 +50,8 @@ export default function Settings() {
         onSave={(l) => saveList("failCancelReasons", l)} />
 
       <CleanupEditor months={s.retentionMonths ?? 2} onSaveMonths={(v) => saveList("retentionMonths", v)} />
+
+      <ExportColumnsEditor cols={s.exportColumns} onSave={(l) => saveList("exportColumns", l)} />
 
       <LanKeyEditor url={s.lanKeyUrl || ""} onSave={(v) => saveList("lanKeyUrl", v)}
         label={s.cardKeyLabel || "Key"} onSaveLabel={(v) => saveList("cardKeyLabel", v)} />
@@ -164,6 +167,36 @@ function CleanupEditor({ months, onSaveMonths }) {
 
       <Button variant="danger" disabled={busy} onClick={run}>{busy ? "Đang dọn…" : "🧹 Dọn dữ liệu đã chọn"}</Button>
       {msg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{msg}</div>}
+    </div>
+  );
+}
+
+// Chọn cột khi XUẤT CSV (Sheet Tổng). Hub ID + Mã đơn luôn có sẵn (để import lại khớp đúng).
+function ExportColumnsEditor({ cols, onSave }) {
+  const pickable = ORDER_COLUMNS.filter((c) => !c.match);   // bỏ Hub ID + Mã đơn (luôn xuất)
+  const [sel, setSel] = useState(() => new Set(Array.isArray(cols) && cols.length ? cols : DEFAULT_EXPORT_KEYS));
+  const [msg, setMsg] = useState("");
+  useEffect(() => { if (Array.isArray(cols) && cols.length) setSel(new Set(cols)); }, [cols]);
+  const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const save = () => { onSave(pickable.map((c) => c.key).filter((k) => sel.has(k))); setMsg("Đã lưu ✓"); setTimeout(() => setMsg(""), 1500); };
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>📤 Cột khi Xuất CSV (Sheet Tổng)</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        Tích các cột muốn xuất. <b>Hub ID</b> và <b>Mã đơn</b> luôn được thêm đầu file để import cập nhật lại khớp đúng.
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+        {pickable.map((c) => (
+          <label key={c.key} className="row" style={{ gap: 5, cursor: "pointer", fontSize: 13, minWidth: 120 }}>
+            <input type="checkbox" checked={sel.has(c.key)} onChange={() => toggle(c.key)} /> {c.label}
+          </label>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <Button variant="primary" onClick={save}>Lưu</Button>
+        {msg && <span className="badge green">{msg}</span>}
+      </div>
     </div>
   );
 }
