@@ -474,7 +474,6 @@ export default function Master({ currentUser, teams, refreshUser }) {
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
         {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
         {isAdmin && <Button onClick={exportCsv} title="Tải CSV các đơn đang lọc (cột theo Cấu hình)">📤 Xuất CSV</Button>}
-        {isAdmin && <Button onClick={() => setUpdateMode("order")} title="Cập nhật thông tin ĐƠN HÀNG theo Mã đơn (store, địa chỉ, trạng thái, note…)">📥 Nhập đơn hàng</Button>}
         {isAdmin && <Button onClick={() => setUpdateMode("process")} title="Cập nhật thông tin XỬ LÝ theo Mã đơn (Order#, tracking, trạng thái xử lý…)">📥 Nhập xử lý</Button>}
         <Button onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
