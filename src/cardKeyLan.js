@@ -98,12 +98,15 @@ export async function setManualKey(key) {
   return { ok: true };
 }
 
-// GỠ KHÓA tức thì: xóa khỏi RAM + sessionStorage → thẻ khóa lại ngay. Dùng khi rời máy/nghi ngờ.
-export function clearManualKey() {
+// KHÓA THẺ NGAY: xóa khóa khỏi RAM + sessionStorage → thẻ hiện 🔒 ngay. Dùng khi rời máy, tắt key,
+// hoặc nhận tín hiệu khóa toàn hệ thống. (clearManualKey giữ tên cũ cho nút "Gỡ khóa".)
+export function lockCards() {
+  if (!_ready && !_cipher) return;
   _cipher = null; _ready = false; _manual = false; _cache.clear();
   try { sessionStorage.removeItem(SS_KEY); } catch {}
   emit();
 }
+export const clearManualKey = lockCards;
 
 // Khôi phục khóa tay đã nhập trong PHIÊN này (khi LAN không có) — gọi lúc khởi động nếu chưa ready.
 export async function tryRestoreManualKey() {
@@ -112,4 +115,41 @@ export async function tryRestoreManualKey() {
   if (!k) return false;
   const r = await setManualKey(k);
   return r.ok;
+}
+
+// ── Kill-switch: tắt key → ẩn thẻ mọi phiên ngay ──────────────────────────────
+let _seenLockSeq = 0, _lanFailStreak = 0, _watchTimer = null;
+export function initLockSeq(seq) { const n = Number(seq) || 0; if (n > _seenLockSeq) _seenLockSeq = n; }
+
+// Giám sát định kỳ:
+//   (1) Lock-seq trên VPS tăng (admin bấm "ẩn thẻ mọi nơi" / tự tăng khi keyserver tắt) → khóa NGAY.
+//   (2) Dịch vụ khóa LAN tắt (keyserver đóng) → khóa phiên này; nếu là ADMIN thì bơm lock-seq để
+//       khóa luôn các phiên từ xa (Option B) vốn không nối tới LAN.
+// getLockSeq(): lấy seq hiện tại từ VPS; bumpLockSeq(): POST tăng seq (chỉ admin gọi).
+export function startKeyWatch({ getLockSeq, bumpLockSeq, isAdmin, intervalMs = 10000 } = {}) {
+  if (_watchTimer) { clearInterval(_watchTimer); _watchTimer = null; }
+  const tick = async () => {
+    // (1) tín hiệu khóa toàn hệ thống
+    try {
+      const seq = Number(await getLockSeq()) || 0;
+      if (seq > _seenLockSeq) { _seenLockSeq = seq; lockCards(); }
+    } catch {}
+    // (2) sức khỏe dịch vụ khóa LAN (chỉ khi đang dùng khóa LAN, không phải khóa nhập tay)
+    if (_ready && !_manual && _url) {
+      let ok = false;
+      try {
+        const base = _url.replace(/\/+$/, "");
+        const r = await fetch(base + "/ping", { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(4000) });
+        ok = r.ok;
+      } catch { ok = false; }
+      if (ok) _lanFailStreak = 0;
+      else if (++_lanFailStreak >= 2) {         // 2 lần liên tiếp fail (~tránh blip mạng) → khóa
+        lockCards();
+        if (isAdmin && bumpLockSeq) { try { await bumpLockSeq(); } catch {} }
+      }
+    } else _lanFailStreak = 0;
+  };
+  _watchTimer = setInterval(tick, intervalMs);
+  tick();   // chạy ngay một lần
+  return () => { if (_watchTimer) { clearInterval(_watchTimer); _watchTimer = null; } };
 }

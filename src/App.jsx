@@ -3,7 +3,7 @@ import { api, getToken, setToken } from "./api.js";
 import { Button } from "./ui.jsx";
 import Notifications from "./Notifications.jsx";
 import Presence from "./Presence.jsx";
-import { initLanKey, setCheckToken, computeCheckToken, tryRestoreManualKey } from "./cardKeyLan.js";
+import { initLanKey, setCheckToken, computeCheckToken, tryRestoreManualKey, initLockSeq, startKeyWatch } from "./cardKeyLan.js";
 import CardKeyEntry from "./CardKeyEntry.jsx";
 import Login from "./pages/Login.jsx";
 import Users from "./pages/Users.jsx";
@@ -133,6 +133,7 @@ export default function App() {
       const s = (await api.get("/api/settings")).settings || {};
       setProxyHidden(s.proxyHiddenTeams || []);
       setCardKeyLabel(s.cardKeyLabel || "Key");
+      initLockSeq(s.cardLockSeq || 0);       // mốc kill-switch: seq tăng về sau → khóa thẻ mọi phiên
       setCheckToken(s.cardKeyCheck || "");   // token xác minh khóa nhập tay (Cách B), không bí mật
       const ok = await initLanKey(s.lanKeyUrl || "");   // khóa từ dịch vụ LAN (chỉ được khi ở văn phòng + dịch vụ chạy)
       if (ok) {
@@ -169,6 +170,17 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (user) { loadTeams(); loadProxyHidden(); } }, [user]);
+
+  // Giám sát khóa thẻ: tắt key (keyserver / admin bấm ẩn) → mọi phiên khóa thẻ ngay.
+  useEffect(() => {
+    if (!user) return;
+    const stop = startKeyWatch({
+      getLockSeq: async () => (await api.get("/api/cards/lock-seq")).seq,
+      bumpLockSeq: async () => { try { await api.post("/api/cards/lock-now", {}); } catch {} },
+      isAdmin: user.role === "Admin",
+    });
+    return stop;
+  }, [user]);
 
   // Phiên hết hạn / bị thu hồi (401) → về màn hình Login mà KHÔNG reload cứng (tránh treo/trắng màn).
   useEffect(() => {

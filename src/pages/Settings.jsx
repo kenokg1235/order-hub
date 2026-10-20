@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Button } from "../ui.jsx";
 import ColorPicker from "../ColorPicker.jsx";
+import { lockCards } from "../cardKeyLan.js";
 
 // Admin-configurable status lists + Telegram. The status lists drive dropdowns
 // across the order & card sheets (master status, process status, card status).
@@ -172,6 +173,7 @@ function LanKeyEditor({ url, onSave, label, onSaveLabel }) {
   const [msg, setMsg] = useState("");
   const [lbl, setLbl] = useState(label);
   const [lblMsg, setLblMsg] = useState("");
+  const [lockMsg, setLockMsg] = useState("");
   useEffect(() => setV(url), [url]);
   useEffect(() => setLbl(label), [label]);
   async function test() {
@@ -209,6 +211,21 @@ function LanKeyEditor({ url, onSave, label, onSaveLabel }) {
           <Button variant="primary" onClick={() => { onSaveLabel(String(lbl || "").trim() || "Key"); setLblMsg("Đã lưu ✓ (tải lại trang để áp dụng)"); }}>Lưu</Button>
         </div>
         {lblMsg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{lblMsg}</div>}
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 14, paddingTop: 12 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Ẩn thẻ mọi nơi ngay (kill-switch)</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Khóa thẻ trên <b>mọi phiên đang mở</b> (văn phòng và từ xa) trong vài giây — dùng khi tắt key/rời chỗ.
+          Mọi máy sẽ hiện 🔒; muốn xem lại phải tải trang (văn phòng) hoặc nhập lại khóa (từ xa).
+        </div>
+        <Button variant="danger" onClick={async () => {
+          if (!confirm("Ẩn thẻ trên TẤT CẢ phiên đang mở ngay?")) return;
+          lockCards();
+          try { await api.post("/api/cards/lock-now", {}); setLockMsg("✓ Đã phát tín hiệu — mọi phiên sẽ khóa trong ~10s."); }
+          catch (e) { setLockMsg("Lỗi: " + e.message); }
+        }}>🔒 Ẩn thẻ mọi nơi ngay</Button>
+        {lockMsg && <div style={{ marginTop: 8, fontSize: 13 }} className="muted">{lockMsg}</div>}
       </div>
     </div>
   );

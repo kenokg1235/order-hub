@@ -210,6 +210,18 @@ app.put("/api/settings/:key", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Kill-switch khóa thẻ: tắt key → ẩn thẻ MỌI phiên ngay ──────────────────────
+// cardLockSeq là SỐ ĐẾM (không bí mật, không chứa khóa). Mọi trình duyệt poll; thấy seq tăng
+// so với lúc mở khóa → xóa khóa khỏi RAM → thẻ khóa lại ngay (cả phiên văn phòng lẫn từ xa).
+const lockSeq = () => { const r = db.prepare("SELECT value FROM settings WHERE key='cardLockSeq'").get(); return r ? JSON.parse(r.value) : 0; };
+app.get("/api/cards/lock-seq", requireAuth, (req, res) => res.json({ seq: lockSeq() }));
+app.post("/api/cards/lock-now", requireAdmin, (req, res) => {
+  // Admin bấm "ẩn thẻ mọi nơi", HOẶC phiên admin ở văn phòng phát hiện keyserver tắt → tự tăng.
+  const seq = lockSeq() + 1;
+  db.prepare("INSERT INTO settings (key,value) VALUES ('cardLockSeq',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(seq));
+  res.json({ seq });
+});
+
 // ── Stores ────────────────────────────────────────────────────────────────────
 const ensureStore = (name) => {
   if (name && !db.prepare("SELECT 1 FROM stores WHERE name=?").get(name))
