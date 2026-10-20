@@ -47,7 +47,8 @@ export const ORDER_COLUMNS = [...MATCH_COLUMNS, ...ORDER_FIELD_COLUMNS];        
 export const PROCESS_PICK_COLUMNS = PROCESS_COLUMNS;                            // cho bộ chọn cột xử lý
 const ALL_COLUMNS = [...MATCH_COLUMNS, ...ORDER_FIELD_COLUMNS, ...PROCESS_COLUMNS];
 export const COL_BY_KEY = Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, c]));
-export const DEFAULT_EXPORT_KEYS = ["store", "product", "size", "color", "qty", "address", "custPhone", "deadline", "profit", "masterStatus", "masterNote"];
+export const DEFAULT_EXPORT_KEYS = ["store", "product", "size", "color", "qty", "address", "custPhone", "deadline", "profit", "masterStatus", "masterNote",
+  "procOrderNumber", "procTracking", "procEmail", "procPhone"];   // kèm cột xử lý để điền rồi nạp qua "Nhập xử lý"
 
 const norm = (s) => String(s || "").normalize("NFC").trim().toLowerCase();
 const csvEsc = (v) => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
