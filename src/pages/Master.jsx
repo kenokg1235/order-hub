@@ -149,9 +149,12 @@ export default function Master({ currentUser, teams, refreshUser }) {
   async function fetchAllImages() {
     try { await api.post("/api/orders/fetch-images", {}); setPolling(15); } catch (e) { setErr(e.message); }
   }
-  // Xuất CSV các đơn ĐANG LỌC theo cột đã cấu hình (luôn kèm Hub ID + Mã đơn để import lại khớp đúng).
+  // Xuất CSV: ưu tiên các đơn ĐÃ TÍCH CHỌN; không tích dòng nào thì xuất theo BỘ LỌC hiện tại.
+  // Luôn kèm Hub ID + Mã đơn để import lại khớp đúng.
   function exportCsv() {
-    const csv = buildOrderCsv(filtered, exportCols);
+    const scope = sel.size ? filtered.filter((o) => sel.has(o.id)) : filtered;
+    if (!scope.length) { setErr("Không có đơn nào để xuất."); return; }
+    const csv = buildOrderCsv(scope, exportCols);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -473,7 +476,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
         )}
         {(isAdmin || isLister) && <Button onClick={() => setEditing({ store: stores[0] || "" })}>＋ Thêm đơn</Button>}
         {(isAdmin || isLister) && <Button variant="primary" onClick={() => setImportOpen(true)}>⬆️ Import eBay</Button>}
-        {isAdmin && <Button onClick={exportCsv} title="Tải CSV các đơn đang lọc (cột theo Cấu hình)">📤 Xuất CSV</Button>}
+        {isAdmin && <Button onClick={exportCsv} title={sel.size ? `Tải CSV ${sel.size} đơn đã chọn` : "Tải CSV các đơn đang lọc (tích chọn để xuất riêng)"}>📤 Xuất CSV{sel.size ? ` (${sel.size})` : ""}</Button>}
         {isAdmin && <Button onClick={() => setUpdateMode("process")} title="Cập nhật thông tin XỬ LÝ theo Mã đơn (Order#, tracking, trạng thái xử lý…)">📥 Nhập xử lý</Button>}
         <Button onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột khi cuộn">📌 Ghim</Button>
