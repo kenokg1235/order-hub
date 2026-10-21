@@ -3,7 +3,7 @@ import { Badge, Button } from "../ui.jsx";
 import { api } from "../api.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import { useCardDecrypt } from "../useLanKey.js";
-import { prepareCardForSave } from "../cardKeyLan.js";
+import { prepareCardForSave, onLanKeyChange, lanKeyReady } from "../cardKeyLan.js";
 
 // Sheet Mua thẻ — Admin + card-buyers issue cards against requests and see stats.
 export default function Cards({ currentUser }) {
@@ -44,7 +44,9 @@ export default function Cards({ currentUser }) {
   const [page, setPage] = useState(1);
   const PER_PAGE = 100;
   const [err, setErr] = useState("");
-  const { cellProps, Bar } = useFormulaBar();
+  const { cellProps, Bar, close } = useFormulaBar();
+  // Tắt key / khóa thẻ → đóng thanh công thức ngay (không để lộ số thẻ vừa xem).
+  useEffect(() => onLanKeyChange(() => { if (!lanKeyReady()) close(); }), []);
 
   const statusOptions = [...new Set([...lockStatuses, ...errorStatuses, ...cardStatuses])];
   // Danh sách tháng cho dropdown — server trả (không phụ thuộc dữ liệu đang lọc) + tháng đang hoạt động.
@@ -202,7 +204,7 @@ export default function Cards({ currentUser }) {
                 <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.code}</td>
                 <td>
                   <div className="row" style={{ gap: 4 }}>
-                    <input key={"c" + r.id + "|" + (r.card || "")} className="input" style={{ padding: "5px 8px", width: 160 }}
+                    <input key={"c" + r.id + "|" + cardText(r.card)} className="input" style={{ padding: "5px 8px", width: 160 }}
                       defaultValue={cardCellValue(r)}
                       placeholder={r.card && isLockedText(cardText(r.card)) ? "🔒 Đã cấp — dán MÃ để đổi" : "Nhập thẻ cấp…"} {...cellProps("Thẻ", (v) => saveCard(r, v))} />
                     {r.card && <button className="btn sm" title="Copy MÃ (dạng mã hóa) để dán vào Sheet Con" onClick={() => copyCard(r)} style={{ whiteSpace: "nowrap" }}>

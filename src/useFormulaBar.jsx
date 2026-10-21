@@ -81,7 +81,10 @@ export function useFormulaBar() {
       );
     }
 
-    ref.current = { cellProps, viewCell, Bar };
+    // Đóng thanh công thức (xóa nội dung đang hiện) — dùng khi khóa thẻ để không lộ số thẻ vừa xem.
+    const close = () => { store.focusedEl.current = null; store.commitRef.current = null; store.set({ active: false, label: "", value: "", readonly: false }); };
+
+    ref.current = { cellProps, viewCell, Bar, close };
   }
   return ref.current;
 }

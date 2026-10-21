@@ -8,7 +8,7 @@ import MultiFilter from "../MultiFilter.jsx";
 import HistoryModal from "../HistoryModal.jsx";
 import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
 import { useCardDecrypt } from "../useLanKey.js";
-import { prepareCardForSave } from "../cardKeyLan.js";
+import { prepareCardForSave, onLanKeyChange, lanKeyReady } from "../cardKeyLan.js";
 
 // Sheet Con — team members process their divided orders. One order groups 1+ card
 // rows (purchases); order-level cells use rowSpan. Master status drives row colour.
@@ -39,7 +39,9 @@ export default function TeamSheet({ currentUser, teams }) {
   const [activeMonth, setActiveMonth] = useState("");
   const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
-  const { cellProps, Bar, viewCell } = useFormulaBar();
+  const { cellProps, Bar, viewCell, close } = useFormulaBar();
+  // Tắt key / khóa thẻ → đóng thanh công thức ngay (không để lộ số thẻ vừa xem).
+  useEffect(() => onLanKeyChange(() => { if (!lanKeyReady()) close(); }), []);
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
@@ -577,7 +579,7 @@ export default function TeamSheet({ currentUser, teams }) {
                       <input className="input" style={{ padding: "4px 6px", width: 130,
                         borderColor: p.card && !p.cardValid ? "var(--red)" : undefined,
                         background: p.card && !p.cardValid ? "var(--red-bg)" : undefined }}
-                        key={"pc" + p.id + "|" + (p.card || "")} defaultValue={cardCellValue(p)}
+                        key={"pc" + p.id + "|" + cardText(p.card)} defaultValue={cardCellValue(p)}
                         placeholder={p.card && isLockedText(cardText(p.card)) ? "🔒 Đã có thẻ — dán MÃ để đổi" : "Dán MÃ hoặc nhập thẻ…"}
                         title={p.card && !p.cardValid ? "Thẻ chưa được cấp trong Sheet Mua thẻ" : ""}
                         {...cellProps("Thẻ", (v) => savePurchase(p, "card", v))} />
