@@ -13,7 +13,7 @@ export default function CardStock({ currentUser }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [copiedId, setCopiedId] = useState("");
-  const [onlyFree, setOnlyFree] = useState(false);     // chỉ hiện thẻ chưa giao
+  const [statusF, setStatusF] = useState("all");       // all | free (chưa giao) | assigned (đã giao)
   const [cf, setCf] = useState({ card: "", recipient: "", note: "" });
   const setF = (k, v) => setCf((p) => ({ ...p, [k]: v }));
 
@@ -88,12 +88,14 @@ export default function CardStock({ currentUser }) {
 
   const T = (v) => String(v || "").toLowerCase();
   const filtered = useMemo(() => stock.filter((s) => {
-    if (onlyFree && (s.recipient || "").trim()) return false;
+    const assignedRow = !!(s.recipient || "").trim();
+    if (statusF === "free" && assignedRow) return false;
+    if (statusF === "assigned" && !assignedRow) return false;
     if (cf.card && !T(cardText(s.card)).includes(T(cf.card))) return false;
     if (cf.recipient && !T(s.recipient).includes(T(cf.recipient))) return false;
     if (cf.note && !T(s.note).includes(T(cf.note))) return false;
     return true;
-  }), [stock, cf, onlyFree, rev]);
+  }), [stock, cf, statusF, rev]);
 
   const assigned = stock.filter((s) => (s.recipient || "").trim()).length;
   const fmtDate = (ms) => ms ? new Date(ms).toLocaleString("vi", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
@@ -125,10 +127,11 @@ export default function CardStock({ currentUser }) {
 
       {err && <div style={{ color: err.startsWith("✓") ? "var(--green)" : "var(--red)", marginBottom: 10 }}>{err}</div>}
 
-      <div className="row" style={{ gap: 10, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <label className="row" style={{ gap: 5, cursor: "pointer", fontSize: 13 }}>
-          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> Chỉ thẻ chưa giao
-        </label>
+      <div className="row" style={{ gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span className="muted" style={{ fontSize: 13 }}>Lọc:</span>
+        <Button sm variant={statusF === "all" ? "primary" : ""} onClick={() => setStatusF("all")}>Tất cả ({stock.length})</Button>
+        <Button sm variant={statusF === "free" ? "primary" : ""} onClick={() => setStatusF("free")}>🟢 Chưa giao ({stock.length - assigned})</Button>
+        <Button sm variant={statusF === "assigned" ? "primary" : ""} onClick={() => setStatusF("assigned")}>✅ Đã giao ({assigned})</Button>
         {(cf.card || cf.recipient || cf.note) && <Button sm onClick={() => setCf({ card: "", recipient: "", note: "" })}>✕ Xóa lọc</Button>}
       </div>
 

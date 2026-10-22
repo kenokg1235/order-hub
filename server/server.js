@@ -1696,6 +1696,14 @@ app.put("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   if ("card" in b && isManager) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
   if ("adminNote" in b && isManager) { sets.push("admin_note=?"); vals.push(String(b.adminNote || "")); }
   if (sets.length) { sets.push("updated_at=?"); vals.push(Date.now()); db.prepare(`UPDATE card_requests SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id); _cardReqCache = {}; }   // reset cache → poll thấy trạng thái mới ngay, không chờ hết 20s
+  // Đồng bộ KHO THẺ: cấp thẻ này cho yêu cầu → nếu thẻ có trong kho & CHƯA ghi người nhận thì tự ghim
+  // tên người yêu cầu (khớp theo ciphertext — mã hóa tất định nên cùng thẻ = cùng ciphertext).
+  if ("card" in b && isManager) {
+    const cv = String(b.card || "").trim();
+    if (cv) db.prepare(`UPDATE card_stock SET recipient=?, assigned_at=?
+      WHERE id = (SELECT id FROM card_stock WHERE card_value=? AND COALESCE(recipient,'')='' ORDER BY created_at ASC LIMIT 1)`)
+      .run(r.requester_name, Date.now(), cv);
+  }
   // notify: card issued → requester; status changed → card managers
   // KHÔNG đưa số thẻ (plaintext) vào thông báo — tránh rò ra bảng notifications.
   if ("card" in b && b.card && !r.card_value)
