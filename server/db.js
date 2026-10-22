@@ -136,6 +136,7 @@ ensureColumn("stores", "died_at", "TEXT DEFAULT ''");        // ngày acc die "Y
 ensureColumn("orders", "listed_by", "TEXT DEFAULT ''");
 ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note on Sheet Tổng
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
+ensureColumn("users", "can_card_stock", "INTEGER DEFAULT 0");   // quyền xem/quản lý Kho thẻ
 ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
 ensureColumn("users", "can_master", "INTEGER NOT NULL DEFAULT 0");    // Leader có quyền xem/sửa Sheet Tổng
 ensureColumn("users", "last_seen", "INTEGER DEFAULT 0");              // mốc hoạt động gần nhất (online)

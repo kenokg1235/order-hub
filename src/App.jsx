@@ -49,7 +49,7 @@ const NAV = [
     // Lister is restricted to Sheet Tổng only — no card section.
     { id: "requests", icon: "✍️", label: "Yêu cầu thẻ",  access: (u) => u.role !== "Lister" },
     { id: "cards",    icon: "🎴", label: "Mua thẻ",      access: (u) => u.role !== "Lister" && (u.role === "Admin" || u.role === "Buyer" || u.canBuyCard) },
-    { id: "card-stock", icon: "🗄️", label: "Kho thẻ",    access: (u) => u.role === "Admin" || u.role === "Buyer" || u.canBuyCard },
+    { id: "card-stock", icon: "🗄️", label: "Kho thẻ",    access: (u) => u.role === "Admin" || u.canCardStock },
     { id: "card-stats", icon: "📊", label: "Thống kê thẻ", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "HỆ THỐNG", items: [

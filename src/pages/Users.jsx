@@ -28,7 +28,7 @@ export default function Users({ teams }) {
       <div className="row" style={{ marginBottom: 14 }}>
         <h2 style={{ margin: 0 }}>Người dùng & Phân quyền</h2>
         <div className="spacer" />
-        <Button variant="primary" onClick={() => setEditing({ role: "Member", teamIds: [], storeNames: [], canBuyCard: false })}>
+        <Button variant="primary" onClick={() => setEditing({ role: "Member", teamIds: [], storeNames: [], canBuyCard: false, canCardStock: false })}>
           ＋ Thêm người dùng
         </Button>
       </div>
@@ -131,7 +131,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
     name: user.name || "", email: user.email || "", password: "",
     role: user.role || "Member", teamIds: user.teamIds || [], storeNames: user.storeNames || [],
     mutedTeams: user.mutedTeams || [],
-    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, active: user.active !== false,
+    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, canCardStock: !!user.canCardStock, active: user.active !== false,
   });
   const [newStore, setNewStore] = useState("");
   const [err, setErr] = useState("");
@@ -228,6 +228,10 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
             📊 Quyền Sheet Tổng (xem &amp; sửa)
           </label>
         )}
+        <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.canCardStock} onChange={(e) => up("canCardStock", e.target.checked)} />
+          🗄️ Quyền Kho thẻ
+        </label>
         <label className="row" style={{ gap: 6, cursor: "pointer" }}>
           <input type="checkbox" checked={f.active} onChange={(e) => up("active", e.target.checked)} />
           Hoạt động

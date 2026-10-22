@@ -110,31 +110,32 @@ app.get("/api/users", requireAdmin, (req, res) => {
 });
 
 app.post("/api/users", requireAdmin, (req, res) => {
-  const { name, email, password, role, teamIds, storeNames, canBuyCard, canMaster, mutedTeams } = req.body || {};
+  const { name, email, password, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, mutedTeams } = req.body || {};
   const mail = String(email || "").trim().toLowerCase();
   if (!name || !mail || !password) return res.status(400).json({ error: "Thiếu tên / email / mật khẩu" });
   const dup = db.prepare("SELECT 1 FROM users WHERE email=?").get(mail);
   if (dup) return res.status(409).json({ error: "Email đã tồn tại" });
   const id = newId("u");
-  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,can_master,active,created_at)
-              VALUES (?,?,?,?,?,?,?,?,?,?,1,?)`)
+  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,can_master,can_card_stock,active,created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)`)
     .run(id, name, mail, bcrypt.hashSync(String(password), 10),
          role || "Member", JSON.stringify(teamIds || []), JSON.stringify(storeNames || []),
-         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, canMaster ? 1 : 0, Date.now());
+         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, canMaster ? 1 : 0, canCardStock ? 1 : 0, Date.now());
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(id)) });
 });
 
 app.put("/api/users/:id", requireAdmin, (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
   if (!u) return res.status(404).json({ error: "Không tìm thấy user" });
-  const { name, role, teamIds, storeNames, canBuyCard, canMaster, active, password, mutedTeams } = req.body || {};
-  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, can_master=?, active=?,
+  const { name, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, active, password, mutedTeams } = req.body || {};
+  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, can_master=?, can_card_stock=?, active=?,
               password=COALESCE(?, password) WHERE id=?`)
     .run(name ?? u.name, role ?? u.role, JSON.stringify(teamIds ?? JSON.parse(u.team_ids)),
          JSON.stringify(storeNames ?? JSON.parse(u.store_names || "[]")),
          JSON.stringify(mutedTeams ?? JSON.parse(u.muted_teams || "[]")),
          (role ?? u.role) === "Buyer" ? 1 : (canBuyCard != null ? (canBuyCard ? 1 : 0) : u.can_buy_card),
          canMaster != null ? (canMaster ? 1 : 0) : u.can_master,
+         canCardStock != null ? (canCardStock ? 1 : 0) : u.can_card_stock,
          active != null ? (active ? 1 : 0) : u.active,
          password ? bcrypt.hashSync(String(password), 10) : null, u.id);
   // Đổi mật khẩu → hủy mọi phiên đang đăng nhập của user đó (buộc đăng nhập lại bằng mật khẩu mới).
@@ -1719,7 +1720,7 @@ app.delete("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
 });
 
 // ── Kho thẻ (card_stock): thẻ Admin/người mua nhập sẵn, mã hóa; ghim tên người nhận khi giao ──
-const isCardManager = (u) => u.role === "Admin" || u.canBuyCard;
+const isCardManager = (u) => u.role === "Admin" || u.canCardStock;   // Admin hoặc người được Admin cấp quyền Kho thẻ
 const cardStockOut = (r) => ({ id: r.id, card: r.card_value, note: r.note || "", recipient: r.recipient || "",
   assignedAt: r.assigned_at || 0, createdAt: r.created_at });
 
