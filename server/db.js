@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at INTEGER NOT NULL
 );
 
+-- Kho thẻ: thẻ Admin nhập sẵn (card_value = ciphertext, mã hóa như hệ thống thẻ).
+-- recipient = tên người nhận (ghim khi giao); assigned_at = thời điểm giao.
+CREATE TABLE IF NOT EXISTS card_stock (
+  id TEXT PRIMARY KEY,
+  card_value TEXT NOT NULL DEFAULT '',
+  note TEXT DEFAULT '',
+  recipient TEXT DEFAULT '',
+  assigned_at INTEGER DEFAULT 0,
+  created_by TEXT DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_purchases_order ON purchases(order_id);
 CREATE INDEX IF NOT EXISTS idx_purchases_card  ON purchases(card);
 CREATE INDEX IF NOT EXISTS idx_orders_team     ON orders(team);

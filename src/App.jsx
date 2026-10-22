@@ -13,6 +13,7 @@ import Master from "./pages/Master.jsx";
 import TeamSheet from "./pages/TeamSheet.jsx";
 import Requests from "./pages/Requests.jsx";
 import Cards from "./pages/Cards.jsx";
+import CardStock from "./pages/CardStock.jsx";
 import CardStats from "./pages/CardStats.jsx";
 import Stores from "./pages/Stores.jsx";
 import Payout from "./pages/Payout.jsx";
@@ -48,6 +49,7 @@ const NAV = [
     // Lister is restricted to Sheet Tổng only — no card section.
     { id: "requests", icon: "✍️", label: "Yêu cầu thẻ",  access: (u) => u.role !== "Lister" },
     { id: "cards",    icon: "🎴", label: "Mua thẻ",      access: (u) => u.role !== "Lister" && (u.role === "Admin" || u.role === "Buyer" || u.canBuyCard) },
+    { id: "card-stock", icon: "🗄️", label: "Kho thẻ",    access: (u) => u.role === "Admin" || u.role === "Buyer" || u.canBuyCard },
     { id: "card-stats", icon: "📊", label: "Thống kê thẻ", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "HỆ THỐNG", items: [
@@ -302,6 +304,7 @@ export default function App() {
         {page === "team"     && <TeamSheet currentUser={user} teams={teams} />}
         {page === "requests" && <Requests currentUser={user} />}
         {page === "cards"    && <Cards currentUser={user} />}
+        {page === "card-stock" && <CardStock currentUser={user} />}
         {page === "card-stats" && <CardStats />}
       </main>
       <SelectionCounter />

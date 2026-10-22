@@ -1718,6 +1718,66 @@ app.delete("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Kho thẻ (card_stock): thẻ Admin/người mua nhập sẵn, mã hóa; ghim tên người nhận khi giao ──
+const isCardManager = (u) => u.role === "Admin" || u.canBuyCard;
+const cardStockOut = (r) => ({ id: r.id, card: r.card_value, note: r.note || "", recipient: r.recipient || "",
+  assignedAt: r.assigned_at || 0, createdAt: r.created_at });
+
+app.get("/api/card-stock", requireAuth, (req, res) => {
+  if (!isCardManager(req.user)) return res.status(403).json({ error: "Không có quyền" });
+  const rows = db.prepare("SELECT * FROM card_stock ORDER BY created_at DESC").all();
+  res.json({ cards: rows.map(cardStockOut) });
+});
+
+// Thêm thẻ vào kho — 1 hoặc nhiều (rows). Thẻ phải ĐÃ MÃ HÓA (ciphertext) — mã hóa ở trình duyệt.
+app.post("/api/card-stock", requireAuth, (req, res) => {
+  if (!isCardManager(req.user)) return res.status(403).json({ error: "Không có quyền" });
+  const b = req.body || {};
+  const list = Array.isArray(b.rows) ? b.rows : [{ card: b.card, note: b.note }];
+  const ins = db.prepare("INSERT INTO card_stock (id,card_value,note,recipient,assigned_at,created_by,created_at) VALUES (?,?,?,?,0,?,?)");
+  let added = 0, now = Date.now();
+  const tx = db.transaction((rows) => {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || {};
+      const card = String(r.card || "").trim();
+      if (!card) continue;
+      if (plaintextCard({ card })) return "PLAINTEXT";
+      ins.run(newId("stk"), card, String(r.note || ""), "", req.user.id, now + (rows.length - i));
+      added++;
+    }
+  });
+  const bad = tx(list);
+  if (bad === "PLAINTEXT") return res.status(400).json({ error: "Thẻ phải ở dạng mã hóa — cần ở văn phòng (có khóa) hoặc đã nhập khóa." });
+  res.json({ ok: true, added });
+});
+
+// Sửa thẻ kho: card / note / recipient. Ghim recipient lần đầu → đóng dấu thời điểm giao.
+app.put("/api/card-stock/:id", requireAuth, (req, res) => {
+  if (!isCardManager(req.user)) return res.status(403).json({ error: "Không có quyền" });
+  const r = db.prepare("SELECT * FROM card_stock WHERE id=?").get(req.params.id);
+  if (!r) return res.status(404).json({ error: "Không tìm thấy thẻ" });
+  const b = req.body || {};
+  if (plaintextCard(b)) return res.status(400).json({ error: "Thẻ phải ở dạng mã hóa." });
+  const sets = [], vals = [];
+  if ("card" in b) { sets.push("card_value=?"); vals.push(String(b.card || "").trim()); }
+  if ("note" in b) { sets.push("note=?"); vals.push(String(b.note || "")); }
+  if ("recipient" in b) {
+    const name = String(b.recipient || "").trim();
+    sets.push("recipient=?"); vals.push(name);
+    // Ghim lần đầu (trước trống, giờ có tên) → lưu thời điểm giao; xóa tên → xóa dấu.
+    if (name && !(r.recipient || "").trim()) { sets.push("assigned_at=?"); vals.push(Date.now()); }
+    if (!name) { sets.push("assigned_at=?"); vals.push(0); }
+  }
+  if (sets.length) db.prepare(`UPDATE card_stock SET ${sets.join(",")} WHERE id=?`).run(...vals, r.id);
+  res.json({ card: cardStockOut(db.prepare("SELECT * FROM card_stock WHERE id=?").get(r.id)) });
+});
+
+app.delete("/api/card-stock/:id", requireAuth, (req, res) => {
+  if (!isCardManager(req.user)) return res.status(403).json({ error: "Không có quyền" });
+  db.prepare("DELETE FROM card_stock WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
+
 // Team card stats (read-only) — teammates' card usage with the CARD VALUE HIDDEN.
 app.get("/api/team-card-stats", requireAuth, (req, res) => {
   const u = req.user;
