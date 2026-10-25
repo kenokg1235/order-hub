@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Button } from "../ui.jsx";
 import ColorPicker from "../ColorPicker.jsx";
-import { lockCards } from "../cardKeyLan.js";
+import { lockCards, buildRekeyMap, lanKeyReady, onLanKeyChange } from "../cardKeyLan.js";
 import { ORDER_COLUMNS, PROCESS_PICK_COLUMNS, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
 
 // Admin-configurable status lists + Telegram. The status lists drive dropdowns
@@ -55,6 +55,8 @@ export default function Settings() {
 
       <LanKeyEditor url={s.lanKeyUrl || ""} onSave={(v) => saveList("lanKeyUrl", v)}
         label={s.cardKeyLabel || "Key"} onSaveLabel={(v) => saveList("cardKeyLabel", v)} />
+
+      <RekeyEditor />
 
       <StatusColorEditor master={s.masterStatuses} process={s.processStatuses}
         card={[...new Set([...(s.cardStatuses || []), ...(s.cardCountStatuses || []), ...(s.cardErrorStatuses || [])])]}
@@ -205,6 +207,71 @@ function ExportColumnsEditor({ cols, onSave }) {
         <Button variant="primary" onClick={save}>Lưu</Button>
         {msg && <span className="badge green">{msg}</span>}
       </div>
+    </div>
+  );
+}
+
+// Xoay KHÓA mã hóa thẻ (Admin). Trình duyệt phải đang có KHÓA CŨ; nhập khóa MỚI → giải mã lại toàn bộ.
+function RekeyEditor() {
+  const [ready, setReady] = useState(lanKeyReady());
+  const [k1, setK1] = useState(""), [k2, setK2] = useState("");
+  const [backedUp, setBackedUp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [done, setDone] = useState(null);
+  useEffect(() => onLanKeyChange(() => setReady(lanKeyReady())), []);
+
+  async function doRekey() {
+    setMsg("");
+    if (!ready) { setMsg("Cần đang mở khóa (khóa CŨ) ở trình duyệt này trước khi đổi."); return; }
+    if (k1.trim().length < 8) { setMsg("Khóa mới quá ngắn."); return; }
+    if (k1 !== k2) { setMsg("Hai ô khóa mới không khớp."); return; }
+    if (!backedUp) { setMsg("Hãy tích xác nhận đã sao lưu trước."); return; }
+    if (!confirm("Đổi khóa mã hóa cho TOÀN BỘ thẻ? Sau đó phải cập nhật keyserver sang khóa MỚI ngay.")) return;
+    setBusy(true);
+    try {
+      const { ciphertexts } = await api.get("/api/cards/ciphertexts");
+      setMsg(`Đang mã hóa lại ${ciphertexts.length} giá trị…`);
+      const { map, checkToken, failed, total } = await buildRekeyMap(k1.trim(), ciphertexts);
+      if (failed > 0 && !confirm(`${failed}/${total} giá trị KHÔNG giải mã được bằng khóa hiện tại (sẽ GIỮ NGUYÊN khóa cũ → sau này hiện 🔒). Vẫn tiếp tục?`)) { setBusy(false); setMsg("Đã hủy."); return; }
+      const r = await api.post("/api/cards/rekey", { map, checkToken });
+      setDone({ updated: r.updated, failed });
+      setK1(""); setK2("");
+    } catch (e) {
+      setMsg(e.code === "NO_LAN_KEY" ? "Chưa có khóa cũ trong trình duyệt — mở khóa trước." : ("Lỗi: " + e.message));
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 16, borderColor: "var(--red)" }}>
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>🔑 Đổi khóa mã hóa thẻ (xoay khóa)</div>
+      {done ? (
+        <div>
+          <div className="badge green" style={{ marginBottom: 8 }}>✓ Đã đổi khóa — cập nhật {done.updated} giá trị{done.failed ? ` (bỏ qua ${done.failed})` : ""}</div>
+          <ol style={{ margin: "6px 0 0 18px", fontSize: 13, lineHeight: 1.6 }}>
+            <li><b>Ngay bây giờ:</b> cập nhật <b>keyserver dùng KHÓA MỚI</b> và khởi động lại (đóng cửa sổ keyserver, chạy lại rồi nhập khóa mới).</li>
+            <li>Mọi phiên đã bị khóa — mỗi máy <b>tải lại trang</b> để nạp khóa mới (hoặc người từ xa nhập lại khóa mới).</li>
+            <li>Lưu <b>khóa mới</b> vào password manager; khóa cũ có thể bỏ.</li>
+          </ol>
+        </div>
+      ) : (
+        <>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+            Giải mã toàn bộ thẻ bằng khóa CŨ (đang mở ở máy này) rồi mã hóa lại bằng khóa MỚI — dữ liệu cũ vẫn đọc được.
+            {ready ? <b style={{ color: "var(--green)" }}> ✓ Đang có khóa cũ.</b> : <b style={{ color: "var(--red)" }}> ✗ Chưa có khóa — hãy mở khóa thẻ ở máy này trước.</b>}
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 260 }} value={k1} placeholder="Khóa MỚI" onChange={(e) => setK1(e.target.value)} />
+            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 260 }} value={k2} placeholder="Nhập lại khóa MỚI" onChange={(e) => setK2(e.target.value)} />
+          </div>
+          <label className="row" style={{ gap: 6, cursor: "pointer", fontSize: 13, marginBottom: 8 }}>
+            <input type="checkbox" checked={backedUp} onChange={(e) => setBackedUp(e.target.checked)} />
+            Tôi đã sao lưu dữ liệu (kéo file backup .age về máy) trước khi đổi.
+          </label>
+          <Button variant="danger" disabled={busy || !ready} onClick={doRekey}>{busy ? "Đang đổi khóa…" : "🔑 Đổi khóa ngay"}</Button>
+          {msg && <div style={{ marginTop: 8, fontSize: 13, color: msg.startsWith("Lỗi") || msg.startsWith("Cần") ? "var(--red)" : "var(--muted)" }}>{msg}</div>}
+        </>
+      )}
     </div>
   );
 }

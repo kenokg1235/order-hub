@@ -153,3 +153,21 @@ export function startKeyWatch({ getLockSeq, bumpLockSeq, isAdmin, intervalMs = 1
   tick();   // chạy ngay một lần
   return () => { if (_watchTimer) { clearInterval(_watchTimer); _watchTimer = null; } };
 }
+
+// ── XOAY KHÓA (Admin): giải mã mọi ciphertext bằng khóa HIỆN TẠI → mã hóa lại bằng khóa MỚI ──
+// Yêu cầu khóa cũ đang nạp trong trình duyệt này. Trả { map:{oldCt:newCt}, checkToken, failed, total }.
+export async function buildRekeyMap(newKey, ciphertexts) {
+  if (!_ready || !_cipher) { const e = new Error("Chưa có khóa hiện tại trong trình duyệt."); e.code = "NO_LAN_KEY"; throw e; }
+  const nk = String(newKey || "").trim();
+  if (nk.length < 8) throw new Error("Khóa mới quá ngắn (tối thiểu 8 ký tự).");
+  const newCipher = await makeCardCipher(nk);
+  const map = {}; let failed = 0;
+  for (const ct of ciphertexts || []) {
+    if (!isEncrypted(ct)) continue;
+    let pt; try { pt = await _cipher.decCard(ct); } catch { pt = "🔒"; }
+    if (pt === "🔒") { failed++; continue; }          // khóa cũ không giải được → bỏ (không ép vào map)
+    map[ct] = await newCipher.encCard(pt);
+  }
+  const checkToken = await newCipher.encCard(CHECK_PLAIN);
+  return { map, checkToken, failed, total: (ciphertexts || []).length };
+}

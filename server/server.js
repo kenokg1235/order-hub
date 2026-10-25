@@ -1787,6 +1787,49 @@ app.delete("/api/card-stock/:id", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Xoay khóa mã hóa thẻ (Admin). VPS không có khóa: trình duyệt (đang có khóa cũ) giải mã mọi
+// ciphertext rồi mã hóa lại bằng khóa mới, gửi map {oldCt:newCt} lên đây để thay trên DB. ──
+app.get("/api/cards/ciphertexts", requireAdmin, (req, res) => {
+  const set = new Set();
+  const add = (rows, k) => rows.forEach((r) => { const v = r[k]; if (v && String(v).startsWith("enc:v1:")) set.add(v); });
+  add(db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value LIKE 'enc:v1:%'").all(), "card_value");
+  add(db.prepare("SELECT DISTINCT card FROM purchases WHERE card LIKE 'enc:v1:%'").all(), "card");
+  add(db.prepare("SELECT DISTINCT card_value FROM card_stock WHERE card_value LIKE 'enc:v1:%'").all(), "card_value");
+  add(db.prepare("SELECT DISTINCT old_value FROM audit_log WHERE field='card' AND old_value LIKE 'enc:v1:%'").all(), "old_value");
+  add(db.prepare("SELECT DISTINCT new_value FROM audit_log WHERE field='card' AND new_value LIKE 'enc:v1:%'").all(), "new_value");
+  res.json({ ciphertexts: [...set] });
+});
+
+app.post("/api/cards/rekey", requireAdmin, (req, res) => {
+  const map = (req.body && req.body.map) || {};
+  const checkToken = String((req.body && req.body.checkToken) || "");
+  if (!checkToken) return res.status(400).json({ error: "Thiếu token xác minh khóa mới." });
+  if (!map || typeof map !== "object" || !Object.keys(map).length) return res.status(400).json({ error: "Map đổi khóa rỗng." });
+  let n = 0;
+  const remap = (table, col) => {
+    const rows = db.prepare(`SELECT id, ${col} AS v FROM ${table} WHERE ${col} LIKE 'enc:v1:%'`).all();
+    const stmt = db.prepare(`UPDATE ${table} SET ${col}=? WHERE id=?`);
+    for (const r of rows) { const nv = map[r.v]; if (nv && nv !== r.v) { stmt.run(nv, r.id); n++; } }
+  };
+  const tx = db.transaction(() => {
+    remap("card_requests", "card_value");
+    remap("purchases", "card");
+    remap("card_stock", "card_value");
+    const al = db.prepare("SELECT id, old_value, new_value FROM audit_log WHERE field='card'").all();
+    const alu = db.prepare("UPDATE audit_log SET old_value=?, new_value=? WHERE id=?");
+    for (const r of al) {
+      const o = map[r.old_value] || r.old_value, w = map[r.new_value] || r.new_value;
+      if (o !== r.old_value || w !== r.new_value) { alu.run(o, w, r.id); n++; }
+    }
+    setSetting("cardKeyCheck", checkToken);                                   // token xác minh = khóa mới
+    setSetting("cardLockSeq", (getSetting("cardLockSeq", 0) || 0) + 1);       // khóa mọi phiên → buộc nạp khóa mới
+  });
+  tx();
+  _validCardsCache = { at: 0, set: null };   // ciphertext đã đổi → dựng lại tập thẻ hợp lệ
+  _cardReqCache = {};
+  res.json({ ok: true, updated: n });
+});
+
 // Team card stats (read-only) — teammates' card usage with the CARD VALUE HIDDEN.
 app.get("/api/team-card-stats", requireAuth, (req, res) => {
   const u = req.user;
