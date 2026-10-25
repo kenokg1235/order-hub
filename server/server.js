@@ -1807,16 +1807,16 @@ app.post("/api/cards/rekey", requireAdmin, (req, res) => {
   if (!checkToken) return res.status(400).json({ error: "Thiếu token xác minh khóa mới." });
   if (!map || typeof map !== "object" || !Object.keys(map).length) return res.status(400).json({ error: "Map đổi khóa rỗng." });
   let n = 0;
-  const remap = (table, col) => {
-    const rows = db.prepare(`SELECT id, ${col} AS v FROM ${table} WHERE ${col} LIKE 'enc:v1:%'`).all();
-    const stmt = db.prepare(`UPDATE ${table} SET ${col}=? WHERE id=?`);
-    for (const r of rows) { const nv = map[r.v]; if (nv && nv !== r.v) { stmt.run(nv, r.id); n++; } }
+  const remap = (table, col, keyCol = "id") => {
+    const rows = db.prepare(`SELECT ${keyCol} AS k, ${col} AS v FROM ${table} WHERE ${col} LIKE 'enc:v1:%'`).all();
+    const stmt = db.prepare(`UPDATE ${table} SET ${col}=? WHERE ${keyCol}=?`);
+    for (const r of rows) { const nv = map[r.v]; if (nv && nv !== r.v) { stmt.run(nv, r.k); n++; } }
   };
   const tx = db.transaction(() => {
     remap("card_requests", "card_value");
     remap("purchases", "card");
     remap("card_stock", "card_value");
-    remap("card_ledger", "card");          // SỔ BALANCE — phải đổi theo, nếu không balance tra không khớp
+    remap("card_ledger", "card", "purchase_id");   // SỔ BALANCE (PK = purchase_id) — đổi theo, nếu không balance không khớp
     const al = db.prepare("SELECT id, old_value, new_value FROM audit_log WHERE field='card'").all();
     const alu = db.prepare("UPDATE audit_log SET old_value=?, new_value=? WHERE id=?");
     for (const r of al) {
@@ -1841,10 +1841,10 @@ app.post("/api/cards/repair-ledger", requireAdmin, (req, res) => {
                             WHERE l.card LIKE 'enc:v1:%' AND p.card LIKE 'enc:v1:%'`).all();
   const learned = {};
   for (const r of links) if (r.lold && r.pnew && r.lold !== r.pnew) learned[r.lold] = r.pnew;
-  const rows = db.prepare("SELECT id, card FROM card_ledger WHERE card LIKE 'enc:v1:%'").all();
-  const upd = db.prepare("UPDATE card_ledger SET card=? WHERE id=?");
+  const rows = db.prepare("SELECT purchase_id, card FROM card_ledger WHERE card LIKE 'enc:v1:%'").all();
+  const upd = db.prepare("UPDATE card_ledger SET card=? WHERE purchase_id=?");
   let fixed = 0;
-  const tx = db.transaction(() => { for (const r of rows) { const nv = learned[r.card]; if (nv && nv !== r.card) { upd.run(nv, r.id); fixed++; } } });
+  const tx = db.transaction(() => { for (const r of rows) { const nv = learned[r.card]; if (nv && nv !== r.card) { upd.run(nv, r.purchase_id); fixed++; } } });
   tx();
   // Dòng sổ còn ciphertext KHÔNG khớp purchase nào (mồ côi, thẻ không còn purchase) → balance chưa đủ.
   const stillOld = db.prepare(`SELECT COUNT(*) c FROM card_ledger l
