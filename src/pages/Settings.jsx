@@ -215,11 +215,27 @@ function ExportColumnsEditor({ cols, onSave }) {
 function RekeyEditor() {
   const [ready, setReady] = useState(lanKeyReady());
   const [k1, setK1] = useState(""), [k2, setK2] = useState("");
+  const [gen, setGen] = useState("");        // khóa vừa tạo (hiện rõ để copy & lưu)
+  const [copied, setCopied] = useState(false);
   const [backedUp, setBackedUp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [done, setDone] = useState(null);
   useEffect(() => onLanKeyChange(() => setReady(lanKeyReady())), []);
+
+  function generateKey() {
+    const b = new Uint8Array(24);
+    (window.crypto || crypto).getRandomValues(b);         // ngẫu nhiên mật mã học (192-bit)
+    const hex = Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
+    setK1(hex); setK2(hex); setGen(hex); setCopied(false); setMsg("");
+  }
+  async function copyGen() {
+    try { await navigator.clipboard.writeText(gen); } catch {
+      const ta = document.createElement("textarea"); ta.value = gen; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {} ta.remove();
+    }
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+  }
 
   async function doRekey() {
     setMsg("");
@@ -260,10 +276,21 @@ function RekeyEditor() {
             Giải mã toàn bộ thẻ bằng khóa CŨ (đang mở ở máy này) rồi mã hóa lại bằng khóa MỚI — dữ liệu cũ vẫn đọc được.
             {ready ? <b style={{ color: "var(--green)" }}> ✓ Đang có khóa cũ.</b> : <b style={{ color: "var(--red)" }}> ✗ Chưa có khóa — hãy mở khóa thẻ ở máy này trước.</b>}
           </div>
-          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 260 }} value={k1} placeholder="Khóa MỚI" onChange={(e) => setK1(e.target.value)} />
-            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 260 }} value={k2} placeholder="Nhập lại khóa MỚI" onChange={(e) => setK2(e.target.value)} />
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 240 }} value={k1} placeholder="Khóa MỚI" onChange={(e) => { setK1(e.target.value); setGen(""); }} />
+            <input className="input" type="password" autoComplete="off" style={{ maxWidth: 240 }} value={k2} placeholder="Nhập lại khóa MỚI" onChange={(e) => { setK2(e.target.value); setGen(""); }} />
+            <Button onClick={generateKey} title="Tạo khóa ngẫu nhiên mạnh (192-bit)">🎲 Tạo khóa ngẫu nhiên</Button>
           </div>
+          {gen && (
+            <div style={{ background: "#fff6e6", border: "1px solid #e0a300", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, color: "#9a6b00", marginBottom: 4, fontSize: 13 }}>⚠️ LƯU KHÓA NÀY NGAY — mất khóa = mất toàn bộ thẻ:</div>
+              <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <code style={{ fontSize: 14, wordBreak: "break-all", background: "#fff", padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border)" }}>{gen}</code>
+                <Button sm variant="primary" onClick={copyGen}>{copied ? "✓ Đã copy" : "📋 Copy"}</Button>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>Dán vào password manager + dùng chuỗi này để chạy keyserver sau khi đổi.</div>
+            </div>
+          )}
           <label className="row" style={{ gap: 6, cursor: "pointer", fontSize: 13, marginBottom: 8 }}>
             <input type="checkbox" checked={backedUp} onChange={(e) => setBackedUp(e.target.checked)} />
             Tôi đã sao lưu dữ liệu (kéo file backup .age về máy) trước khi đổi.
