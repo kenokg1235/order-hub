@@ -1795,6 +1795,7 @@ app.get("/api/cards/ciphertexts", requireAdmin, (req, res) => {
   add(db.prepare("SELECT DISTINCT card_value FROM card_requests WHERE card_value LIKE 'enc:v1:%'").all(), "card_value");
   add(db.prepare("SELECT DISTINCT card FROM purchases WHERE card LIKE 'enc:v1:%'").all(), "card");
   add(db.prepare("SELECT DISTINCT card_value FROM card_stock WHERE card_value LIKE 'enc:v1:%'").all(), "card_value");
+  add(db.prepare("SELECT DISTINCT card FROM card_ledger WHERE card LIKE 'enc:v1:%'").all(), "card");
   add(db.prepare("SELECT DISTINCT old_value FROM audit_log WHERE field='card' AND old_value LIKE 'enc:v1:%'").all(), "old_value");
   add(db.prepare("SELECT DISTINCT new_value FROM audit_log WHERE field='card' AND new_value LIKE 'enc:v1:%'").all(), "new_value");
   res.json({ ciphertexts: [...set] });
@@ -1815,6 +1816,7 @@ app.post("/api/cards/rekey", requireAdmin, (req, res) => {
     remap("card_requests", "card_value");
     remap("purchases", "card");
     remap("card_stock", "card_value");
+    remap("card_ledger", "card");          // SỔ BALANCE — phải đổi theo, nếu không balance tra không khớp
     const al = db.prepare("SELECT id, old_value, new_value FROM audit_log WHERE field='card'").all();
     const alu = db.prepare("UPDATE audit_log SET old_value=?, new_value=? WHERE id=?");
     for (const r of al) {
@@ -1828,6 +1830,26 @@ app.post("/api/cards/rekey", requireAdmin, (req, res) => {
   _validCardsCache = { at: 0, set: null };   // ciphertext đã đổi → dựng lại tập thẻ hợp lệ
   _cardReqCache = {};
   res.json({ ok: true, updated: n });
+});
+
+// Sửa SỔ BALANCE sau khi xoay khóa mà sổ chưa đổi ciphertext (bản cũ sót card_ledger).
+// Học map cũ→mới từ các dòng sổ CÓ purchase còn tồn tại (sổ.card_cũ ↔ purchase.card_mới),
+// rồi áp cho MỌI dòng sổ (kể cả mồ côi cùng thẻ). KHÔNG cần khóa.
+app.post("/api/cards/repair-ledger", requireAdmin, (req, res) => {
+  const links = db.prepare(`SELECT l.card AS lold, p.card AS pnew
+                            FROM card_ledger l JOIN purchases p ON p.id = l.purchase_id
+                            WHERE l.card LIKE 'enc:v1:%' AND p.card LIKE 'enc:v1:%'`).all();
+  const learned = {};
+  for (const r of links) if (r.lold && r.pnew && r.lold !== r.pnew) learned[r.lold] = r.pnew;
+  const rows = db.prepare("SELECT id, card FROM card_ledger WHERE card LIKE 'enc:v1:%'").all();
+  const upd = db.prepare("UPDATE card_ledger SET card=? WHERE id=?");
+  let fixed = 0;
+  const tx = db.transaction(() => { for (const r of rows) { const nv = learned[r.card]; if (nv && nv !== r.card) { upd.run(nv, r.id); fixed++; } } });
+  tx();
+  // Dòng sổ còn ciphertext KHÔNG khớp purchase nào (mồ côi, thẻ không còn purchase) → balance chưa đủ.
+  const stillOld = db.prepare(`SELECT COUNT(*) c FROM card_ledger l
+    WHERE l.card LIKE 'enc:v1:%' AND NOT EXISTS (SELECT 1 FROM purchases p WHERE p.card = l.card)`).get().c;
+  res.json({ ok: true, fixed, learned: Object.keys(learned).length, stillOld });
 });
 
 // Team card stats (read-only) — teammates' card usage with the CARD VALUE HIDDEN.

@@ -221,6 +221,8 @@ function RekeyEditor() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [done, setDone] = useState(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState("");
   useEffect(() => onLanKeyChange(() => setReady(lanKeyReady())), []);
 
   function generateKey() {
@@ -299,6 +301,19 @@ function RekeyEditor() {
           {msg && <div style={{ marginTop: 8, fontSize: 13, color: msg.startsWith("Lỗi") || msg.startsWith("Cần") ? "var(--red)" : "var(--muted)" }}>{msg}</div>}
         </>
       )}
+
+      <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 10 }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+          Nếu <b>balance bị 0</b> sau khi xoay khóa (bản cũ sót sổ): bấm để sửa lại sổ balance (không cần khóa).
+        </div>
+        <Button disabled={repairing} onClick={async () => {
+          setRepairMsg("Đang sửa…"); setRepairing(true);
+          try { const r = await api.post("/api/cards/repair-ledger", {});
+            setRepairMsg(`✓ Đã sửa ${r.fixed} dòng sổ${r.stillOld ? ` · còn ${r.stillOld} dòng mồ côi không map được (thẻ không còn giao dịch)` : " · xong"}`); }
+          catch (e) { setRepairMsg("Lỗi: " + e.message); } finally { setRepairing(false); }
+        }}>🔧 Sửa sổ balance</Button>
+        {repairMsg && <div style={{ marginTop: 6, fontSize: 13 }} className="muted">{repairMsg}</div>}
+      </div>
     </div>
   );
 }
