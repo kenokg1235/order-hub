@@ -157,7 +157,7 @@ export default function TeamSheet({ currentUser, teams }) {
       for (const nf of ["note1", "note2", "note3", "note4"]) if (!txt(o[nf], cf[nf])) return false;
       // Lọc cột Thẻ theo SỐ THẬT (giải mã); các cột khác giữ nguyên.
       if (cf.card && !(o.purchases || []).some((p) => T(cardText(p.card)).includes(T(cf.card)))) return false;
-      for (const pf of ["amount", "name", "orderNumber", "email", "tracking", "phone", "zip"]) if (!pTxt(o, pf, cf[pf])) return false;
+      for (const pf of ["amount", "name", "orderNumber", "email", "tracking", "phone", "zip", "site"]) if (!pTxt(o, pf, cf[pf])) return false;
       if (cfa("procStatus").length && !cfa("procStatus").some((v) => v === "__empty" ? !(o.purchases || []).some((p) => p.processStatus) : (o.purchases || []).some((p) => p.processStatus === v))) return false;
       return true;
     });
@@ -414,7 +414,7 @@ export default function TeamSheet({ currentUser, teams }) {
                 Số tiền {amountSort === "asc" ? "↑" : amountSort === "desc" ? "↓" : "⇅"}
               </span> <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} />
             </th>
-            <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
+            <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th title="Site đã xử lý — dán link, tự lấy tên">Site</th><th>Time</th><th></th>
             <th>Note 1</th><th>Note 2</th><th>Note 3</th><th>Note 4</th>
           </tr>
           <tr style={{ background: "#fbfcfd" }}>
@@ -442,6 +442,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("phone", 80)}</td>
             <td>{fText("zip", 55)}</td>
             <td>{fMulti("procStatus", [{ v: "__empty", l: "(trống)" }, ...procStatuses.map((s) => ({ v: s, l: s }))])}</td>
+            <td>{fText("site", 70)}</td>
             <td></td>
             <td>{activeFilters > 0 && <button className="btn sm" onClick={clearFilters} title="Xóa lọc">✕</button>}</td>
             <td>{fText("note1", 80)}</td>
@@ -557,7 +558,7 @@ export default function TeamSheet({ currentUser, teams }) {
                   </>}
 
                   {!p ? (
-                    <td colSpan={11} className="muted" style={{ fontStyle: "italic" }}>
+                    <td colSpan={12} className="muted" style={{ fontStyle: "italic" }}>
                       {canEdit ? "Chưa có thẻ — bấm “＋ Thẻ”" : "— chưa có thẻ —"}
                     </td>
                   ) : p.hidden ? (
@@ -571,6 +572,7 @@ export default function TeamSheet({ currentUser, teams }) {
                       <td>{roCell("Phone", p.phone, 110)}</td>
                       <td>{roCell("Zip", p.zip, 80)}</td>
                       <td>{p.processStatus ? <Badge>{p.processStatus}</Badge> : <span className="muted">—</span>}</td>
+                      <td className="muted" style={{ fontSize: 12 }}>{p.site || "—"}</td>
                       <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
                       <td></td>
                     </>
@@ -600,6 +602,12 @@ export default function TeamSheet({ currentUser, teams }) {
                         <option value="">— trống —</option>
                         {procStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
+                    </td>
+                    <td>
+                      <input className="input" style={{ padding: "4px 6px", width: 100, opacity: locked ? 0.6 : 1, background: locked ? "#f1f3f5" : undefined }}
+                        key={"site" + p.id + "|" + (p.site || "")} defaultValue={p.site} disabled={locked}
+                        placeholder="dán link…" title={locked ? "Nhập thẻ trước" : "Dán đường dẫn — tự lấy tên site"}
+                        {...(locked ? {} : cellProps("Site (dán link)", (v) => savePurchase(p, "site", v)))} />
                     </td>
                     <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
                     <td><Button sm variant="danger" onClick={() => removePurchase(p)}>✕</Button></td>

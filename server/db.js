@@ -124,6 +124,7 @@ function ensureColumn(table, col, decl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
+ensureColumn("purchases", "site", "TEXT DEFAULT ''");   // site đã xử lý (trích từ URL nhân viên dán)
 ensureColumn("users", "store_names", "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn("sessions", "user_agent", "TEXT DEFAULT ''");   // phiên đăng nhập: thiết bị/trình duyệt
 ensureColumn("sessions", "ip", "TEXT DEFAULT ''");

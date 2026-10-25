@@ -8,11 +8,16 @@ export default function WorkSessions() {
   const [sessions, setSessions] = useState([]);
   const [reset, setReset] = useState({ enabled: false, time: "" });   // tự động reset mỗi ngày
   const [savedReset, setSavedReset] = useState("");
+  const [procStatuses, setProcStatuses] = useState([]);   // cột trạng thái cho bảng theo site
   const [err, setErr] = useState("");
 
   async function load() {
     try { const r = await api.get("/api/work-sessions"); setActive(r.active); setSessions(r.sessions || []); } catch (e) { setErr(e.message); }
-    try { const s = (await api.get("/api/settings")).settings; setReset({ enabled: !!s.wsAutoReset?.enabled, time: s.wsAutoReset?.time || "" }); } catch {}
+    try {
+      const s = (await api.get("/api/settings")).settings;
+      setReset({ enabled: !!s.wsAutoReset?.enabled, time: s.wsAutoReset?.time || "" });
+      setProcStatuses(s.processStatuses || []);
+    } catch {}
   }
   async function saveReset(next) {
     try { await api.put("/api/settings/wsAutoReset", { value: next }); setReset(next); setSavedReset("✓ Đã lưu"); setTimeout(() => setSavedReset(""), 2000); }
@@ -71,6 +76,37 @@ export default function WorkSessions() {
     </table>
   ) : <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>Chưa có hoạt động trong buổi.</div>;
 
+  // Thống kê theo SITE: số lần xử lý + đếm theo từng trạng thái xử lý (gồm "ped"…) + Đã Up.
+  const BySite = ({ st }) => {
+    const rows = st.bySite || [];
+    if (!rows.length) return null;
+    // Cột trạng thái = các trạng thái đã cấu hình + mọi trạng thái lạ xuất hiện trong dữ liệu.
+    const extra = [...new Set(rows.flatMap((r) => Object.keys(r.status || {})))].filter((s) => !procStatuses.includes(s));
+    const cols = [...procStatuses, ...extra];
+    return (
+      <div style={{ overflowX: "auto", marginTop: 10 }}>
+        <table className="tbl" style={{ minWidth: 420 }}>
+          <thead><tr>
+            <th>🌐 Site</th>
+            <th style={{ textAlign: "right" }}>Số lần xử lý</th>
+            {cols.map((s) => <th key={s} style={{ textAlign: "right" }}>{s}</th>)}
+            <th style={{ textAlign: "right" }}>✅ Đã Up</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ fontWeight: 600 }}>{r.site}</td>
+                <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb" }}>{r.total}</td>
+                {cols.map((s) => <td key={s} style={{ textAlign: "right" }}>{(r.status && r.status[s]) || 0}</td>)}
+                <td style={{ textAlign: "right", color: "#16a34a" }}>{r.up}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <div style={{ maxWidth: 900 }}>
       <h2 style={{ margin: "0 0 6px" }}>⏱️ Buổi làm việc</h2>
@@ -109,6 +145,12 @@ export default function WorkSessions() {
             </div>
             <StatCards st={active.stats} />
             <ByUser st={active.stats} />
+            {active.stats.bySite && active.stats.bySite.length > 0 && (
+              <>
+                <div style={{ fontWeight: 600, marginTop: 14, marginBottom: 2 }}>🌐 Theo site</div>
+                <BySite st={active.stats} />
+              </>
+            )}
           </>
         ) : (
           <div className="row" style={{ gap: 12 }}>
@@ -136,6 +178,12 @@ export default function WorkSessions() {
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
               {s.stats.byUser.map((u) => `${u.name}: ${u.processed ?? 0} xử lý / ${u.cards} thẻ`).join(" · ")}
             </div>
+          )}
+          {s.stats.bySite && s.stats.bySite.length > 0 && (
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--primary)" }}>🌐 Theo site ({s.stats.bySite.length})</summary>
+              <BySite st={s.stats} />
+            </details>
           )}
         </div>
       ))}

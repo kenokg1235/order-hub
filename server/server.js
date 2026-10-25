@@ -1043,19 +1043,34 @@ function validCardsSet() {
 }
 function cardExists(card) { return !!card && validCardsSet().has(card); }
 // Đang khóa thẻ + request có GHI số thẻ non-empty → chặn (tránh ghi plaintext khi chưa có khóa trong RAM).
+// Trích TÊN SITE từ đường dẫn nhân viên dán: "https://www.abc.com/x" → "abc"; "abc.com" → "abc".
+const TLD2 = new Set(["co.uk", "com.au", "co.jp", "com.br", "co.nz", "com.mx", "co.kr", "com.sg"]);
+function siteFromUrl(input) {
+  let s = String(input || "").trim();
+  if (!s) return "";
+  const m = s.match(/^[a-z]+:\/\/([^/?#\s]+)/i);
+  let host = m ? m[1] : s.split(/[/?#\s]/)[0];
+  host = host.replace(/^www\./i, "").toLowerCase();
+  const parts = host.split(".").filter(Boolean);
+  if (parts.length <= 1) return host.slice(0, 40);
+  const last2 = parts.slice(-2).join(".");
+  const label = (TLD2.has(last2) && parts.length >= 3) ? parts[parts.length - 3] : parts[parts.length - 2];
+  return label.slice(0, 40);
+}
+
 function purchaseOut(p, masked = false) {
   // Teammate khác xem được thông tin xử lý (tracking/order#/email…) nhưng KHÔNG thấy số thẻ.
   if (masked) return {
     id: p.id, orderId: p.order_id, amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
-    phone: p.phone, zip: p.zip, processStatus: p.process_status,
+    phone: p.phone, zip: p.zip, processStatus: p.process_status, site: p.site || "",
     orderTime: p.order_time, card: null, hidden: true,   // hidden=true: chỉ-đọc + ẩn số thẻ
     deliImage: p.deli_image || "",
   };
   return {
     id: p.id, orderId: p.order_id, card: p.card, amount: p.amount, name: p.name,
     orderNumber: p.order_number, email: p.email, tracking: p.tracking,
-    phone: p.phone, zip: p.zip, processStatus: p.process_status,
+    phone: p.phone, zip: p.zip, processStatus: p.process_status, site: p.site || "",
     cardValid: !p.card || cardExists(p.card), orderTime: p.order_time, hidden: false,
     deliImage: p.deli_image || "",
   };
@@ -1292,7 +1307,7 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const b = req.body || {};
   if (plaintextCard(b)) return res.status(400).json({ error: "Thẻ phải ở dạng mã hóa — dùng Order Hub tại văn phòng (có khóa), hoặc dán MÃ đã cấp." });
   const map = { card: "card", amount: "amount", name: "name", orderNumber: "order_number", email: "email",
-    tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status" };
+    tracking: "tracking", phone: "phone", zip: "zip", processStatus: "process_status", site: "site" };
   // Must have a valid issued card before entering any other field.
   // effCard = GIÁ TRỊ ĐÃ MÃ HÓA (để so với validCardsSet vốn cũng là ciphertext).
   const effCard = ("card" in b) ? String(b.card || "").trim() : p.card;
@@ -1301,7 +1316,10 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
-    const nv = col === "amount" ? (Number(b[k]) || 0) : (k === "card" ? effCard : b[k]);
+    const nv = col === "amount" ? (Number(b[k]) || 0)
+      : k === "card" ? effCard
+      : k === "site" ? siteFromUrl(b[k])       // nhân viên dán URL → lưu TÊN site (abc)
+      : b[k];
     logChange(req.user, "purchase", p.id, p.order_id, k, p[col], nv);
     sets.push(`${col}=?`); vals.push(nv);
   }
@@ -2392,7 +2410,25 @@ function sessionStats(s, e) {
   // Đơn Đã Up (Lister/Admin chốt) — vẫn hiển thị tham khảo.
   for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
     ensure(r.cb, r.cn).up = r.c;
-  return { up, cancel, cards: allCards.size, processed, byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
+
+  // Thống kê theo SITE trong buổi: với các thẻ CÓ đổi trạng thái xử lý trong buổi → đếm theo
+  // trạng thái HIỆN TẠI + site; "up" = đơn Đã Up chốt trong buổi theo site.
+  const siteMap = {};
+  const ensureSite = (name) => siteMap[name] || (siteMap[name] = { site: name, total: 0, status: {}, up: 0 });
+  for (const r of db.prepare(`SELECT p.site AS site, p.process_status AS st FROM purchases p
+      WHERE COALESCE(p.site,'')!='' AND p.id IN (
+        SELECT DISTINCT entity_id FROM audit_log
+        WHERE entity='purchase' AND field='processStatus' AND created_at>=? AND created_at<=?)`).all(s, end)) {
+    const u = ensureSite(r.site); u.total += 1;
+    if (r.st) u.status[r.st] = (u.status[r.st] || 0) + 1;
+  }
+  for (const r of db.prepare(`SELECT p.site AS site, COUNT(DISTINCT o.id) c FROM orders o JOIN purchases p ON p.order_id=o.id
+      WHERE o.master_status='Đã Up' AND o.finalized_at>=? AND o.finalized_at<=? AND COALESCE(p.site,'')!='' GROUP BY p.site`).all(s, end))
+    ensureSite(r.site).up = r.c;
+  const bySite = Object.values(siteMap).sort((a, b) => b.total - a.total);
+
+  return { up, cancel, cards: allCards.size, processed, bySite,
+    byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
 }
 // Cache stats buổi ĐÃ kết thúc theo id (window cố định) — không tính lại mỗi lần poll.
 const _endedSessionStats = new Map();
