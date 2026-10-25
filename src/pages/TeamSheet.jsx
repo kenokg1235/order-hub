@@ -10,6 +10,18 @@ import { fileToResizedDataUrl, imageFromPaste } from "../imageUtil.js";
 import { useCardDecrypt } from "../useLanKey.js";
 import { prepareCardForSave, onLanKeyChange, lanKeyReady } from "../cardKeyLan.js";
 
+// Cột Sheet Con (đúng thứ tự header) + độ rộng mặc định — cho tính năng kéo giãn cột.
+const SHEET_COLS = [
+  { key: "mstatus", w: 110 }, { key: "store", w: 95 }, { key: "idorder", w: 105 }, { key: "address", w: 160 },
+  { key: "image", w: 96 }, { key: "product", w: 190 }, { key: "link", w: 48 }, { key: "size", w: 75 },
+  { key: "color", w: 70 }, { key: "qty", w: 55 }, { key: "profit", w: 70 }, { key: "deadline", w: 80 },
+  { key: "notetong", w: 110 }, { key: "notelister", w: 120 }, { key: "claim", w: 100 }, { key: "card", w: 160 },
+  { key: "amount", w: 90 }, { key: "name", w: 130 }, { key: "tracking", w: 170 }, { key: "ordernum", w: 130 },
+  { key: "email", w: 160 }, { key: "phone", w: 120 }, { key: "zip", w: 80 }, { key: "procstatus", w: 125 },
+  { key: "site", w: 110 }, { key: "time", w: 75 }, { key: "del", w: 50 },
+  { key: "note1", w: 95 }, { key: "note2", w: 95 }, { key: "note3", w: 95 }, { key: "note4", w: 95 },
+];
+
 // Sheet Con — team members process their divided orders. One order groups 1+ card
 // rows (purchases); order-level cells use rowSpan. Master status drives row colour.
 export default function TeamSheet({ currentUser, teams }) {
@@ -31,6 +43,12 @@ export default function TeamSheet({ currentUser, teams }) {
   const [pinned, setPinned] = useState(SAVED.pinned !== false);
   const [freezeCols, setFreezeCols] = useState(Number.isFinite(SAVED.freezeCols) ? SAVED.freezeCols : 3);   // số cột ghim từ trái
   const [colLefts, setColLefts] = useState([]);
+  const [resizeOn, setResizeOn] = useState(!!SAVED.resizeOn);   // bật kéo giãn độ rộng cột
+  const [colW, setColW] = useState(() => { try { return JSON.parse(localStorage.getItem("teamSheetColW") || "{}"); } catch { return {}; } });
+  const colWRef = useRef(colW);
+  useEffect(() => { colWRef.current = colW; }, [colW]);
+  const setW = (key, px) => setColW((w) => { const n = { ...w, [key]: Math.max(40, Math.round(px)) }; try { localStorage.setItem("teamSheetColW", JSON.stringify(n)); } catch {} return n; });
+  const resetColW = () => { setColW({}); try { localStorage.removeItem("teamSheetColW"); } catch {} };
   const tableRef = useRef(null);
   const [sumRes, setSumRes] = useState(null);   // kết quả cộng cột: { label, text }
   const { previewProps, PreviewLayer } = useImagePreview();   // phóng ảnh khi rê chuột (không re-render bảng)
@@ -45,8 +63,8 @@ export default function TeamSheet({ currentUser, teams }) {
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
-    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols })); } catch {}
-  }, [filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols]);
+    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols, resizeOn })); } catch {}
+  }, [filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols, resizeOn]);
 
   const lastSync = useRef(0);   // mốc delta-sync (ms)
   async function loadOrders(m) {
@@ -208,8 +226,8 @@ export default function TeamSheet({ currentUser, teams }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-    // Chỉ đo lại khi cấu trúc đổi — KHÔNG đo mỗi lần poll dữ liệu (giảm reflow/lag).
-  }, [pinned, freezeCols, page, month]);
+    // Chỉ đo lại khi cấu trúc/độ rộng cột đổi — KHÔNG đo mỗi lần poll dữ liệu (giảm reflow/lag).
+  }, [pinned, freezeCols, page, month, resizeOn, colW]);
 
   // CSS ghim: thead cả 2 hàng + CHỈ dòng đầu mỗi đơn (tr.ordrow) — các cột đơn dùng rowSpan
   // nên dòng thẻ phụ (idx>0) không có ô cột-đơn, không ghim để tránh dính nhầm ô thẻ.
@@ -227,6 +245,32 @@ export default function TeamSheet({ currentUser, teams }) {
     css += `#ttbl>thead>tr>*:nth-child(${n}),#ttbl>tbody>tr.ordrow>*:nth-child(${n}){box-shadow:2px 0 4px rgba(0,0,0,.06);}`;
     return css;
   }, [pinned, freezeCols, colLefts]);
+
+  // Kéo giãn cột: chèn tay cầm vào mép phải mỗi ô tiêu đề (chỉ khi bật). Không sửa JSX từng th.
+  useLayoutEffect(() => {
+    if (!resizeOn) return;
+    const row = tableRef.current?.querySelector("thead tr");
+    if (!row) return;
+    const ths = [...row.children], cleanups = [];
+    ths.forEach((th, i) => {
+      if (i >= SHEET_COLS.length) return;
+      th.style.position = "relative";
+      let handle = th.querySelector(":scope > .colgrip");
+      if (!handle) { handle = document.createElement("div"); handle.className = "colgrip"; th.appendChild(handle); }
+      const key = SHEET_COLS[i].key;
+      const onDown = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const startX = e.clientX, startW = (colWRef.current[key] ?? SHEET_COLS[i].w);
+        const onMove = (ev) => setW(key, startW + (ev.clientX - startX));
+        const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); document.body.style.cursor = ""; };
+        document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp); document.body.style.cursor = "col-resize";
+      };
+      handle.addEventListener("mousedown", onDown);
+      cleanups.push(() => { handle.removeEventListener("mousedown", onDown); handle.remove(); });
+    });
+    return () => cleanups.forEach((f) => f());
+    // orders trong deps: chèn lại tay cầm nếu React vẽ lại tiêu đề khi dữ liệu đổi.
+  }, [resizeOn, page, month, pinned, orders]);
 
   // local state helpers
   const replaceOrder = (order) => setOrders((p) => p.map((o) => (o.id === order.id ? { ...o, ...order } : o)));  // giữ addrCount/multiCount
@@ -372,6 +416,8 @@ export default function TeamSheet({ currentUser, teams }) {
         ))}
         <Button sm onClick={undoLast} title="Hoàn tác thao tác sửa ô gần nhất của bạn">↩️ Hoàn tác</Button>
         <Button sm onClick={() => setPinned((p) => !p)} variant={pinned ? "primary" : ""} title="Ghim tiêu đề + cột đầu khi cuộn">📌 Ghim</Button>
+        <Button sm onClick={() => setResizeOn((v) => !v)} variant={resizeOn ? "primary" : ""} title="Bật để kéo mép cột giãn rộng/thu hẹp">↔ Giãn cột</Button>
+        {resizeOn && <Button sm onClick={resetColW} title="Về độ rộng mặc định">⟲ Reset cột</Button>}
         {pinned && (
           <span className="row" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: 12 }}>cột:</span>
@@ -394,9 +440,12 @@ export default function TeamSheet({ currentUser, teams }) {
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
+      {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl thead tr:first-child th{position:relative;}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
       <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
-        <table id="ttbl" ref={tableRef} className="tbl" style={{ minWidth: 2130, whiteSpace: "nowrap" }}>
+        <table id="ttbl" ref={tableRef} className="tbl"
+          style={resizeOn ? { tableLayout: "fixed", width: SHEET_COLS.reduce((s, c) => s + (colW[c.key] ?? c.w), 0), whiteSpace: "nowrap" } : { minWidth: 2130, whiteSpace: "nowrap" }}>
+          {resizeOn && <colgroup>{SHEET_COLS.map((c) => <col key={c.key} style={{ width: (colW[c.key] ?? c.w) + "px" }} />)}</colgroup>}
           <thead><tr>
             <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th>
             <th>SL <SumBtn label="SL" text={() => round2(displayed.reduce((s, o) => s + (Number(o.qty) || 0), 0))} /></th>
