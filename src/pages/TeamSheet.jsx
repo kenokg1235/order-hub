@@ -30,6 +30,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const isManager = isAdmin || currentUser.role === "Leader";   // can distribute orders
   const [orders, setOrders] = useState([]);
   const [procStatuses, setProcStatuses] = useState([]);
+  const [sites, setSites] = useState([]);   // site đã dùng (gợi ý dropdown cột Site)
   const [colors, setColors] = useState({});
   const [assignUsers, setAssignUsers] = useState([]);
   // Khôi phục bộ lọc đã lưu (giữ nguyên khi chuyển tab rồi quay lại / tải lại trang).
@@ -85,6 +86,7 @@ export default function TeamSheet({ currentUser, teams }) {
       setMonths(mo.months); setActiveMonth(mo.activeMonth);
       setMonth((cur) => cur || mo.activeMonth);
     } catch (e) { setErr(e.message); }
+    try { setSites((await api.get("/api/sites")).sites || []); } catch {}
   }
   useEffect(() => { load(); }, []);
   useEffect(() => { if (month) loadOrders(month); }, [month]);
@@ -309,7 +311,9 @@ export default function TeamSheet({ currentUser, teams }) {
         setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { card: v })).purchase);
       } else {
         if (String(value) === String(p[field] ?? "")) return;
-        setPur(p.orderId, (await api.put(`/api/purchases/${p.id}`, { [field]: value })).purchase);
+        const { purchase } = await api.put(`/api/purchases/${p.id}`, { [field]: value });
+        setPur(p.orderId, purchase);
+        if (field === "site" && purchase.site) setSites((prev) => prev.includes(purchase.site) ? prev : [...prev, purchase.site].sort());
       }
     } catch (e) {
       if (e.code === "NO_LAN_KEY") setErr("Cần khóa LAN (ở văn phòng) để nhập số thẻ thật — hoặc dán MÃ đã cấp.");
@@ -441,6 +445,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
+      <datalist id="teamsites">{sites.map((s) => <option key={s} value={s} />)}</datalist>
       {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl tbody td{overflow:hidden;}#ttbl thead tr:first-child th{position:relative;}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
       <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
@@ -643,9 +648,10 @@ export default function TeamSheet({ currentUser, teams }) {
                       <input className="input" style={{ padding: "4px 6px", width: 100, opacity: locked ? 0.6 : 1,
                         background: locked ? "#f1f3f5" : (!p.site ? "var(--red-bg)" : undefined),
                         borderColor: !locked && !p.site ? "var(--red)" : undefined }}
+                        list="teamsites"
                         key={"site" + p.id + "|" + (p.site || "")} defaultValue={p.site} disabled={locked}
-                        placeholder={locked ? "" : "⚠ dán link site…"} title={locked ? "Nhập thẻ trước" : "Bắt buộc — dán đường dẫn, tự lấy tên site"}
-                        {...(locked ? {} : cellProps("Site (dán link)", (v) => savePurchase(p, "site", v)))} />
+                        placeholder={locked ? "" : "⚠ chọn/dán link…"} title={locked ? "Nhập thẻ trước" : "Chọn site đã dùng, hoặc dán link site mới (tự lấy tên)"}
+                        {...(locked ? {} : cellProps("Site (chọn hoặc dán link)", (v) => savePurchase(p, "site", v)))} />
                     </td>
                     <td>{pin(p, "amount", { type: "number", w: 80, label: "Số tiền", disabled: locked, required: o.purchases.length >= 2 })}</td>
                     <td>{pin(p, "name", { w: 120, label: "Name", disabled: locked })}</td>

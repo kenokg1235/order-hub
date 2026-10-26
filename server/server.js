@@ -1751,6 +1751,11 @@ app.delete("/api/card-requests/:id", requireAuth, blockLister, (req, res) => {
   res.json({ ok: true });
 });
 
+// Danh sách SITE đã từng xử lý (cho dropdown gợi ý ở cột Site, Sheet Con).
+app.get("/api/sites", requireAuth, (req, res) => {
+  res.json({ sites: db.prepare("SELECT DISTINCT site FROM purchases WHERE COALESCE(site,'')!='' ORDER BY site").all().map((r) => r.site) });
+});
+
 // ── Kho thẻ (card_stock): thẻ Admin/người mua nhập sẵn, mã hóa; ghim tên người nhận khi giao ──
 const isCardManager = (u) => u.role === "Admin" || u.canCardStock;   // Admin hoặc người được Admin cấp quyền Kho thẻ
 const cardStockOut = (r) => ({ id: r.id, card: r.card_value, note: r.note || "", recipient: r.recipient || "",
