@@ -1554,10 +1554,11 @@ function cardOut(r) {
 // Stats for an issued card: orders it paid for + completed count + profit share
 // (profit split across cards by amount, counted only for "Đã Up" orders).
 function cardStats(cardValue) {
-  if (!cardValue) return { orders: [], profit: 0, completed: 0, balance: 0 };
+  if (!cardValue) return { orders: [], profit: 0, completed: 0, balance: 0, sites: [] };
   const purs = db.prepare(`
     SELECT p.amount AS amount, o.id AS oid, o.master_status AS master, o.profit AS profit
     FROM purchases p JOIN orders o ON o.id = p.order_id WHERE p.card = ?`).all(cardValue);
+  const sites = db.prepare("SELECT DISTINCT site FROM purchases WHERE card=? AND COALESCE(site,'')!='' ORDER BY site").all(cardValue).map((r) => r.site);
   const byOrder = {};
   // Balance = tổng đã ghi sổ khi hàng "Đã xử lý" (không bị trừ khi xóa hàng/xóa thẻ).
   const balance = db.prepare("SELECT COALESCE(SUM(amount),0) s FROM card_ledger WHERE card=?").get(cardValue).s;
@@ -1582,21 +1583,22 @@ function cardStats(cardValue) {
       }
     }
   }
-  return { orders, profit: Math.round(profit * 100) / 100, completed, balance: Math.round(balance * 100) / 100 };
+  return { orders, profit: Math.round(profit * 100) / 100, completed, balance: Math.round(balance * 100) / 100, sites };
 }
 const cardOutFull = (r) => ({ ...cardOut(r), stats: cardStats(r.card_value) });
 // Tính stats cho TẤT CẢ thẻ trong vài truy vấn (thay vì N+1 mỗi thẻ) — dùng cho danh sách.
 function computeCardStatsMap() {
   const purs = db.prepare(`
-    SELECT p.card AS card, p.order_id AS oid, p.amount AS amount, o.master_status AS master, o.profit AS profit
+    SELECT p.card AS card, p.order_id AS oid, p.amount AS amount, p.site AS site, o.master_status AS master, o.profit AS profit
     FROM purchases p JOIN orders o ON o.id = p.order_id WHERE p.card != ''`).all();
   const orderAgg = {};   // oid -> { total, cards:Set, master, profit }
-  const cardAgg = {};    // card -> { orders:Set, mine:{oid:amount} }
+  const cardAgg = {};    // card -> { orders:Set, mine:{oid:amount}, sites:Set }
   for (const p of purs) {
     const oa = orderAgg[p.oid] || (orderAgg[p.oid] = { total: 0, cards: new Set(), master: p.master, profit: p.profit || 0 });
     oa.total += p.amount || 0; oa.cards.add(p.card);
-    const ca = cardAgg[p.card] || (cardAgg[p.card] = { orders: new Set(), mine: {} });
+    const ca = cardAgg[p.card] || (cardAgg[p.card] = { orders: new Set(), mine: {}, sites: new Set() });
     ca.orders.add(p.oid); ca.mine[p.oid] = (ca.mine[p.oid] || 0) + (p.amount || 0);
+    if (p.site) ca.sites.add(p.site);
   }
   const balMap = {};
   for (const r of db.prepare("SELECT card, COALESCE(SUM(amount),0) s FROM card_ledger GROUP BY card").all()) balMap[r.card] = r.s;
@@ -1612,11 +1614,11 @@ function computeCardStatsMap() {
         else profit += oa.cards.size > 0 ? oa.profit / oa.cards.size : 0;
       }
     }
-    out[card] = { orders: [...ca.orders], profit: Math.round(profit * 100) / 100, completed, balance: Math.round((balMap[card] || 0) * 100) / 100 };
+    out[card] = { orders: [...ca.orders], profit: Math.round(profit * 100) / 100, completed, balance: Math.round((balMap[card] || 0) * 100) / 100, sites: [...ca.sites].sort() };
   }
   return out;
 }
-const EMPTY_CARD_STATS = { orders: [], profit: 0, completed: 0, balance: 0 };
+const EMPTY_CARD_STATS = { orders: [], profit: 0, completed: 0, balance: 0, sites: [] };
 const statsFromMap = (map, card) => (card && map[card]) || EMPTY_CARD_STATS;
 // Tính Ở NỀN — request chỉ đọc map có sẵn (không gánh việc quét toàn bộ purchases).
 let _cardStatsCache = { at: 0, map: {} };
@@ -2418,7 +2420,7 @@ function sessionStats(s, e) {
   for (const r of db.prepare(`SELECT p.site AS site, p.process_status AS st FROM purchases p
       WHERE COALESCE(p.site,'')!='' AND p.id IN (
         SELECT DISTINCT entity_id FROM audit_log
-        WHERE entity='purchase' AND field='processStatus' AND created_at>=? AND created_at<=?)`).all(s, end)) {
+        WHERE entity='purchase' AND field IN ('site','processStatus') AND created_at>=? AND created_at<=?)`).all(s, end)) {
     const u = ensureSite(r.site); u.total += 1;
     if (r.st) u.status[r.st] = (u.status[r.st] || 0) + 1;
   }

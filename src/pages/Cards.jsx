@@ -240,6 +240,12 @@ export default function Cards({ currentUser }) {
                   <div>💰 <b>${r.stats?.profit || 0}</b></div>
                   <div>💳 Balance: <b>${r.stats?.balance || 0}</b></div>
                   <div className="muted" style={{ fontSize: 12 }}>✅ {r.stats?.completed || 0} đơn Đã Up</div>
+                  {r.stats?.sites?.length > 0 && (
+                    <div style={{ marginTop: 3, display: "flex", flexWrap: "wrap", gap: 3, maxWidth: 240, whiteSpace: "normal" }}
+                      title={"Site đã xử lý: " + r.stats.sites.join(", ")}>
+                      {r.stats.sites.map((s) => <span key={s} className="badge blue" style={{ fontSize: 10 }}>🌐 {s}</span>)}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}

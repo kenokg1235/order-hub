@@ -145,12 +145,10 @@ export default function WorkSessions() {
             </div>
             <StatCards st={active.stats} />
             <ByUser st={active.stats} />
-            {active.stats.bySite && active.stats.bySite.length > 0 && (
-              <>
-                <div style={{ fontWeight: 600, marginTop: 14, marginBottom: 2 }}>🌐 Theo site</div>
-                <BySite st={active.stats} />
-              </>
-            )}
+            <div style={{ fontWeight: 600, marginTop: 14, marginBottom: 2 }}>🌐 Theo site</div>
+            {active.stats.bySite && active.stats.bySite.length > 0
+              ? <BySite st={active.stats} />
+              : <div className="muted" style={{ fontSize: 13 }}>Chưa có site nào trong buổi — nhân viên dán link vào cột <b>Site</b> ở Sheet Con cho đơn đã xử lý.</div>}
           </>
         ) : (
           <div className="row" style={{ gap: 12 }}>
