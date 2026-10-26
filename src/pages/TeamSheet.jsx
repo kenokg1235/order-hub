@@ -380,7 +380,7 @@ export default function TeamSheet({ currentUser, teams }) {
     const v = value != null && value !== "" ? String(value) : "";
     return v
       ? <div title={v} onClick={() => viewCell(label, v)}
-          style={{ width: w, maxWidth: w, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, cursor: "pointer" }}>{v}</div>
+          style={{ width: resizeOn ? "100%" : w, maxWidth: resizeOn ? "100%" : w, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, cursor: "pointer" }}>{v}</div>
       : <span className="muted">—</span>;
   };
 
@@ -440,7 +440,7 @@ export default function TeamSheet({ currentUser, teams }) {
       <Bar />
 
       {colStyle && <style>{colStyle}</style>}
-      {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl thead tr:first-child th{position:relative;}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
+      {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl tbody td{overflow:hidden;}#ttbl thead tr:first-child th{position:relative;}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
       <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="ttbl" ref={tableRef} className="tbl"
@@ -551,8 +551,8 @@ export default function TeamSheet({ currentUser, teams }) {
                       : <span className="muted">—</span>}</td>
                     <td rowSpan={span} style={{ maxWidth: 220, whiteSpace: "normal" }}>{o.product}</td>
                     <td rowSpan={span}>{o.link ? <a href={o.link} target="_blank" rel="noreferrer">🔗</a> : <span className="muted">—</span>}</td>
-                    <td rowSpan={span} style={{ fontSize: 12 }}>{o.size || <span className="muted">—</span>}</td>
-                    <td rowSpan={span} style={{ fontSize: 12 }}>{o.color || <span className="muted">—</span>}</td>
+                    <td rowSpan={span}>{roCell("Size", o.size, 110)}</td>
+                    <td rowSpan={span}>{roCell("Màu", o.color, 90)}</td>
                     <td rowSpan={span}>{Number(o.qty) >= 2
                       ? <span title="Đơn nhiều sản phẩm — chú ý!" style={{ background: "#fff3cd", color: "var(--red)", fontWeight: 800, fontSize: 15, padding: "2px 9px", borderRadius: 20, border: "1.5px solid var(--red)", whiteSpace: "nowrap" }}>⚠ ×{o.qty}</span>
                       : o.qty}</td>
