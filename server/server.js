@@ -1314,6 +1314,10 @@ app.put("/api/purchases/:pid", requireAuth, (req, res) => {
   const touchesOther = Object.keys(b).some((k) => k !== "card" && k in map);
   if (touchesOther && !(effCard && cardExists(effCard)))
     return res.status(400).json({ error: "Phải nhập thẻ đã cấp vào ô Thẻ trước khi nhập thông tin khác" });
+  // SITE BẮT BUỘC: không cho đặt "Đã xử lý" nếu chưa có Site.
+  const effSite = ("site" in b) ? siteFromUrl(b.site) : (p.site || "");
+  if ("processStatus" in b && String(b.processStatus) === PROCESSED_STATUS && !effSite)
+    return res.status(400).json({ error: "Phải nhập Site (dán link) trước khi đặt trạng thái Đã xử lý." });
   const sets = [], vals = [];
   for (const [k, col] of Object.entries(map)) if (k in b) {
     const nv = col === "amount" ? (Number(b[k]) || 0)

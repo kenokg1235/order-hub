@@ -16,9 +16,10 @@ const SHEET_COLS = [
   { key: "image", w: 96 }, { key: "product", w: 190 }, { key: "link", w: 48 }, { key: "size", w: 75 },
   { key: "color", w: 70 }, { key: "qty", w: 55 }, { key: "profit", w: 70 }, { key: "deadline", w: 80 },
   { key: "notetong", w: 110 }, { key: "notelister", w: 120 }, { key: "claim", w: 100 }, { key: "card", w: 160 },
+  { key: "site", w: 110 },
   { key: "amount", w: 90 }, { key: "name", w: 130 }, { key: "tracking", w: 170 }, { key: "ordernum", w: 130 },
   { key: "email", w: 160 }, { key: "phone", w: 120 }, { key: "zip", w: 80 }, { key: "procstatus", w: 125 },
-  { key: "site", w: 110 }, { key: "time", w: 75 }, { key: "del", w: 50 },
+  { key: "time", w: 75 }, { key: "del", w: 50 },
   { key: "note1", w: 95 }, { key: "note2", w: 95 }, { key: "note3", w: 95 }, { key: "note4", w: 95 },
 ];
 
@@ -457,13 +458,14 @@ export default function TeamSheet({ currentUser, teams }) {
             </th>
             <th>Note tổng</th><th title="Nhân viên xử lý ghi chú để Lister theo dõi">Note gửi Lister</th><th>Nhận đơn</th>
             <th>Thẻ</th>
+            <th title="Site đã xử lý — dán link, tự lấy tên (bắt buộc)">Site *</th>
             <th style={{ whiteSpace: "nowrap" }}>
               <span onClick={() => { setDeadlineSort(""); setAmountSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
                 style={{ cursor: "pointer", color: amountSort ? "var(--primary)" : undefined }} title="Sắp xếp theo số tiền">
                 Số tiền {amountSort === "asc" ? "↑" : amountSort === "desc" ? "↓" : "⇅"}
               </span> <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} />
             </th>
-            <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th title="Site đã xử lý — dán link, tự lấy tên">Site</th><th>Time</th><th></th>
+            <th>Name</th><th>Tracking</th><th>Order#</th><th>Email</th><th>Phone</th><th>Zip</th><th>TT xử lý</th><th>Time</th><th></th>
             <th>Note 1</th><th>Note 2</th><th>Note 3</th><th>Note 4</th>
           </tr>
           <tr style={{ background: "#fbfcfd" }}>
@@ -483,6 +485,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("staffNote", 90)}</td>
             <td>{fText("claimedName", 75)}</td>
             <td>{fText("card", 90)}</td>
+            <td>{fText("site", 70)}</td>
             <td>{fText("amount", 50)}</td>
             <td>{fText("name", 90)}</td>
             <td>{fText("tracking", 100)}</td>
@@ -491,7 +494,6 @@ export default function TeamSheet({ currentUser, teams }) {
             <td>{fText("phone", 80)}</td>
             <td>{fText("zip", 55)}</td>
             <td>{fMulti("procStatus", [{ v: "__empty", l: "(trống)" }, ...procStatuses.map((s) => ({ v: s, l: s }))])}</td>
-            <td>{fText("site", 70)}</td>
             <td></td>
             <td>{activeFilters > 0 && <button className="btn sm" onClick={clearFilters} title="Xóa lọc">✕</button>}</td>
             <td>{fText("note1", 80)}</td>
@@ -613,6 +615,7 @@ export default function TeamSheet({ currentUser, teams }) {
                   ) : p.hidden ? (
                     <>
                       <td className="muted" style={{ fontStyle: "italic", fontSize: 12 }} title="Số thẻ của người nhận được ẩn">🔒 ẩn</td>
+                      <td className="muted" style={{ fontSize: 12 }}>{p.site || "—"}</td>
                       <td>{roCell("Số tiền", p.amount, 80)}</td>
                       <td>{roCell("Name", p.name, 120)}</td>
                       <td>{roCell("Tracking", p.tracking, 150)}{deliImageCell(p, false)}</td>
@@ -621,7 +624,6 @@ export default function TeamSheet({ currentUser, teams }) {
                       <td>{roCell("Phone", p.phone, 110)}</td>
                       <td>{roCell("Zip", p.zip, 80)}</td>
                       <td>{p.processStatus ? <Badge>{p.processStatus}</Badge> : <span className="muted">—</span>}</td>
-                      <td className="muted" style={{ fontSize: 12 }}>{p.site || "—"}</td>
                       <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
                       <td></td>
                     </>
@@ -637,6 +639,14 @@ export default function TeamSheet({ currentUser, teams }) {
                       {p.card && !p.cardValid && <div style={{ color: "var(--red)", fontSize: 10 }}>✗ chưa cấp</div>}
                       {locked && !p.card && <div className="muted" style={{ fontSize: 10 }}>Nhập thẻ để mở các ô →</div>}
                     </td>
+                    <td>
+                      <input className="input" style={{ padding: "4px 6px", width: 100, opacity: locked ? 0.6 : 1,
+                        background: locked ? "#f1f3f5" : (!p.site ? "var(--red-bg)" : undefined),
+                        borderColor: !locked && !p.site ? "var(--red)" : undefined }}
+                        key={"site" + p.id + "|" + (p.site || "")} defaultValue={p.site} disabled={locked}
+                        placeholder={locked ? "" : "⚠ dán link site…"} title={locked ? "Nhập thẻ trước" : "Bắt buộc — dán đường dẫn, tự lấy tên site"}
+                        {...(locked ? {} : cellProps("Site (dán link)", (v) => savePurchase(p, "site", v)))} />
+                    </td>
                     <td>{pin(p, "amount", { type: "number", w: 80, label: "Số tiền", disabled: locked, required: o.purchases.length >= 2 })}</td>
                     <td>{pin(p, "name", { w: 120, label: "Name", disabled: locked })}</td>
                     <td>{pin(p, "tracking", { w: 150, label: "Tracking number", disabled: locked })}{deliImageCell(p, canEdit)}</td>
@@ -651,12 +661,6 @@ export default function TeamSheet({ currentUser, teams }) {
                         <option value="">— trống —</option>
                         {procStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
-                    </td>
-                    <td>
-                      <input className="input" style={{ padding: "4px 6px", width: 100, opacity: locked ? 0.6 : 1, background: locked ? "#f1f3f5" : undefined }}
-                        key={"site" + p.id + "|" + (p.site || "")} defaultValue={p.site} disabled={locked}
-                        placeholder="dán link…" title={locked ? "Nhập thẻ trước" : "Dán đường dẫn — tự lấy tên site"}
-                        {...(locked ? {} : cellProps("Site (dán link)", (v) => savePurchase(p, "site", v)))} />
                     </td>
                     <td style={{ fontSize: 11, whiteSpace: "nowrap" }} className="muted">{fmtTime(p.orderTime)}</td>
                     <td><Button sm variant="danger" onClick={() => removePurchase(p)}>✕</Button></td>
