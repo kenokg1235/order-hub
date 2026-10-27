@@ -1517,16 +1517,17 @@ app.post("/api/telegram/start-link", requireAuth, async (req, res) => {
 app.post("/api/telegram/check-link", requireAuth, async (req, res) => {
   const tg = getTelegram();
   if (!tg.botToken) return res.status(400).json({ error: "Chưa cấu hình bot" });
-  let myCode = null;
-  for (const [code, info] of tgPending) if (info.userId === req.user.id && info.expires > Date.now()) myCode = code;
-  if (!myCode) return res.status(400).json({ error: "Chưa bắt đầu liên kết hoặc đã hết hạn — bấm 'Bắt đầu' lại" });
+  // Gộp TẤT CẢ mã còn hiệu lực của user (user có thể bấm "Bắt đầu" nhiều lần) → khớp bất kỳ mã nào đã gửi.
+  const myCodes = [];
+  for (const [code, info] of tgPending) if (info.userId === req.user.id && info.expires > Date.now()) myCodes.push(code);
+  if (!myCodes.length) return res.status(400).json({ error: "Chưa bắt đầu liên kết hoặc đã hết hạn — bấm 'Bắt đầu' lại" });
   const upd = await tgFetch("getUpdates");
   if (!upd.ok) return res.status(502).json({ error: upd.description || upd.error || "Không lấy được tin nhắn từ Telegram" });
   const msgs = (upd.result || []).map((u) => u.message).filter(Boolean).reverse();
-  const hit = msgs.find((m) => String(m.text || "").includes(myCode));
+  const hit = msgs.find((m) => myCodes.some((c) => String(m.text || "").includes(c)));
   if (!hit) return res.json({ linked: false });
   db.prepare("UPDATE users SET telegram_chat_id=? WHERE id=?").run(String(hit.chat.id), req.user.id);
-  tgPending.delete(myCode);
+  for (const c of myCodes) tgPending.delete(c);
   sendTelegram(String(hit.chat.id), "✅ Liên kết Order Hub thành công! Bạn sẽ nhận thông báo tại đây.");
   res.json({ linked: true });
 });
