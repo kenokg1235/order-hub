@@ -35,6 +35,14 @@ export default function Notifications() {
     } catch (e) { setMsg(e.message); }
   }
   async function unlink() { try { await api.post("/api/telegram/unlink", {}); loadTg(); } catch {} }
+  async function testSend() {
+    setMsg("Đang gửi thử…");
+    try {
+      const r = await api.post("/api/telegram/test-send", {});
+      if (r.ok) setMsg("✅ Đã gửi — kiểm tra Telegram của bạn." + (r.enabled ? "" : " (⚠️ Admin chưa bật 'gửi Telegram' nên thông báo tự động vẫn chưa chạy)"));
+      else setMsg("❌ " + (r.error || "Gửi thất bại"));
+    } catch (e) { setMsg("❌ " + e.message); }
+  }
 
   return (
     <>
@@ -73,8 +81,12 @@ export default function Notifications() {
             {!tg.enabled ? (
               <div className="muted" style={{ fontSize: 12 }}>Telegram chưa được Admin bật (Cấu hình → Telegram).</div>
             ) : tg.linked ? (
-              <div className="row"><span className="badge green">✓ Đã liên kết Telegram</span><div style={{ flex: 1 }} />
-                <button className="btn sm" onClick={unlink}>Hủy</button></div>
+              <div>
+                <div className="row"><span className="badge green">✓ Đã liên kết Telegram</span><div style={{ flex: 1 }} />
+                  <button className="btn sm" onClick={testSend}>Gửi thử</button>
+                  <button className="btn sm" style={{ marginLeft: 6 }} onClick={unlink}>Hủy</button></div>
+                {msg && <div style={{ fontSize: 12, marginTop: 6 }}>{msg}</div>}
+              </div>
             ) : link ? (
               <div style={{ fontSize: 13 }}>
                 <div style={{ marginBottom: 4 }}>1. Mở bot {link.botUsername

@@ -1535,6 +1535,16 @@ app.post("/api/telegram/unlink", requireAuth, (req, res) => {
   db.prepare("UPDATE users SET telegram_chat_id='' WHERE id=?").run(req.user.id);
   res.json({ ok: true });
 });
+// Gửi tin nhắn thử tới chính tài khoản đang đăng nhập (chẩn đoán "không nhận được thông báo").
+app.post("/api/telegram/test-send", requireAuth, async (req, res) => {
+  const u = db.prepare("SELECT telegram_chat_id FROM users WHERE id=?").get(req.user.id);
+  if (!u || !u.telegram_chat_id) return res.json({ ok: false, error: "Tài khoản này chưa liên kết Telegram" });
+  const tg = getTelegram();
+  if (!tg.botToken) return res.json({ ok: false, error: "Chưa cấu hình bot token" });
+  const r = await tgFetch("sendMessage", { chat_id: u.telegram_chat_id, text: "🔔 Tin nhắn thử từ Order Hub — nếu bạn thấy tin này nghĩa là thông báo Telegram đã hoạt động." });
+  if (r.ok) return res.json({ ok: true, enabled: !!tg.enabled });
+  res.json({ ok: false, enabled: !!tg.enabled, error: r.description || r.error || "Gửi thất bại" });
+});
 
 // Overdue check — notify assignee + admins once per order when past deadline (DD/MM).
 function checkOverdue() {
