@@ -3,6 +3,10 @@
 // Phase 1: auth, users, teams, settings. Later phases add orders/cards/notify.
 // In production it also serves the built client from /dist.
 // ─────────────────────────────────────────────────────────────────────────────
+import dns from "node:dns";
+// Ưu tiên IPv4 khi phân giải tên miền — VPS có IPv6 lỗi khiến Node fetch tới api.telegram.org
+// báo "fetch failed" dù curl (tự fallback IPv4) vẫn chạy được. Phải đặt TRƯỚC mọi kết nối mạng.
+try { dns.setDefaultResultOrder("ipv4first"); } catch {}
 import express from "express";
 import compression from "compression";
 import bcrypt from "bcryptjs";
