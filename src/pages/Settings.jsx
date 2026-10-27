@@ -481,7 +481,19 @@ function AfterShipEditor({ cfg, onSave }) {
 
 function TelegramEditor({ tg, onSave }) {
   const [f, setF] = useState(tg);
+  const [test, setTest] = useState(null);   // {ok, msg}
+  const [testing, setTesting] = useState(false);
   useEffect(() => setF(tg), [tg]);
+  async function runTest() {
+    setTesting(true); setTest(null);
+    try {
+      const r = await api.get("/api/telegram/test");
+      setTest(r.ok
+        ? { ok: true, msg: `✅ Kết nối OK — bot @${r.username || "?"}` }
+        : { ok: false, msg: (r.reachable === false ? "🚫 VPS KHÔNG gọi được api.telegram.org — bị chặn mạng. " : "⚠️ ") + (r.error || "Lỗi") });
+    } catch (e) { setTest({ ok: false, msg: e.message }); }
+    finally { setTesting(false); }
+  }
   return (
     <div className="card">
       <div style={{ fontWeight: 700, marginBottom: 10 }}>Thông báo Telegram</div>
@@ -494,9 +506,13 @@ function TelegramEditor({ tg, onSave }) {
         <input className="input" value={f.botToken} placeholder="123456:ABC-…"
           onChange={(e) => setF({ ...f, botToken: e.target.value })} />
       </div>
-      <Button variant="primary" onClick={() => onSave(f)}>Lưu Telegram</Button>
+      <div className="row" style={{ gap: 8 }}>
+        <Button variant="primary" onClick={() => onSave(f)}>Lưu Telegram</Button>
+        <Button onClick={runTest} disabled={testing}>{testing ? "Đang kiểm tra…" : "🔌 Test kết nối"}</Button>
+      </div>
+      {test && <div style={{ marginTop: 8, color: test.ok ? "#16a34a" : "var(--red)", fontSize: 13 }}>{test.msg}</div>}
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        (Mỗi user sẽ liên kết Chat ID riêng ở giai đoạn Thông báo.)
+        Lưu token trước rồi bấm <b>Test kết nối</b>. Nếu báo "bị chặn mạng" nghĩa là VPS không ra được Telegram (thường gặp với VPS đặt tại VN).
       </div>
     </div>
   );

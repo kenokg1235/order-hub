@@ -1390,15 +1390,28 @@ function getTelegram() {
   const row = db.prepare("SELECT value FROM settings WHERE key='telegram'").get();
   try { return row ? JSON.parse(row.value) : { botToken: "", enabled: false }; } catch { return { botToken: "", enabled: false }; }
 }
+// Gọi Telegram API có timeout + trả lỗi rõ ràng (phân biệt lỗi mạng/chặn vs lỗi token/Telegram).
+async function tgFetch(method, body) {
+  const tg = getTelegram();
+  if (!tg.botToken) return { ok: false, error: "Chưa cấu hình bot token" };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${tg.botToken}/${method}`, {
+      method: body ? "POST" : "GET",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+    });
+    return await r.json().catch(() => ({ ok: false, error: "Telegram trả về phản hồi không hợp lệ" }));
+  } catch (e) {
+    return { ok: false, error: "Không kết nối được api.telegram.org (có thể bị chặn mạng ở VPS): " + (e.name === "AbortError" ? "quá thời gian chờ" : (e.message || e.name)) };
+  } finally { clearTimeout(timer); }
+}
 async function sendTelegram(chatId, text) {
   const tg = getTelegram();
   if (!tg.enabled || !tg.botToken || !chatId) return;
-  try {
-    await fetch(`https://api.telegram.org/bot${tg.botToken}/sendMessage`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text }),
-    });
-  } catch {}
+  await tgFetch("sendMessage", { chat_id: chatId, text });
 }
 // Insert in-app notifications + push to Telegram for each target user.
 // `teams` (id or array): the team(s) this notification concerns. A user who has
@@ -1483,14 +1496,23 @@ app.get("/api/telegram/status", requireAuth, (req, res) => {
   const tg = getTelegram();
   res.json({ linked: !!(u && u.telegram_chat_id), enabled: !!(tg.enabled && tg.botToken) });
 });
+// Admin: kiểm tra VPS có gọi được Telegram không (chẩn đoán "không liên kết được").
+app.get("/api/telegram/test", requireAuth, requireAdmin, async (req, res) => {
+  const tg = getTelegram();
+  if (!tg.botToken) return res.json({ ok: false, error: "Chưa nhập bot token ở Cấu hình" });
+  const me = await tgFetch("getMe");
+  if (me.ok) return res.json({ ok: true, username: me.result?.username || "", reachable: true });
+  res.json({ ok: false, reachable: !/api\.telegram\.org/.test(me.error || ""), error: me.description || me.error || "Lỗi không rõ" });
+});
 app.post("/api/telegram/start-link", requireAuth, async (req, res) => {
   const tg = getTelegram();
   if (!tg.enabled || !tg.botToken) return res.status(400).json({ error: "Admin chưa bật Telegram trong Cấu hình" });
   const code = "LINK-" + crypto.randomBytes(3).toString("hex").toUpperCase();
   tgPending.set(code, { userId: req.user.id, expires: Date.now() + 10 * 60 * 1000 });
-  let botUsername = "";
-  try { const r = await (await fetch(`https://api.telegram.org/bot${tg.botToken}/getMe`)).json(); botUsername = r.result?.username || ""; } catch {}
-  res.json({ code, botUsername });
+  await tgFetch("deleteWebhook");   // đảm bảo getUpdates hoạt động (nếu bot lỡ đặt webhook)
+  const me = await tgFetch("getMe");
+  if (!me.ok) return res.status(502).json({ error: me.description || me.error || "Không gọi được Telegram" });
+  res.json({ code, botUsername: me.result?.username || "" });
 });
 app.post("/api/telegram/check-link", requireAuth, async (req, res) => {
   const tg = getTelegram();
@@ -1498,16 +1520,15 @@ app.post("/api/telegram/check-link", requireAuth, async (req, res) => {
   let myCode = null;
   for (const [code, info] of tgPending) if (info.userId === req.user.id && info.expires > Date.now()) myCode = code;
   if (!myCode) return res.status(400).json({ error: "Chưa bắt đầu liên kết hoặc đã hết hạn — bấm 'Bắt đầu' lại" });
-  try {
-    const upd = await (await fetch(`https://api.telegram.org/bot${tg.botToken}/getUpdates`)).json();
-    const msgs = (upd.result || []).map((u) => u.message).filter(Boolean).reverse();
-    const hit = msgs.find((m) => String(m.text || "").includes(myCode));
-    if (!hit) return res.json({ linked: false });
-    db.prepare("UPDATE users SET telegram_chat_id=? WHERE id=?").run(String(hit.chat.id), req.user.id);
-    tgPending.delete(myCode);
-    sendTelegram(String(hit.chat.id), "✅ Liên kết Order Hub thành công! Bạn sẽ nhận thông báo tại đây.");
-    res.json({ linked: true });
-  } catch { res.status(500).json({ error: "Lỗi gọi Telegram" }); }
+  const upd = await tgFetch("getUpdates");
+  if (!upd.ok) return res.status(502).json({ error: upd.description || upd.error || "Không lấy được tin nhắn từ Telegram" });
+  const msgs = (upd.result || []).map((u) => u.message).filter(Boolean).reverse();
+  const hit = msgs.find((m) => String(m.text || "").includes(myCode));
+  if (!hit) return res.json({ linked: false });
+  db.prepare("UPDATE users SET telegram_chat_id=? WHERE id=?").run(String(hit.chat.id), req.user.id);
+  tgPending.delete(myCode);
+  sendTelegram(String(hit.chat.id), "✅ Liên kết Order Hub thành công! Bạn sẽ nhận thông báo tại đây.");
+  res.json({ linked: true });
 });
 app.post("/api/telegram/unlink", requireAuth, (req, res) => {
   db.prepare("UPDATE users SET telegram_chat_id='' WHERE id=?").run(req.user.id);
