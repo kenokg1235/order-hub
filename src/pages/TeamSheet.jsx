@@ -257,7 +257,7 @@ export default function TeamSheet({ currentUser, teams }) {
     const ths = [...row.children], cleanups = [];
     ths.forEach((th, i) => {
       if (i >= SHEET_COLS.length) return;
-      th.style.position = "relative";
+      th.style.position = pinned ? "" : "relative";   // ghim → th là sticky (tự neo); không ghim → relative
       let handle = th.querySelector(":scope > .colgrip");
       if (!handle) { handle = document.createElement("div"); handle.className = "colgrip"; th.appendChild(handle); }
       const key = SHEET_COLS[i].key;
@@ -269,7 +269,7 @@ export default function TeamSheet({ currentUser, teams }) {
         document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp); document.body.style.cursor = "col-resize";
       };
       handle.addEventListener("mousedown", onDown);
-      cleanups.push(() => { handle.removeEventListener("mousedown", onDown); handle.remove(); });
+      cleanups.push(() => { handle.removeEventListener("mousedown", onDown); handle.remove(); th.style.position = ""; });
     });
     return () => cleanups.forEach((f) => f());
     // orders trong deps: chèn lại tay cầm nếu React vẽ lại tiêu đề khi dữ liệu đổi.
@@ -446,7 +446,7 @@ export default function TeamSheet({ currentUser, teams }) {
 
       {colStyle && <style>{colStyle}</style>}
       <datalist id="teamsites">{sites.map((s) => <option key={s} value={s} />)}</datalist>
-      {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl tbody td{overflow:hidden;}#ttbl thead tr:first-child th{position:relative;}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
+      {resizeOn && <style>{`#ttbl td input:not([type=checkbox]),#ttbl td select,#ttbl td textarea{width:100%!important;box-sizing:border-box;min-width:0;}#ttbl tbody td{overflow:hidden;}${pinned ? "" : "#ttbl thead tr:first-child th{position:relative;}"}.colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:9;}.colgrip:hover{background:var(--primary);opacity:.45;}`}</style>}
       <Pager />
       <div className={"card" + (pinned ? " pinwrap" : "")} style={{ padding: 0, overflowX: "auto" }}>
         <table id="ttbl" ref={tableRef} className="tbl"
