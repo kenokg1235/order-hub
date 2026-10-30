@@ -131,7 +131,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
     name: user.name || "", email: user.email || "", password: "",
     role: user.role || "Member", teamIds: user.teamIds || [], storeNames: user.storeNames || [],
     mutedTeams: user.mutedTeams || [],
-    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, canCardStock: !!user.canCardStock, active: user.active !== false,
+    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, canCardStock: !!user.canCardStock, ownOrdersOnly: !!user.ownOrdersOnly, active: user.active !== false,
   });
   const [newStore, setNewStore] = useState("");
   const [err, setErr] = useState("");
@@ -226,6 +226,12 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
           <label className="row" style={{ gap: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={f.canMaster} onChange={(e) => up("canMaster", e.target.checked)} />
             📊 Quyền Sheet Tổng (xem &amp; sửa)
+          </label>
+        )}
+        {f.role === "Lister" && (
+          <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={f.ownOrdersOnly} onChange={(e) => up("ownOrdersOnly", e.target.checked)} />
+            👤 Chỉ thấy đơn mình list
           </label>
         )}
         <label className="row" style={{ gap: 6, cursor: "pointer" }}>

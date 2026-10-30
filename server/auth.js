@@ -48,7 +48,7 @@ export function publicUser(u) {
     teamIds: JSON.parse(u.team_ids || "[]"),
     storeNames: JSON.parse(u.store_names || "[]"),
     mutedTeams: JSON.parse(u.muted_teams || "[]"),
-    canBuyCard: !!u.can_buy_card, canMaster: !!u.can_master, canCardStock: !!u.can_card_stock, active: !!u.active,
+    canBuyCard: !!u.can_buy_card, canMaster: !!u.can_master, canCardStock: !!u.can_card_stock, ownOrdersOnly: !!u.own_orders_only, active: !!u.active,
   };
 }
 
