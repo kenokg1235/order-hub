@@ -138,7 +138,9 @@ ensureColumn("orders", "listed_by", "TEXT DEFAULT ''");
 ensureColumn("orders", "master_note", "TEXT DEFAULT ''");   // Admin/Lister note on Sheet Tổng
 ensureColumn("users", "telegram_chat_id", "TEXT DEFAULT ''");
 ensureColumn("users", "can_card_stock", "INTEGER DEFAULT 0");   // quyền xem/quản lý Kho thẻ
-ensureColumn("users", "own_orders_only", "INTEGER DEFAULT 0");  // Lister: chỉ thấy đơn chính mình list
+ensureColumn("users", "own_orders_only", "INTEGER DEFAULT 0");  // CŨ — đã chuyển sang order_scope
+ensureColumn("users", "order_scope", "TEXT NOT NULL DEFAULT 'all'");  // Lister xem đơn: all (mọi store) | store (store được giao) | own (đơn mình list)
+db.prepare("UPDATE users SET order_scope='own', own_orders_only=0 WHERE own_orders_only=1").run();
 ensureColumn("users", "muted_teams", "TEXT NOT NULL DEFAULT '[]'");   // teams whose notifications this user mutes
 ensureColumn("users", "can_master", "INTEGER NOT NULL DEFAULT 0");    // Leader có quyền xem/sửa Sheet Tổng
 ensureColumn("users", "last_seen", "INTEGER DEFAULT 0");              // mốc hoạt động gần nhất (online)

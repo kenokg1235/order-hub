@@ -113,26 +113,27 @@ app.get("/api/users", requireAdmin, (req, res) => {
   res.json({ users: rows.map(publicUser) });
 });
 
+const ORDER_SCOPES = ["all", "store", "own"];
 app.post("/api/users", requireAdmin, (req, res) => {
-  const { name, email, password, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, ownOrdersOnly, mutedTeams } = req.body || {};
+  const { name, email, password, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, orderScope, mutedTeams } = req.body || {};
   const mail = String(email || "").trim().toLowerCase();
   if (!name || !mail || !password) return res.status(400).json({ error: "Thiếu tên / email / mật khẩu" });
   const dup = db.prepare("SELECT 1 FROM users WHERE email=?").get(mail);
   if (dup) return res.status(409).json({ error: "Email đã tồn tại" });
   const id = newId("u");
-  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,can_master,can_card_stock,own_orders_only,active,created_at)
+  db.prepare(`INSERT INTO users (id,name,email,password,role,team_ids,store_names,muted_teams,can_buy_card,can_master,can_card_stock,order_scope,active,created_at)
               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?)`)
     .run(id, name, mail, bcrypt.hashSync(String(password), 10),
          role || "Member", JSON.stringify(teamIds || []), JSON.stringify(storeNames || []),
-         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, canMaster ? 1 : 0, canCardStock ? 1 : 0, ownOrdersOnly ? 1 : 0, Date.now());
+         JSON.stringify(mutedTeams || []), (role === "Buyer" || canBuyCard) ? 1 : 0, canMaster ? 1 : 0, canCardStock ? 1 : 0, ORDER_SCOPES.includes(orderScope) ? orderScope : "all", Date.now());
   res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id=?").get(id)) });
 });
 
 app.put("/api/users/:id", requireAdmin, (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE id=?").get(req.params.id);
   if (!u) return res.status(404).json({ error: "Không tìm thấy user" });
-  const { name, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, ownOrdersOnly, active, password, mutedTeams } = req.body || {};
-  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, can_master=?, can_card_stock=?, own_orders_only=?, active=?,
+  const { name, role, teamIds, storeNames, canBuyCard, canMaster, canCardStock, orderScope, active, password, mutedTeams } = req.body || {};
+  db.prepare(`UPDATE users SET name=?, role=?, team_ids=?, store_names=?, muted_teams=?, can_buy_card=?, can_master=?, can_card_stock=?, order_scope=?, active=?,
               password=COALESCE(?, password) WHERE id=?`)
     .run(name ?? u.name, role ?? u.role, JSON.stringify(teamIds ?? JSON.parse(u.team_ids)),
          JSON.stringify(storeNames ?? JSON.parse(u.store_names || "[]")),
@@ -140,7 +141,7 @@ app.put("/api/users/:id", requireAdmin, (req, res) => {
          (role ?? u.role) === "Buyer" ? 1 : (canBuyCard != null ? (canBuyCard ? 1 : 0) : u.can_buy_card),
          canMaster != null ? (canMaster ? 1 : 0) : u.can_master,
          canCardStock != null ? (canCardStock ? 1 : 0) : u.can_card_stock,
-         ownOrdersOnly != null ? (ownOrdersOnly ? 1 : 0) : u.own_orders_only,
+         ORDER_SCOPES.includes(orderScope) ? orderScope : u.order_scope,
          active != null ? (active ? 1 : 0) : u.active,
          password ? bcrypt.hashSync(String(password), 10) : null, u.id);
   // Đổi mật khẩu → hủy mọi phiên đang đăng nhập của user đó (buộc đăng nhập lại bằng mật khẩu mới).
@@ -252,11 +253,14 @@ function ensureStoreForUser(user, store) {
   return true;
 }
 // Ai được sửa ô trên Sheet Tổng: Admin/Lister (store) + Leader được cấp quyền Sheet Tổng.
-const canEditMasterOrder = (user, o) => (canTouchStore(user, o.store) && canSeeOwnOrder(user, o)) || (user.role === "Leader" && user.canMaster);
-// Lister bị giới hạn (ownOrdersOnly): chỉ thấy đơn chính mình list. o có thể là dòng DB (listed_by) hoặc orderOut (listedBy).
-function canSeeOwnOrder(user, o) {
-  if (user.role !== "Lister" || !user.ownOrdersOnly) return true;
-  return (o.listed_by ?? o.listedBy) === user.id;
+const canEditMasterOrder = (user, o) => (canTouchStore(user, o.store) && canSeeOrder(user, o)) || (user.role === "Leader" && user.canMaster);
+// Phạm vi xem đơn của Lister (orderScope): all = mọi store; store = store được giao; own = đơn chính mình list.
+// o có thể là dòng DB (listed_by) hoặc orderOut (listedBy).
+function canSeeOrder(user, o) {
+  if (user.role !== "Lister") return true;
+  if (user.orderScope === "own") return (o.listed_by ?? o.listedBy) === user.id;
+  if (user.orderScope === "store") return (user.storeNames || []).includes(o.store);
+  return true;
 }
 
 app.get("/api/stores", requireAuth, (req, res) => {
@@ -505,7 +509,7 @@ app.get("/api/image-queue", requireAuth, (req, res) => {
 
 // Master-sheet read: Admin/Lister/Leader-master → XEM TẤT CẢ đơn (mọi store);
 // nhưng chỉ SỬA được store mình quản lý (canEdit cho từng đơn). Vai trò khác → không thấy.
-// Lister có ownOrdersOnly → chỉ thấy đơn chính mình list.
+// Lister bị giới hạn theo orderScope (xem canSeeOrder).
 app.get("/api/orders", requireAuth, (req, res) => {
   const now = Date.now();
   const role = req.user.role;
@@ -517,7 +521,7 @@ app.get("/api/orders", requireAuth, (req, res) => {
     // DELTA: truy vấn trực tiếp (ít dòng, nhẹ).
     const where = (month && month !== "all") ? "WHERE period=? AND updated_at >= ?" : "WHERE updated_at >= ?";
     const params = (month && month !== "all") ? [month, since] : [since];
-    const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params).filter((o) => canSeeOwnOrder(req.user, o));
+    const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC`).all(...params).filter((o) => canSeeOrder(req.user, o));
     const purMap = purchasesByOrders(rows.map((o) => o.id));
     const { addr: addrCount, on: onCount } = orderAggsCached();
     return res.json({ orders: rows.map((o) => ({ ...orderOut(o), purchases: (purMap.get(o.id) || []).map((p) => purchaseOut(p, false)), addrCount: addrCount[addrNorm(o.address)] || 0, multiCount: onCount[o.order_no] || 1, canEdit: canEditMasterOrder(req.user, o) })), now, delta: true });
@@ -525,7 +529,7 @@ app.get("/api/orders", requireAuth, (req, res) => {
   // FULL: cache dùng-chung. Admin gửi chuỗi JSON dựng sẵn (nhanh nhất); Lister/Leader map thêm canEdit.
   const c = ordersFullBuilt(month);
   if (req.user.role === "Admin") return res.type("application/json").send(c.adminJson);
-  res.json({ orders: c.built.filter((o) => canSeeOwnOrder(req.user, o)).map((o) => ({ ...o, canEdit: canEditMasterOrder(req.user, o) })), now: c.at, delta: false });
+  res.json({ orders: c.built.filter((o) => canSeeOrder(req.user, o)).map((o) => ({ ...o, canEdit: canEditMasterOrder(req.user, o) })), now: c.at, delta: false });
 });
 
 // Bulk import (eBay rows already parsed client-side). Store chosen at import time.
@@ -701,7 +705,7 @@ app.post("/api/orders/fetch-images", requireAuth, (req, res) => {
     rows = db.prepare(`SELECT * FROM orders WHERE image='' AND store IN (${ph})`).all(...stores);
   }
   let queued = 0;
-  for (const o of rows) { if (!canSeeOwnOrder(req.user, o)) continue; const it = itemNoOf(o); if (it) { enqueueImage(o.id, it, o.size); queued++; } }
+  for (const o of rows) { if (!canSeeOrder(req.user, o)) continue; const it = itemNoOf(o); if (it) { enqueueImage(o.id, it, o.size); queued++; } }
   res.json({ queued });
 });
 
@@ -852,7 +856,7 @@ app.post("/api/orders/divide", requireAdmin, (req, res) => {
 app.delete("/api/orders/:id", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.json({ ok: true });
-  if (!canTouchStore(req.user, o.store) || !canSeeOwnOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
+  if (!canTouchStore(req.user, o.store) || !canSeeOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền" });
   db.prepare("DELETE FROM orders WHERE id=?").run(o.id);
   db.prepare("DELETE FROM audit_log WHERE order_id=?").run(o.id);
   res.json({ ok: true });
@@ -931,7 +935,7 @@ app.get("/api/orders/:id/history", requireAuth, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
   const u = req.user;
-  const canView = u.role === "Admin" || canTouchOrderTeam(u, o) || (u.role === "Lister" && (u.storeNames || []).includes(o.store) && canSeeOwnOrder(u, o));
+  const canView = u.role === "Admin" || canTouchOrderTeam(u, o) || (u.role === "Lister" && (u.storeNames || []).includes(o.store) && canSeeOrder(u, o));
   if (!canView) return res.status(403).json({ error: "Không có quyền" });
   let rows = db.prepare("SELECT * FROM audit_log WHERE order_id=? ORDER BY created_at DESC").all(o.id);
   const canSee = canSeePurchases(u, o);
@@ -1445,11 +1449,11 @@ function notify(userIds, type, message, link = "", teams = []) {
 const userTeams = (id) => { const r = db.prepare("SELECT team_ids FROM users WHERE id=?").get(id); return r ? JSON.parse(r.team_ids || "[]") : []; };
 const adminIds = () => db.prepare("SELECT id FROM users WHERE active=1 AND role='Admin'").all().map((r) => r.id);
 // Active Listers assigned to a given store (for store-scoped Lister notifications).
-// Lister có ownOrdersOnly chỉ nhận báo về đơn chính mình list (listedBy).
+// Lister có orderScope "own" chỉ nhận báo về đơn chính mình list (listedBy).
 const listersForStore = (store, listedBy) => {
   if (!store) return [];
-  return db.prepare("SELECT id, store_names, own_orders_only FROM users WHERE active=1 AND role='Lister'").all()
-    .filter((u) => JSON.parse(u.store_names || "[]").includes(store) && (!u.own_orders_only || u.id === listedBy)).map((u) => u.id);
+  return db.prepare("SELECT id, store_names, order_scope FROM users WHERE active=1 AND role='Lister'").all()
+    .filter((u) => JSON.parse(u.store_names || "[]").includes(store) && (u.order_scope !== "own" || u.id === listedBy)).map((u) => u.id);
 };
 
 // Set of user ids belonging to any of the given teams (for team-scoped card views).
@@ -2312,7 +2316,7 @@ app.get("/api/staff-notes", requireAuth, adminOrListerNote, (req, res) => {
     const ph = stores.map(() => "?").join(",");
     rows = db.prepare(`SELECT * FROM orders WHERE staff_note!='' AND store IN (${ph}) ORDER BY staff_note_at DESC`).all(...stores);
   }
-  res.json({ notes: rows.filter((o) => canSeeOwnOrder(req.user, o)).map((o) => ({
+  res.json({ notes: rows.filter((o) => canSeeOrder(req.user, o)).map((o) => ({
     id: o.id, orderNo: o.order_no || o.id, store: o.store, product: o.product, link: o.link,
     address: o.address, custPhone: o.cust_phone, deadline: o.deadline,
     masterStatus: o.master_status, claimedName: o.claimed_name,
@@ -2322,7 +2326,7 @@ app.get("/api/staff-notes", requireAuth, adminOrListerNote, (req, res) => {
 app.post("/api/staff-notes/:id/done", requireAuth, adminOrListerNote, (req, res) => {
   const o = db.prepare("SELECT * FROM orders WHERE id=?").get(req.params.id);
   if (!o) return res.status(404).json({ error: "Không tìm thấy đơn" });
-  if (!canTouchStore(req.user, o.store) || !canSeeOwnOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền với store này" });
+  if (!canTouchStore(req.user, o.store) || !canSeeOrder(req.user, o)) return res.status(403).json({ error: "Không có quyền với store này" });
   db.prepare("UPDATE orders SET staff_note_done=? WHERE id=?").run(req.body && req.body.done === false ? 0 : 1, o.id);
   res.json({ ok: true });
 });

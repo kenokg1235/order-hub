@@ -131,7 +131,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
     name: user.name || "", email: user.email || "", password: "",
     role: user.role || "Member", teamIds: user.teamIds || [], storeNames: user.storeNames || [],
     mutedTeams: user.mutedTeams || [],
-    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, canCardStock: !!user.canCardStock, ownOrdersOnly: !!user.ownOrdersOnly, active: user.active !== false,
+    canBuyCard: !!user.canBuyCard, canMaster: !!user.canMaster, canCardStock: !!user.canCardStock, orderScope: user.orderScope || "all", active: user.active !== false,
   });
   const [newStore, setNewStore] = useState("");
   const [err, setErr] = useState("");
@@ -181,7 +181,7 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
       {/* Lister → store scope; Leader/Member → team scope */}
       {f.role === "Lister" ? (
         <div className="field">
-          <label className="label">Store được cấp (lister chỉ thấy đơn của các store này)</label>
+          <label className="label">Store được cấp (lister sửa được đơn của các store này)</label>
           <div className="row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
             {storeOptions.map((s) => (
               <label key={s} className="row" style={{ gap: 5, cursor: "pointer" }}>
@@ -229,9 +229,13 @@ function UserModal({ user, teams, stores, onClose, onSaved }) {
           </label>
         )}
         {f.role === "Lister" && (
-          <label className="row" style={{ gap: 6, cursor: "pointer" }}>
-            <input type="checkbox" checked={f.ownOrdersOnly} onChange={(e) => up("ownOrdersOnly", e.target.checked)} />
-            👤 Chỉ thấy đơn mình list
+          <label className="row" style={{ gap: 6 }}>
+            👤 Xem đơn:
+            <select className="input" style={{ width: "auto" }} value={f.orderScope} onChange={(e) => up("orderScope", e.target.value)}>
+              <option value="all">Tất cả store</option>
+              <option value="store">Store của mình</option>
+              <option value="own">Chỉ đơn mình list</option>
+            </select>
           </label>
         )}
         <label className="row" style={{ gap: 6, cursor: "pointer" }}>
