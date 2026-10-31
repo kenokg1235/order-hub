@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
 import { rowBg } from "../statusColors.js";
+import { compareState } from "../usState.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import { useImagePreview } from "../ImagePreview.jsx";
 import MultiFilter from "../MultiFilter.jsx";
@@ -41,6 +42,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const [cf, setCf] = useState(SAVED.cf || {});                // per-column filters
   const [deadlineSort, setDeadlineSort] = useState(SAVED.deadlineSort || "");   // "" | "asc" | "desc"
   const [amountSort, setAmountSort] = useState(SAVED.amountSort || "");         // "" | "asc" | "desc"
+  const [stateSort, setStateSort] = useState(SAVED.stateSort || "");            // "" | "asc" | "desc"
   const [historyFor, setHistoryFor] = useState(null);
   const [pinned, setPinned] = useState(SAVED.pinned !== false);
   const [freezeCols, setFreezeCols] = useState(Number.isFinite(SAVED.freezeCols) ? SAVED.freezeCols : 3);   // số cột ghim từ trái
@@ -65,8 +67,8 @@ export default function TeamSheet({ currentUser, teams }) {
 
   // Lưu bộ lọc để giữ nguyên khi rời tab rồi quay lại.
   useEffect(() => {
-    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols, resizeOn })); } catch {}
-  }, [filter, teamFilter, q, cf, deadlineSort, amountSort, pinned, freezeCols, resizeOn]);
+    try { localStorage.setItem("teamSheetFilters", JSON.stringify({ filter, teamFilter, q, cf, deadlineSort, amountSort, stateSort, pinned, freezeCols, resizeOn })); } catch {}
+  }, [filter, teamFilter, q, cf, deadlineSort, amountSort, stateSort, pinned, freezeCols, resizeOn]);
 
   const lastSync = useRef(0);   // mốc delta-sync (ms)
   async function loadOrders(m) {
@@ -188,6 +190,7 @@ export default function TeamSheet({ currentUser, teams }) {
   const deadlineKey = (d) => { const m = String(d || "").match(/(\d{1,2})\s*\/\s*(\d{1,2})/); return m ? (+m[2]) * 100 + (+m[1]) : Infinity; };
   const amountOf = (o) => (o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);   // tổng số tiền của đơn
   const displayed = useMemo(() => {
+    if (stateSort) return [...list].sort((a, b) => compareState(a, b, stateSort));
     if (amountSort) return [...list].sort((a, b) => amountSort === "asc" ? amountOf(a) - amountOf(b) : amountOf(b) - amountOf(a));
     if (!deadlineSort) return list;
     return [...list].sort((a, b) => {
@@ -197,13 +200,13 @@ export default function TeamSheet({ currentUser, teams }) {
       if (vb === Infinity) return -1;
       return deadlineSort === "asc" ? va - vb : vb - va;
     });
-  }, [list, deadlineSort, amountSort]);
+  }, [list, deadlineSort, amountSort, stateSort]);
 
   // Phân trang để không render hàng trăm dòng cùng lúc (chống lag).
   const PER_PAGE = 100;
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(displayed.length / PER_PAGE));
-  useEffect(() => { setPage(1); }, [filter, teamFilter, q, cf, deadlineSort, amountSort, month]);
+  useEffect(() => { setPage(1); }, [filter, teamFilter, q, cf, deadlineSort, amountSort, stateSort, month]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const paged = useMemo(() => displayed.slice((page - 1) * PER_PAGE, page * PER_PAGE), [displayed, page]);
   const Pager = () => totalPages <= 1 ? null : (
@@ -453,10 +456,16 @@ export default function TeamSheet({ currentUser, teams }) {
           style={resizeOn ? { tableLayout: "fixed", width: SHEET_COLS.reduce((s, c) => s + (colW[c.key] ?? c.w), 0), whiteSpace: "nowrap" } : { minWidth: 2130, whiteSpace: "nowrap" }}>
           {resizeOn && <colgroup>{SHEET_COLS.map((c) => <col key={c.key} style={{ width: (colW[c.key] ?? c.w) + "px" }} />)}</colgroup>}
           <thead><tr>
-            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th><th>Địa chỉ</th><th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th>
+            <th title="Trạng thái tổng (từ Sheet Tổng)">Trạng thái tổng</th><th>Store</th><th>ID Order</th>
+            <th onClick={() => { setDeadlineSort(""); setAmountSort(""); setStateSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
+              style={{ cursor: "pointer", whiteSpace: "nowrap", color: stateSort ? "var(--primary)" : undefined }}
+              title="Sắp xếp theo bang (A ↔ Z)">
+              Địa chỉ {stateSort === "asc" ? "↑" : stateSort === "desc" ? "↓" : "⇅"}
+            </th>
+            <th>Ảnh</th><th>Sản phẩm</th><th>Link</th><th>Size</th><th>Màu</th>
             <th>SL <SumBtn label="SL" text={() => round2(displayed.reduce((s, o) => s + (Number(o.qty) || 0), 0))} /></th>
             <th>Profit <SumBtn label="Profit" text={() => "$" + round2(displayed.reduce((s, o) => s + (Number(o.profit) || 0), 0))} /></th>
-            <th onClick={() => { setAmountSort(""); setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
+            <th onClick={() => { setAmountSort(""); setStateSort(""); setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
@@ -465,7 +474,7 @@ export default function TeamSheet({ currentUser, teams }) {
             <th>Thẻ</th>
             <th title="Site đã xử lý — dán link, tự lấy tên (bắt buộc)">Site *</th>
             <th style={{ whiteSpace: "nowrap" }}>
-              <span onClick={() => { setDeadlineSort(""); setAmountSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
+              <span onClick={() => { setDeadlineSort(""); setStateSort(""); setAmountSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
                 style={{ cursor: "pointer", color: amountSort ? "var(--primary)" : undefined }} title="Sắp xếp theo số tiền">
                 Số tiền {amountSort === "asc" ? "↑" : amountSort === "desc" ? "↓" : "⇅"}
               </span> <SumBtn label="Số tiền" text={() => round2(displayed.flatMap((o) => o.purchases || []).reduce((s, p) => s + (Number(p.amount) || 0), 0))} />

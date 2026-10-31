@@ -4,6 +4,7 @@ import { Button, Input, Modal, Badge } from "../ui.jsx";
 import { parseEbayCsv, parseOrderHubCsv } from "../ebayParser.js";
 import { buildOrderCsv, parseUpdateCsv, DEFAULT_EXPORT_KEYS } from "../orderColumns.js";
 import { rowBg } from "../statusColors.js";
+import { compareState } from "../usState.js";
 import { useFormulaBar } from "../useFormulaBar.jsx";
 import { useImagePreview } from "../ImagePreview.jsx";
 import MultiFilter from "../MultiFilter.jsx";
@@ -21,6 +22,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   const [procStatuses, setProcStatuses] = useState([]);
   const [cancelReasons, setCancelReasons] = useState([]);
   const [deadlineSort, setDeadlineSort] = useState("");   // "" | "asc" | "desc"
+  const [stateSort, setStateSort] = useState("");         // "" | "asc" | "desc"
   const [cf, setCf] = useState({});                // per-column filters (combine like Google Sheets)
   const [months, setMonths] = useState([]);
   const [activeMonth, setActiveMonth] = useState("");
@@ -244,6 +246,7 @@ export default function Master({ currentUser, teams, refreshUser }) {
   // Optional sort by deadline (DD/MM). Empty deadlines always go last.
   const deadlineKey = (d) => { const m = String(d || "").match(/(\d{1,2})\s*\/\s*(\d{1,2})/); return m ? (+m[2]) * 100 + (+m[1]) : Infinity; };
   const displayed = useMemo(() => {
+    if (stateSort) return [...filtered].sort((a, b) => compareState(a, b, stateSort));
     if (!deadlineSort) return filtered;
     return [...filtered].sort((a, b) => {
       const va = deadlineKey(a.deadline), vb = deadlineKey(b.deadline);
@@ -252,13 +255,13 @@ export default function Master({ currentUser, teams, refreshUser }) {
       if (vb === Infinity) return -1;
       return deadlineSort === "asc" ? va - vb : vb - va;
     });
-  }, [filtered, deadlineSort]);
+  }, [filtered, deadlineSort, stateSort]);
 
   // Phân trang để không render hàng trăm dòng cùng lúc (chống lag trình duyệt).
   const PER_PAGE = 100;
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(displayed.length / PER_PAGE));
-  useEffect(() => { setPage(1); }, [cf, q, month, deadlineSort]);            // đổi lọc/tháng → về trang 1
+  useEffect(() => { setPage(1); }, [cf, q, month, deadlineSort, stateSort]);          // đổi lọc/tháng → về trang 1
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const paged = useMemo(() => displayed.slice((page - 1) * PER_PAGE, page * PER_PAGE), [displayed, page]);
   const Pager = () => totalPages <= 1 ? null : (
@@ -519,9 +522,15 @@ export default function Master({ currentUser, teams, refreshUser }) {
         <table id="mtbl" ref={tableRef} className="tbl" style={{ minWidth: 1850, whiteSpace: "nowrap" }}>
           <thead><tr>
             {isAdmin && <th><input type="checkbox" checked={allSelected} onChange={toggleAll} title="Chọn tất cả (đang lọc)" /></th>}
-            <th>Team</th><th>Store</th><th>ID Order</th><th>Address</th><th>SĐT</th><th>SL</th>
+            <th>Team</th><th>Store</th><th>ID Order</th>
+            <th onClick={() => { setDeadlineSort(""); setStateSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
+              style={{ cursor: "pointer", whiteSpace: "nowrap", color: stateSort ? "var(--primary)" : undefined }}
+              title="Sắp xếp theo bang (A ↔ Z)">
+              Address {stateSort === "asc" ? "↑" : stateSort === "desc" ? "↓" : "⇅"}
+            </th>
+            <th>SĐT</th><th>SL</th>
             <th>Sản phẩm</th><th>Ảnh</th><th>Link</th><th>Size</th><th>Màu</th><th>Profit</th>
-            <th onClick={() => setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc")}
+            <th onClick={() => { setStateSort(""); setDeadlineSort((s) => s === "asc" ? "desc" : s === "desc" ? "" : "asc"); }}
               style={{ cursor: "pointer", whiteSpace: "nowrap", color: deadlineSort ? "var(--primary)" : undefined }}
               title="Sắp xếp theo thời hạn (gần ↔ xa)">
               Thời hạn {deadlineSort === "asc" ? "↑" : deadlineSort === "desc" ? "↓" : "⇅"}
