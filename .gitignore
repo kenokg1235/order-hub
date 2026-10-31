@@ -11,3 +11,6 @@ server/data.db.bak-*
 *.output
 
 server/uploads/
+
+lan-key-service/cert/
+rootCA*.pem
