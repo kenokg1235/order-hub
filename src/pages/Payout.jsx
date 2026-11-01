@@ -107,12 +107,24 @@ export default function Payout({ currentUser, refreshUser }) {
   }
 
   const upQa = (k, v) => setQa((p) => ({ ...p, [k]: v }));
+  // Payout thêm gần nhất của store (theo lúc nhập, không theo ngày payout).
+  const lastPayoutOf = (store) => payouts.reduce((best, p) => (p.store === store && (!best || (p.createdAt || 0) > (best.createdAt || 0))) ? p : best, null);
+  // Chọn store → điền sẵn theo lần nhập cuối của store đó (trừ Số tiền + Ngày).
+  // Store chưa có payout → xóa thông tin của store trước để không nhập nhầm bank; chưa có store trước thì giữ phần đã gõ.
+  function chooseQaStore(store) {
+    setQa((p) => {
+      const last = lastPayoutOf(store);
+      if (last) return { ...p, store, username: last.username || "", bank: last.bank || "", bankName: last.bankName || "", note: last.note || "" };
+      if (lastPayoutOf(p.store)) return { ...p, store, username: "", bank: "", bankName: "", note: "" };
+      return { ...p, store };
+    });
+  }
   async function quickAdd() {
     if (!qa.store) { setErr("Chọn store trước"); return; }
     if (!qa.amount) { setErr("Nhập số tiền"); return; }
     try {
       await api.post("/api/payouts", qa);
-      setQa((p) => ({ ...p, username: "", amount: "", note: "" }));   // keep store/bank/bankName/date
+      setQa((p) => ({ ...p, amount: "" }));   // giữ nguyên các ô khác cho dòng kế
       setErr("");
       load();
       refreshUser?.();   // store mới (nếu có) được gán cho Lister → cập nhật danh sách store
@@ -223,13 +235,13 @@ export default function Payout({ currentUser, refreshUser }) {
         <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
           <div><div className="label">Store</div>
             {isAdmin ? (
-              <select className="input" style={{ minWidth: 130 }} value={qa.store} onChange={(e) => upQa("store", e.target.value)}>
+              <select className="input" style={{ minWidth: 130 }} value={qa.store} onChange={(e) => chooseQaStore(e.target.value)}>
                 <option value="">— chọn —</option>
                 {myStores.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             ) : (
               <input className="input" list="payout-my-stores" style={{ minWidth: 130 }} value={qa.store}
-                placeholder="Chọn store, hoặc gõ store MỚI" onChange={(e) => upQa("store", e.target.value)} />
+                placeholder="Chọn store, hoặc gõ store MỚI" onChange={(e) => chooseQaStore(e.target.value)} />
             )}
             <datalist id="payout-my-stores">{myStores.map((s) => <option key={s} value={s} />)}</datalist></div>
           <div><div className="label">Username</div><input className="input" style={{ width: 110 }} value={qa.username} onChange={(e) => upQa("username", e.target.value)} /></div>
@@ -243,7 +255,7 @@ export default function Payout({ currentUser, refreshUser }) {
           <Button variant="primary" onClick={quickAdd}>＋ Thêm</Button>
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          Mẹo: chọn <b>Store + Bank + Ngày</b> một lần, rồi gõ <b>Số tiền</b> → nhấn <b>Enter</b> để thêm liên tục. Bank/Ngày được giữ lại cho dòng kế.
+          Mẹo: chọn <b>Store</b> sẽ tự điền Username, Bank, Name gắn bank, Note theo lần nhập cuối của store đó. Chọn <b>Ngày</b>, gõ <b>Số tiền</b> → nhấn <b>Enter</b> để thêm liên tục.
         </div>
       </div>
 
