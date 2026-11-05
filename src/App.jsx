@@ -25,6 +25,7 @@ import Tasks from "./pages/Tasks.jsx";
 import WorkSessions from "./pages/WorkSessions.jsx";
 import Leaderboard from "./pages/Leaderboard.jsx";
 import Tracking from "./pages/Tracking.jsx";
+import ClaimRequests from "./pages/ClaimRequests.jsx";
 import Placeholder from "./pages/Placeholder.jsx";
 
 // Nav model. `access(user)` decides visibility. Phase 1 wires the SYSTEM group;
@@ -36,6 +37,7 @@ const NAV = [
     { id: "staff-notes", icon: "📌", label: "Note từ NV", access: (u) => u.role === "Admin" || u.role === "Lister" },
     { id: "blacklist", icon: "⛔", label: "Danh sách đen", access: (u) => u.role === "Admin" || u.role === "Lister" },
     { id: "team",    icon: "📄", label: "Sheet Con",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
+    { id: "claim-requests", icon: "🙋", label: "Xin đơn", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "tracking",    icon: "🚚", label: "Tracking",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "leaderboard", icon: "🏆", label: "Leaderboard", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "work-sessions", icon: "⏱️", label: "Buổi làm việc", access: (u) => u.role === "Admin" },
@@ -303,6 +305,7 @@ export default function App() {
         {page === "master"   && <Master currentUser={user} teams={teams} refreshUser={refreshUser} />}
         {page === "team"     && <TeamSheet currentUser={user} teams={teams} />}
         {page === "requests" && <Requests currentUser={user} />}
+        {page === "claim-requests" && <ClaimRequests currentUser={user} />}
         {page === "cards"    && <Cards currentUser={user} />}
         {page === "card-stock" && <CardStock currentUser={user} />}
         {page === "card-stats" && <CardStats />}

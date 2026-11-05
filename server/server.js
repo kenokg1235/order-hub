@@ -1263,6 +1263,29 @@ app.post("/api/claim-requests/:id/reject", requireAuth, (req, res) => {
   if (!selfCancel) notify([cr.requester_id], "claim-rejected", `❌ Yêu cầu xin đơn ${cr.order_id} bị từ chối.`, "", o && o.team ? [o.team] : []);
   res.json({ ok: true });
 });
+// Danh sách yêu cầu xin đơn. Admin: tất cả; Leader: đơn thuộc team mình; Member: yêu cầu mình gửi hoặc gửi tới mình.
+// ?status=pending (mặc định) | all (kèm lịch sử, 300 dòng gần nhất).
+app.get("/api/claim-requests", requireAuth, (req, res) => {
+  const u = req.user;
+  if (!isOrderProcessor(u)) return res.json({ requests: [] });
+  const all = req.query.status === "all";
+  const rows = db.prepare(`SELECT cr.*, o.store, o.order_no, o.product, o.team, o.claimed_by, o.claimed_name
+      FROM claim_requests cr LEFT JOIN orders o ON o.id = cr.order_id
+      ${all ? "" : "WHERE cr.status='pending'"} ORDER BY cr.created_at DESC`).all();
+  const ownerNames = Object.fromEntries(db.prepare("SELECT id, name FROM users").all().map((r) => [r.id, r.name]));
+  const visible = rows.filter((r) => {
+    if (u.role === "Admin") return true;
+    if (r.requester_id === u.id || r.claimed_by === u.id || r.owner_id === u.id) return true;
+    return u.role === "Leader" && !!r.team && (u.teamIds || []).includes(r.team);
+  }).slice(0, all ? 300 : undefined);
+  res.json({ requests: visible.map((r) => ({
+    id: r.id, orderId: r.order_id, orderNo: r.order_no || "", store: r.store || "", product: r.product || "",
+    requesterId: r.requester_id, requesterName: r.requester_name,
+    ownerId: r.owner_id, ownerName: ownerNames[r.owner_id] || "",
+    currentOwnerId: r.claimed_by || "", currentOwnerName: r.claimed_name || "",
+    status: r.status, createdAt: r.created_at, resolvedAt: r.resolved_at || 0, orderGone: r.store == null,
+  })) });
+});
 
 // Order-level notes (team members).
 app.put("/api/orders/:id/notes", requireAuth, (req, res) => {
