@@ -2573,15 +2573,31 @@ setInterval(autoResetWorkSessionTick, 60000);
 
 // ── Leaderboard: rank order-processing members ────────────────────────────────
 // Metrics per member (by orders they claimed): số đơn, số thẻ dùng, đơn/thẻ,
-// profit (đơn Đã Up), profit/thẻ. Visible to all order-processing roles.
-let _lbCache = {};   // key(from|to|month) -> { at, payload } — leaderboard giống nhau cho mọi người xem → cache 20s
+// profit (đơn Đã Up), profit/thẻ. Admin thấy mọi người + bảng so sánh team;
+// Leader/Member chỉ thấy thành viên cùng team với mình.
+let _lbCache = {};   // key(from|to|month) -> { at, data } — số liệu chung cache 20s, lọc theo người xem sau
 app.get("/api/leaderboard", requireAuth, (req, res) => {
   const from = String(req.query.from || "").trim(), to = String(req.query.to || "").trim();
   const monthQ = String(req.query.month || "").trim();
   const lbKey = `${from}|${to}|${monthQ}`;
-  const lc = _lbCache[lbKey];
-  if (lc && Date.now() - lc.at < 20000) return res.type("application/json").send(lc.json);
-  const nameById = Object.fromEntries(db.prepare("SELECT id,name FROM users").all().map((u) => [u.id, u.name]));
+  let lc = _lbCache[lbKey];
+  if (!lc || Date.now() - lc.at >= 20000) lc = _lbCache[lbKey] = { at: Date.now(), data: computeLeaderboard(from, to, monthQ) };
+  const { rows, teamOf, upByTeam, teams } = lc.data;
+  const u = req.user;
+  if (u.role === "Admin") {
+    const up = Object.values(upByTeam).reduce((a, t) => a + t.up, 0), unclaimedUp = Object.values(upByTeam).reduce((a, t) => a + t.unclaimed, 0);
+    return res.json({ leaderboard: rows, totals: { up, unclaimedUp }, teams, scope: "all" });
+  }
+  const mine = new Set(u.teamIds || []);
+  const shown = rows.filter((r) => r.id === u.id || (teamOf[r.id] || []).some((t) => mine.has(t)));
+  let up = 0, unclaimedUp = 0;
+  for (const t of mine) if (upByTeam[t]) { up += upByTeam[t].up; unclaimedUp += upByTeam[t].unclaimed; }
+  res.json({ leaderboard: shown, totals: { up, unclaimedUp }, scope: "team" });
+});
+function computeLeaderboard(from, to, monthQ) {
+  const allUsers = db.prepare("SELECT id,name,team_ids FROM users").all();
+  const nameById = Object.fromEntries(allUsers.map((u) => [u.id, u.name]));
+  const teamOf = Object.fromEntries(allUsers.map((u) => [u.id, JSON.parse(u.team_ids || "[]")]));
   const countSet = new Set((getSetting("cardCountStatuses", ["Live Bill", "Sai bill"]) || []).map((s) => String(s).toLowerCase()));
   // KỲ: nếu có from/to → lọc theo NGÀY TẠO trong khoảng (giống Thống kê chi phí). Không thì theo tháng lịch (period).
   const isAll = monthQ === "all";
@@ -2595,13 +2611,28 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
     return orderMonth ? arr.filter((o) => o.period === orderMonth) : arr;
   };
 
-  const orders = scopeM(db.prepare("SELECT id, claimed_by, claimed_name, profit, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
+  const orders = scopeM(db.prepare("SELECT id, team, claimed_by, claimed_name, profit, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Up'").all());
   // Cancelled orders (for Fail rate). failSet = reasons that count as processor fault.
   const failSet = new Set((getSetting("failCancelReasons", ["Lỗi xử lý (NV)"]) || []).map((s) => String(s).toLowerCase()));
-  const cancels = scopeM(db.prepare("SELECT claimed_by, claimed_name, cancel_reason, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
+  const cancels = scopeM(db.prepare("SELECT team, claimed_by, claimed_name, cancel_reason, period, created_at, finalized_at FROM orders WHERE claimed_by!='' AND master_status='Đã Cancel'").all());
 
   const mkUser = (id, name) => ({ id, name: nameById[id] || name || "—", orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0, upList: [] });
   const byUser = {};
+  // So sánh team (Admin): đơn/profit/cancel theo TEAM CỦA ĐƠN; thẻ theo team (đầu tiên) của người yêu cầu.
+  const byTeam = {};
+  const T = (id) => byTeam[id || ""] || (byTeam[id || ""] = { orders: 0, profit: 0, cardSet: new Set(), cancels: 0, failCancels: 0, members: new Set() });
+  // Người không còn team (đã nghỉ/chuyển) → thẻ tính cho team họ nhận đơn nhiều nhất.
+  let _mainTeam = null;
+  const mainTeamOf = (uid) => {
+    if (!_mainTeam) {
+      _mainTeam = {};
+      for (const r of db.prepare("SELECT claimed_by, team, COUNT(*) c FROM orders WHERE claimed_by!='' AND team!='' GROUP BY claimed_by, team ORDER BY c DESC").all())
+        if (!_mainTeam[r.claimed_by]) _mainTeam[r.claimed_by] = r.team;
+    }
+    return _mainTeam[uid] || "";
+  };
+  for (const o of orders) { const t = T(o.team); t.orders++; t.profit += o.profit || 0; t.members.add(o.claimed_by); }
+  for (const o of cancels) { const t = T(o.team); t.cancels++; if (o.cancel_reason && failSet.has(String(o.cancel_reason).toLowerCase())) t.failCancels++; }
   for (const o of orders) {
     const u = byUser[o.claimed_by] || (byUser[o.claimed_by] = mkUser(o.claimed_by, o.claimed_name));
     u.orders++; u.profit += o.profit || 0;
@@ -2624,6 +2655,7 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
     }
     const u = byUser[c.requester_id] || (byUser[c.requester_id] = mkUser(c.requester_id, c.requester_name));
     u.cardSet.add(c.card_value);
+    T((teamOf[c.requester_id] || [])[0] || mainTeamOf(c.requester_id)).cardSet.add(c.card_value);
   }
   const round = (n) => Math.round(n * 100) / 100;
   const rows = Object.values(byUser).map((u) => {
@@ -2640,12 +2672,25 @@ app.get("/api/leaderboard", requireAuth, (req, res) => {
   });
   rows.sort((a, b) => b.orders - a.orders);
   // Tổng để đối chiếu: Leaderboard chỉ tính đơn CÓ người nhận → đơn Đã Up chưa ai nhận không vào bảng.
-  const allUp = scopeM(db.prepare("SELECT claimed_by, period, created_at, finalized_at FROM orders WHERE master_status='Đã Up'").all());
-  const totals = { up: allUp.length, unclaimedUp: allUp.filter((o) => !o.claimed_by).length };
-  const json = JSON.stringify({ leaderboard: rows, totals });
-  _lbCache[lbKey] = { at: Date.now(), json };
-  res.type("application/json").send(json);
-});
+  const allUp = scopeM(db.prepare("SELECT team, claimed_by, period, created_at, finalized_at FROM orders WHERE master_status='Đã Up'").all());
+  const upByTeam = {};
+  for (const o of allUp) { const t = upByTeam[o.team || ""] || (upByTeam[o.team || ""] = { up: 0, unclaimed: 0 }); t.up++; if (!o.claimed_by) t.unclaimed++; }
+  const teamName = Object.fromEntries(db.prepare("SELECT id,name FROM teams").all().map((t) => [t.id, t.name]));
+  const teams = Object.entries(byTeam).map(([id, t]) => {
+    const cards = t.cardSet.size, handled = t.orders + t.cancels;
+    return {
+      id, name: id ? (teamName[id] || id) : "(Không có team)", members: t.members.size,
+      orders: t.orders, cards, profit: round(t.profit),
+      ordersPerCard: cards ? round(t.orders / cards) : 0,
+      profitPerCard: cards ? round(t.profit / cards) : 0,
+      profitPerMember: t.members.size ? round(t.profit / t.members.size) : 0,
+      failCancels: t.failCancels, handled,
+      failRate: handled ? round((100 * t.failCancels) / handled) : 0,
+      unclaimedUp: (upByTeam[id] || {}).unclaimed || 0,
+    };
+  }).sort((a, b) => b.orders - a.orders);
+  return { rows, teamOf, upByTeam, teams };
+}
 
 // ── Tracking (AfterShip) ──────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

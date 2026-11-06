@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { Badge } from "../ui.jsx";
 
-// Company-wide ranking of order-processing members. Everyone can view.
+// Xếp hạng thành viên xử lý đơn. Leader/Member chỉ thấy người cùng team; Admin thấy tất cả + bảng so sánh team.
 export default function Leaderboard({ currentUser }) {
   const [rows, setRows] = useState([]);
   const [sortKey, setSortKey] = useState("orders");
@@ -10,6 +10,8 @@ export default function Leaderboard({ currentUser }) {
   const [closedPeriods, setClosedPeriods] = useState([]);
   const [periodSel, setPeriodSel] = useState("current");   // "all" | "current" | "c<idx>"
   const [totals, setTotals] = useState(null);
+  const [teams, setTeams] = useState(null);         // chỉ Admin nhận được
+  const [teamSort, setTeamSort] = useState("orders");
   const [detail, setDetail] = useState(null);   // { name, upList } — đối chiếu đơn đã tính
   const [err, setErr] = useState("");
 
@@ -18,7 +20,7 @@ export default function Leaderboard({ currentUser }) {
     try {
       const url = `/api/leaderboard?from=${encodeURIComponent(from || "")}&to=${encodeURIComponent(to || "")}${all ? "&month=all" : ""}`;
       const r = await api.get(url);
-      setRows(r.leaderboard); setTotals(r.totals || null);
+      setRows(r.leaderboard); setTotals(r.totals || null); setTeams(r.teams || null);
     } catch (e) { setErr(e.message); }
   }
   async function loadPeriods() {
@@ -43,6 +45,14 @@ export default function Leaderboard({ currentUser }) {
     { k: "failRate", label: "Fail rate", pct: true },
   ];
   const sorted = useMemo(() => [...rows].sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0)), [rows, sortKey]);
+  const teamCols = [
+    { k: "members", label: "Số NV" },
+    ...cols.slice(0, 5),
+    { k: "profitPerMember", label: "Profit / NV", money: true },
+    ...cols.slice(5),
+  ];
+  const teamSorted = useMemo(() => [...(teams || [])].sort((a, b) => (b[teamSort] || 0) - (a[teamSort] || 0)), [teams, teamSort]);
+  const cell = (c, r) => (c.money ? money(r[c.k]) : c.pct ? `${r[c.k] || 0}%` : r[c.k]);
   const medal = (i) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1);
 
   return (
@@ -57,6 +67,7 @@ export default function Leaderboard({ currentUser }) {
         </select>
       </div>
       <div className="muted" style={{ marginBottom: 14 }}>
+        {currentUser.role !== "Admin" && <><b>Chỉ hiện thành viên cùng team với bạn.</b> </>}
         Theo <b>từng kỳ</b> (dùng chung kỳ với Thống kê chi phí). <b>Số đơn (Đã Up) &amp; Profit</b> tính theo <b>THÁNG của đơn (period)</b> — <b>khớp đúng Sheet Con &amp; Sheet Tổng</b>. <b>Số thẻ</b> tính theo <b>khoảng ngày của kỳ</b> (kể từ ngày chốt kỳ), là thẻ NV được cấp ở Mua thẻ có trạng thái <b>hợp lệ (Live Bill / Sai bill)</b>, theo người yêu cầu. <b>Fail rate</b> = đơn cancel do lỗi NV ÷ tổng đơn đã chốt. Bấm tiêu đề cột để đổi tiêu chí; bấm số ở cột Số đơn để xem danh sách đơn đã tính.
       </div>
       {totals && (
@@ -71,6 +82,43 @@ export default function Leaderboard({ currentUser }) {
         </div>
       )}
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+
+      {teams && (
+        <div className="card" style={{ padding: 0, overflowX: "auto", marginBottom: 16 }}>
+          <div className="row" style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+            <b>⚔️ So sánh các team</b>
+            <span className="muted" style={{ fontSize: 12 }}>— chỉ Admin thấy. Đơn &amp; Profit tính theo team của đơn; thẻ theo team của người yêu cầu.</span>
+          </div>
+          <table className="tbl">
+            <thead><tr>
+              <th style={{ width: 60, textAlign: "center" }}>Hạng</th>
+              <th>Team</th>
+              {teamCols.map((c) => (
+                <th key={c.k} onClick={() => setTeamSort(c.k)}
+                  style={{ cursor: "pointer", whiteSpace: "nowrap", color: teamSort === c.k ? "var(--primary)" : undefined }}>
+                  {c.label}{teamSort === c.k ? " ▾" : ""}
+                </th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {teamSorted.map((t, i) => (
+                <tr key={t.id || "none"}>
+                  <td style={{ fontSize: 18, textAlign: "center" }}>{medal(i)}</td>
+                  <td style={{ fontWeight: 600 }}>{t.name}
+                    {t.unclaimedUp > 0 && <span className="muted" style={{ fontSize: 11, fontWeight: 400 }} title="Đơn Đã Up chưa có người nhận"> (+{t.unclaimedUp} chưa nhận)</span>}
+                  </td>
+                  {teamCols.map((c) => (
+                    <td key={c.k} style={{ fontWeight: c.k === teamSort ? 700 : 400, color: c.k === "failRate" && t.failRate > 0 ? "var(--red)" : undefined }}>
+                      {cell(c, t)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {teamSorted.length === 0 && <tr><td colSpan={2 + teamCols.length} className="muted" style={{ textAlign: "center", padding: 18 }}>Chưa có dữ liệu.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="tbl">
@@ -98,7 +146,7 @@ export default function Leaderboard({ currentUser }) {
                     textDecoration: c.k === "orders" && r.orders > 0 ? "underline dotted" : undefined }}
                     title={c.k === "orders" ? "Bấm để xem danh sách đơn đã tính trong kỳ" : undefined}
                     onClick={c.k === "orders" ? () => setDetail({ name: r.name, upList: r.upList || [] }) : undefined}>
-                    {c.money ? money(r[c.k]) : c.pct ? `${r[c.k] || 0}%` : r[c.k]}
+                    {cell(c, r)}
                   </td>
                 ))}
               </tr>
