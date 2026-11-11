@@ -2468,12 +2468,19 @@ app.post("/api/proxies/:id/use", requireAuth, requireOrderStaff, requireProxyAcc
 });
 
 // ── Buổi làm việc — Admin bấm bắt đầu/kết thúc; thống kê thẻ + đơn trong buổi ───
-function sessionStats(s, e) {
+// teams = null → toàn công ty (Admin); mảng team id → chỉ đơn của các team đó + thẻ của thành viên các team đó.
+function sessionStats(s, e, teams = null) {
   const end = e || Date.now();
-  const up = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Up' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
-  const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?").get(s, end).c;
+  const tq = teams ? ` AND team IN (${teams.map(() => "?").join(",") || "''"})` : "";      // lọc bảng orders
+  const tqo = tq.replace(" team ", " o.team ");                                              // lọc bảng orders alias o
+  const tv = teams || [];
+  const mates = teams ? teammateIds(teams) : null;
+  const up = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Up' AND finalized_at>=? AND finalized_at<=?" + tq).get(s, end, ...tv).c;
+  const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?" + tq).get(s, end, ...tv).c;
   // Đơn được chuyển sang "Đã xử lý" trong buổi (theo audit_log — thời điểm & người đổi trạng thái).
-  const processed = db.prepare("SELECT COUNT(DISTINCT order_id) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
+  const processed = teams
+    ? db.prepare("SELECT COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND a.created_at>=? AND a.created_at<=?" + tqo).get(PROCESSED_STATUS, s, end, ...tv).c
+    : db.prepare("SELECT COUNT(DISTINCT order_id) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
   const byUser = {};
   const ensure = (id, name) => byUser[id] || (byUser[id] = { name: name || "—", processed: 0, cards: 0, up: 0 });
   // Thẻ nhận: thẻ được cấp cho NV (Mua thẻ) có trạng thái HỢP LỆ (cardCountStatuses), tính theo ngày cấp trong buổi.
@@ -2481,16 +2488,17 @@ function sessionStats(s, e) {
   const allCards = new Set();
   for (const c of db.prepare("SELECT requester_id, requester_name, card_value, status FROM card_requests WHERE card_value!='' AND created_at>=? AND created_at<=?").all(s, end)) {
     if (!countSet.has(String(c.status || "").toLowerCase())) continue;   // chỉ đếm thẻ trạng thái hợp lệ
+    if (mates && !mates.has(c.requester_id)) continue;                   // ngoài team người xem
     const u = ensure(c.requester_id, c.requester_name);
     (u._cards || (u._cards = new Set())).add(c.card_value);
     allCards.add(c.card_value);
   }
   for (const u of Object.values(byUser)) { if (u._cards) { u.cards = u._cards.size; delete u._cards; } }
   // Số đơn chuyển "Đã xử lý": nhóm theo người nhận đơn (thành viên xử lý).
-  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=? GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end))
+  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=?" + tqo + " GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end, ...tv))
     ensure(r.cb, r.cn).processed = r.c;
   // Đơn Đã Up (Lister/Admin chốt) — vẫn hiển thị tham khảo.
-  for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=? GROUP BY claimed_by").all(s, end))
+  for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=?" + tq + " GROUP BY claimed_by").all(s, end, ...tv))
     ensure(r.cb, r.cn).up = r.c;
 
   // Thống kê theo SITE trong buổi: với các thẻ CÓ đổi trạng thái xử lý trong buổi → đếm theo
@@ -2500,35 +2508,44 @@ function sessionStats(s, e) {
   for (const r of db.prepare(`SELECT p.site AS site, p.process_status AS st FROM purchases p
       WHERE COALESCE(p.site,'')!='' AND p.id IN (
         SELECT DISTINCT entity_id FROM audit_log
-        WHERE entity='purchase' AND field IN ('site','processStatus') AND created_at>=? AND created_at<=?)`).all(s, end)) {
+        WHERE entity='purchase' AND field IN ('site','processStatus') AND created_at>=? AND created_at<=?)`
+      + (teams ? ` AND p.order_id IN (SELECT id FROM orders WHERE 1=1${tq})` : "")).all(s, end, ...tv)) {
     const u = ensureSite(r.site); u.total += 1;
     if (r.st) u.status[r.st] = (u.status[r.st] || 0) + 1;
   }
   for (const r of db.prepare(`SELECT p.site AS site, COUNT(DISTINCT o.id) c FROM orders o JOIN purchases p ON p.order_id=o.id
-      WHERE o.master_status='Đã Up' AND o.finalized_at>=? AND o.finalized_at<=? AND COALESCE(p.site,'')!='' GROUP BY p.site`).all(s, end))
+      WHERE o.master_status='Đã Up' AND o.finalized_at>=? AND o.finalized_at<=? AND COALESCE(p.site,'')!=''${tqo} GROUP BY p.site`).all(s, end, ...tv))
     ensureSite(r.site).up = r.c;
   const bySite = Object.values(siteMap).sort((a, b) => b.total - a.total);
 
   return { up, cancel, cards: allCards.size, processed, bySite,
     byUser: Object.values(byUser).sort((a, b) => b.processed - a.processed || b.cards - a.cards || b.up - a.up) };
 }
-// Cache stats buổi ĐÃ kết thúc theo id (window cố định) — không tính lại mỗi lần poll.
+// Cache stats buổi ĐÃ kết thúc theo id|nhóm team (window cố định) — không tính lại mỗi lần poll.
+// Xóa toàn bộ cache của 1 buổi: lọc key bắt đầu bằng "id|".
 const _endedSessionStats = new Map();
-let _workSessionsCache = { at: 0, payload: null };
-app.get("/api/work-sessions", requireAuth, requireAdmin, (req, res) => {
+_endedSessionStats.delete = function (id) { for (const k of [...this.keys()]) if (k === id || k.startsWith(id + "|")) Map.prototype.delete.call(this, k); return true; };
+let _workSessionsCache = {};   // key nhóm team -> { at, payload }
+// Admin xem toàn công ty; Leader/Member chỉ xem số liệu của team mình (chỉ xem, không bấm bắt đầu/kết thúc).
+app.get("/api/work-sessions", requireAuth, requireOrderStaff, (req, res) => {
   const now = Date.now();
-  if (_workSessionsCache.payload && now - _workSessionsCache.at < 8000) return res.json(_workSessionsCache.payload);
+  const teams = req.user.role === "Admin" ? null : [...(req.user.teamIds || [])].sort();
+  const key = teams ? teams.join(",") : "*";
+  const c = _workSessionsCache[key];
+  if (c && c.payload && now - c.at < 8000) return res.json(c.payload);
   const rows = db.prepare("SELECT * FROM work_sessions ORDER BY started_at DESC LIMIT 40").all();
   const active = rows.find((r) => !r.ended_at) || null;
   const payload = {
-    active: active ? { id: active.id, startedAt: active.started_at, startedByName: active.started_by_name, stats: sessionStats(active.started_at, 0) } : null,
+    scope: teams ? "team" : "all",
+    active: active ? { id: active.id, startedAt: active.started_at, startedByName: active.started_by_name, stats: sessionStats(active.started_at, 0, teams) } : null,
     sessions: rows.filter((r) => r.ended_at).map((r) => {
-      let stats = _endedSessionStats.get(r.id);
-      if (!stats) { stats = sessionStats(r.started_at, r.ended_at); _endedSessionStats.set(r.id, stats); }
+      const ck = r.id + "|" + key;
+      let stats = _endedSessionStats.get(ck);
+      if (!stats) { stats = sessionStats(r.started_at, r.ended_at, teams); _endedSessionStats.set(ck, stats); }
       return { id: r.id, startedAt: r.started_at, endedAt: r.ended_at, startedByName: r.started_by_name, note: r.note || "", stats };
     }),
   };
-  _workSessionsCache = { at: now, payload };
+  _workSessionsCache[key] = { at: now, payload };
   res.json(payload);
 });
 app.post("/api/work-sessions/start", requireAdmin, (req, res) => {
@@ -2536,19 +2553,19 @@ app.post("/api/work-sessions/start", requireAdmin, (req, res) => {
   if (open) return res.status(400).json({ error: "Đang có buổi mở — kết thúc buổi hiện tại trước" });
   const id = newId("ws");
   db.prepare("INSERT INTO work_sessions (id,started_at,started_by_name) VALUES (?,?,?)").run(id, Date.now(), req.user.name);
-  _workSessionsCache = { at: 0, payload: null };
+  _workSessionsCache = {};
   res.json({ ok: true, id });
 });
 app.post("/api/work-sessions/end", requireAdmin, (req, res) => {
   const open = db.prepare("SELECT * FROM work_sessions WHERE ended_at=0 ORDER BY started_at DESC").get();
   if (!open) return res.status(400).json({ error: "Không có buổi nào đang mở" });
   db.prepare("UPDATE work_sessions SET ended_at=?, note=? WHERE id=?").run(Date.now(), String(req.body.note || ""), open.id);
-  _endedSessionStats.delete(open.id); _workSessionsCache = { at: 0, payload: null };
+  _endedSessionStats.delete(open.id); _workSessionsCache = {};
   res.json({ ok: true });
 });
 app.delete("/api/work-sessions/:id", requireAdmin, (req, res) => {
   db.prepare("DELETE FROM work_sessions WHERE id=?").run(req.params.id);
-  _endedSessionStats.delete(req.params.id); _workSessionsCache = { at: 0, payload: null };
+  _endedSessionStats.delete(req.params.id); _workSessionsCache = {};
   res.json({ ok: true });
 });
 // Tự động reset buổi làm việc mỗi ngày lúc giờ cấu hình (giờ VN, UTC+7 — không lệ thuộc TZ máy chủ).
@@ -2567,7 +2584,7 @@ function autoResetWorkSessionTick() {
   const id = newId("ws");
   db.prepare("INSERT INTO work_sessions (id,started_at,started_by_name,note) VALUES (?,?,?,?)").run(id, Date.now(), "Tự động", "Tự động bắt đầu");
   if (open) _endedSessionStats.delete(open.id);
-  _workSessionsCache = { at: 0, payload: null };
+  _workSessionsCache = {};
 }
 setInterval(autoResetWorkSessionTick, 60000);
 

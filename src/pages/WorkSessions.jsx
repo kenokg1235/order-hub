@@ -3,7 +3,9 @@ import { api } from "../api.js";
 import { Button, Badge } from "../ui.jsx";
 
 // Buổi làm việc — Admin bấm bắt đầu/kết thúc; thống kê thẻ + đơn xử lý trong buổi.
-export default function WorkSessions() {
+// Leader/Member: chỉ xem, số liệu chỉ của team mình.
+export default function WorkSessions({ currentUser }) {
+  const isAdmin = currentUser?.role === "Admin";
   const [active, setActive] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [reset, setReset] = useState({ enabled: false, time: "" });   // tự động reset mỗi ngày
@@ -110,11 +112,12 @@ export default function WorkSessions() {
   return (
     <div style={{ maxWidth: 900 }}>
       <h2 style={{ margin: "0 0 6px" }}>⏱️ Buổi làm việc</h2>
-      <div className="muted" style={{ marginBottom: 14 }}>Bấm <b>Bắt đầu buổi</b> khi vào ca, <b>Kết thúc buổi</b> khi hết ca. Số thẻ & đơn được tính trong khoảng thời gian buổi đó.</div>
+      {!isAdmin && <div className="badge blue" style={{ marginBottom: 10 }}>👥 Chỉ hiện số liệu của team bạn</div>}
+      <div className="muted" style={{ marginBottom: 14 }}>{isAdmin ? "Bấm" : "Admin bấm"} <b>Bắt đầu buổi</b> khi vào ca, <b>Kết thúc buổi</b> khi hết ca. Số thẻ & đơn được tính trong khoảng thời gian buổi đó.</div>
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       {/* Tự động reset buổi mỗi ngày vào giờ mong muốn */}
-      <div className="card" style={{ padding: "12px 14px", marginBottom: 14 }}>
+      {isAdmin && <div className="card" style={{ padding: "12px 14px", marginBottom: 14 }}>
         <div className="row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <label className="row" style={{ gap: 6, cursor: "pointer", fontWeight: 600 }}>
             <input type="checkbox" checked={reset.enabled}
@@ -131,7 +134,7 @@ export default function WorkSessions() {
           Đúng giờ này mỗi ngày (giờ VN), hệ thống <b>tự kết thúc buổi đang mở và mở buổi mới</b> — không cần bấm tay.
           {reset.enabled && reset.time ? <> Đang bật: <b>{reset.time}</b> hằng ngày.</> : " Đang tắt."}
         </div>
-      </div>
+      </div>}
 
       {/* Buổi hiện tại */}
       <div className="card" style={{ padding: 16, marginBottom: 18, borderColor: active ? "#16a34a" : undefined, background: active ? "var(--green-bg)" : undefined }}>
@@ -141,7 +144,7 @@ export default function WorkSessions() {
               <Badge color="green">🟢 ĐANG MỞ BUỔI</Badge>
               <span>Bắt đầu <b>{fmt(active.startedAt)}</b> · đã <b>{dur(active.startedAt, 0)}</b> · mở bởi {active.startedByName}</span>
               <div className="spacer" />
-              <Button variant="danger" onClick={end}>⏹ Kết thúc buổi</Button>
+              {isAdmin && <Button variant="danger" onClick={end}>⏹ Kết thúc buổi</Button>}
             </div>
             <StatCards st={active.stats} />
             <ByUser st={active.stats} />
@@ -154,7 +157,7 @@ export default function WorkSessions() {
           <div className="row" style={{ gap: 12 }}>
             <span className="muted">Chưa có buổi nào đang mở.</span>
             <div className="spacer" />
-            <Button variant="primary" onClick={start}>▶ Bắt đầu buổi</Button>
+            {isAdmin && <Button variant="primary" onClick={start}>▶ Bắt đầu buổi</Button>}
           </div>
         )}
       </div>
@@ -170,7 +173,7 @@ export default function WorkSessions() {
             <span className="muted" style={{ fontSize: 12 }}>mở bởi {s.startedByName}</span>
             <div className="spacer" />
             <span>🛠️ <b>{s.stats.processed ?? 0}</b> xử lý · 🎴 <b>{s.stats.cards}</b> thẻ · ✅ <b>{s.stats.up}</b> up{s.stats.cancel ? ` · ✕ ${s.stats.cancel} cancel` : ""}</span>
-            <Button sm variant="danger" onClick={() => remove(s)} style={{ marginLeft: 6 }}>✕</Button>
+            {isAdmin && <Button sm variant="danger" onClick={() => remove(s)} style={{ marginLeft: 6 }}>✕</Button>}
           </div>
           {s.stats.byUser && s.stats.byUser.length > 0 && (
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>

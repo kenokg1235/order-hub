@@ -40,7 +40,7 @@ const NAV = [
     { id: "claim-requests", icon: "🙋", label: "Xin đơn", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "tracking",    icon: "🚚", label: "Tracking",    access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "leaderboard", icon: "🏆", label: "Leaderboard", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
-    { id: "work-sessions", icon: "⏱️", label: "Buổi làm việc", access: (u) => u.role === "Admin" },
+    { id: "work-sessions", icon: "⏱️", label: "Buổi làm việc", access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
     { id: "proxy",   icon: "🌐", label: "Proxy",         access: (u) => ["Admin", "Leader", "Member"].includes(u.role) },
   ]},
   { group: "FINANCE", items: [
@@ -299,7 +299,7 @@ export default function App() {
         {page === "blacklist" && <Blacklist />}
         {page === "proxy" && proxyOk && <Proxy currentUser={user} teams={teams} onHiddenChange={loadProxyHidden} />}
         {page === "leaderboard" && <Leaderboard currentUser={user} />}
-        {page === "work-sessions" && <WorkSessions />}
+        {page === "work-sessions" && <WorkSessions currentUser={user} />}
         {page === "tracking" && <Tracking />}
         {page === "settings" && <Settings />}
         {page === "master"   && <Master currentUser={user} teams={teams} refreshUser={refreshUser} />}
