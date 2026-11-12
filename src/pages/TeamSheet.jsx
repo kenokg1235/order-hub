@@ -305,7 +305,12 @@ export default function TeamSheet({ currentUser, teams }) {
   async function assign(o, userId) { try { replaceOrder((await api.post(`/api/orders/${o.id}/claim`, { userId })).order); } catch (e) { setErr(e.message); } }
   async function unclaim(o) { try { replaceOrder((await api.post(`/api/orders/${o.id}/unclaim`, {})).order); } catch (e) { setErr(e.message); } }
   // Xin đơn của thành viên khác — chủ đơn/quản lý duyệt thì đổi chủ.
-  async function requestClaim(o) { try { await api.post(`/api/orders/${o.id}/claim-request`, {}); loadOrders(month); } catch (e) { setErr(e.message); } }
+  async function requestClaim(o) {
+    try {
+      const r = await api.post(`/api/orders/${o.id}/claim-request`, {});
+      if (r && r.autoApproved) alert(`✅ Đơn ${o.id} đã tự chuyển cho bạn — chủ đơn không hoạt động quá 1 giờ và đơn chưa có trạng thái.`);
+      loadOrders(month);
+    } catch (e) { setErr(e.message); } }
   async function approveClaim(reqId) { try { replaceOrder((await api.post(`/api/claim-requests/${reqId}/approve`, {})).order); loadOrders(month); } catch (e) { setErr(e.message); } }
   async function rejectClaim(reqId) { try { await api.post(`/api/claim-requests/${reqId}/reject`, {}); loadOrders(month); } catch (e) { setErr(e.message); } }
   async function saveNote(o, field, value) {

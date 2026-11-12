@@ -1225,11 +1225,16 @@ app.post("/api/orders/:id/claim-request", requireAuth, (req, res) => {
   if (o.claimed_by === req.user.id) return res.status(400).json({ error: "Đơn đã là của bạn" });
   if (db.prepare("SELECT 1 FROM claim_requests WHERE order_id=? AND requester_id=? AND status='pending'").get(o.id, req.user.id))
     return res.status(409).json({ error: "Bạn đã xin đơn này, đang chờ duyệt" });
+  const crId = newId("clr");
   db.prepare(`INSERT INTO claim_requests (id,order_id,requester_id,requester_name,owner_id,status,created_at)
-              VALUES (?,?,?,?,?, 'pending', ?)`).run(newId("clr"), o.id, req.user.id, req.user.name, o.claimed_by, Date.now());
+              VALUES (?,?,?,?,?, 'pending', ?)`).run(crId, o.id, req.user.id, req.user.name, o.claimed_by, Date.now());
   touchOrder(o.id);   // delta-sync: hiện yêu cầu xin đơn cho người khác
-  notify([o.claimed_by], "claim-request", `🙋 ${req.user.name} xin nhận đơn ${o.id} (${o.store}). Vào Sheet Con để duyệt.`, "", o.team ? [o.team] : []);
-  res.json({ ok: true });
+  // Chủ đơn treo ≥1h + đơn chưa có trạng thái → duyệt ngay.
+  let autoApproved = false;
+  try { autoApproved = tryAutoApproveClaim(db.prepare("SELECT * FROM claim_requests WHERE id=?").get(crId)); } catch (e) { console.error("autoApprove:", e.message); }
+  if (!autoApproved && db.prepare("SELECT status FROM claim_requests WHERE id=?").get(crId).status === "pending")
+    notify([o.claimed_by], "claim-request", `🙋 ${req.user.name} xin nhận đơn ${o.id} (${o.store}). Vào Sheet Con để duyệt.`, "", o.team ? [o.team] : []);
+  res.json({ ok: true, autoApproved });
 });
 // Chủ đơn (hoặc Admin/Leader của team) duyệt → đổi chủ đơn sang người xin.
 app.post("/api/claim-requests/:id/approve", requireAuth, (req, res) => {
@@ -1248,6 +1253,43 @@ app.post("/api/claim-requests/:id/approve", requireAuth, (req, res) => {
   notify([cr.requester_id], "claim-approved", `✅ ${req.user.name} đã duyệt — đơn ${o.id} (${o.store}) giờ là của bạn.`, "", o.team ? [o.team] : []);
   res.json({ order: orderFull(db.prepare("SELECT * FROM orders WHERE id=?").get(o.id), req.user) });
 });
+// Tự động duyệt xin đơn NGAY khi đủ 2 điều kiện:
+//  1) chủ đơn "treo"/offline: không sửa gì trong 1 giờ qua (theo lịch sử sửa — offline cũng không sửa được);
+//  2) đơn CHƯA có trạng thái xử lý (mọi dòng mua đều trống cột Trạng thái). Đơn đã chốt (Đã Up/Cancel) bỏ qua.
+// Kiểm tra lúc gửi yêu cầu + mỗi phút (cho yêu cầu đang chờ mà chủ đơn trở thành treo sau đó).
+// Nhiều người cùng xin 1 đơn → người xin SỚM NHẤT được duyệt, các yêu cầu khác tự bị từ chối.
+const CLAIM_IDLE_MS = 60 * 60 * 1000;
+function tryAutoApproveClaim(cr) {
+  const now = Date.now(), cutoff = now - CLAIM_IDLE_MS;
+  if (!cr || cr.status !== "pending") return false;
+  const o = db.prepare("SELECT * FROM orders WHERE id=?").get(cr.order_id);
+  if (!o || !o.claimed_by || o.claimed_by === cr.requester_id) return false;
+  if (["Đã Up", "Đã Cancel"].includes(o.master_status)) return false;
+  if (db.prepare("SELECT 1 FROM purchases WHERE order_id=? AND COALESCE(process_status,'')!='' LIMIT 1").get(o.id)) return false;   // đã có trạng thái
+  if ((db.prepare("SELECT MAX(created_at) t FROM audit_log WHERE user_id=?").get(o.claimed_by).t || 0) > cutoff) return false;    // chủ đơn còn hoạt động
+  const requester = db.prepare("SELECT active FROM users WHERE id=?").get(cr.requester_id);
+  if (!requester || !requester.active) return false;
+  // Người xin sớm nhất của đơn này (có thể không phải cr nếu nhiều người cùng xin).
+  const first = db.prepare("SELECT cr.* FROM claim_requests cr JOIN users u ON u.id=cr.requester_id WHERE cr.order_id=? AND cr.status='pending' AND u.active=1 AND cr.requester_id!=? ORDER BY cr.created_at LIMIT 1").get(o.id, o.claimed_by) || cr;
+  const oldOwner = o.claimed_by;
+  db.transaction(() => {
+    logChange({ id: "", name: "Tự động (chủ đơn treo 1h)" }, "order", o.id, o.id, "claimedBy", o.claimed_name, first.requester_name);
+    db.prepare("UPDATE orders SET claimed_by=?, claimed_name=?, claimed_at=?, updated_at=? WHERE id=?")
+      .run(first.requester_id, first.requester_name, now, now, o.id);
+    db.prepare("UPDATE claim_requests SET status='approved', resolved_at=? WHERE id=?").run(now, first.id);
+    db.prepare("UPDATE claim_requests SET status='rejected', resolved_at=? WHERE order_id=? AND status='pending'").run(now, o.id);
+  })();
+  notify([first.requester_id], "claim-approved", `✅ Tự động duyệt — đơn ${o.id} (${o.store}) giờ là của bạn (chủ đơn không hoạt động 1 giờ).`, "", o.team ? [o.team] : []);
+  notify([oldOwner], "claim-approved", `⏱️ Đơn ${o.id} (${o.store}) đã tự chuyển cho ${first.requester_name} — bạn không hoạt động 1 giờ và đơn chưa có trạng thái.`, "", o.team ? [o.team] : []);
+  return first.id === cr.id;
+}
+function autoApproveClaimsTick() {
+  let n = 0;
+  for (const cr of db.prepare("SELECT * FROM claim_requests WHERE status='pending' ORDER BY created_at").all())
+    if (tryAutoApproveClaim(db.prepare("SELECT * FROM claim_requests WHERE id=?").get(cr.id))) n++;
+  return n;
+}
+setInterval(() => { try { autoApproveClaimsTick(); } catch (e) { console.error("autoApproveClaims:", e.message); } }, 60000);
 // Từ chối (chủ đơn/quản lý) hoặc người xin tự hủy.
 app.post("/api/claim-requests/:id/reject", requireAuth, (req, res) => {
   const cr = db.prepare("SELECT * FROM claim_requests WHERE id=?").get(req.params.id);

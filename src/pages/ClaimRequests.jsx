@@ -97,6 +97,7 @@ export default function ClaimRequests({ currentUser }) {
       </div>
       <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
         Chủ đơn hoặc Admin mới duyệt được. Duyệt → đơn chuyển sang người xin, các yêu cầu khác cùng đơn tự bị từ chối.
+        <br />⏱️ <b>Tự động duyệt ngay</b> khi chủ đơn <b>treo/offline quá 1 giờ</b> (không sửa gì trong 1 giờ) và đơn <b>còn trống cột Trạng thái xử lý</b> → đơn chuyển cho người xin sớm nhất.
       </div>
     </div>
   );
