@@ -61,6 +61,15 @@ export default function TeamSheet({ currentUser, teams }) {
   const [activeMonth, setActiveMonth] = useState("");
   const [month, setMonth] = useState("");
   const [err, setErr] = useState("");
+  // Ô Rule: Admin nhập, mọi người xem. Lưu ở settings "teamSheetRules". Thu gọn/mở nhớ theo máy.
+  const [rules, setRules] = useState("");
+  const [ruleDraft, setRuleDraft] = useState(null);   // null = không sửa; chuỗi = đang sửa
+  const [ruleOpen, setRuleOpen] = useState(() => { try { return localStorage.getItem("ts.ruleOpen") !== "0"; } catch { return true; } });
+  const toggleRule = () => setRuleOpen((v) => { try { localStorage.setItem("ts.ruleOpen", v ? "0" : "1"); } catch {} return !v; });
+  async function saveRules() {
+    try { await api.put("/api/settings/teamSheetRules", { value: ruleDraft }); setRules(ruleDraft); setRuleDraft(null); }
+    catch (e) { setErr(e.message); }
+  }
   const { cellProps, Bar, viewCell, close } = useFormulaBar();
   // Tắt key / khóa thẻ → đóng thanh công thức ngay (không để lộ số thẻ vừa xem).
   useEffect(() => onLanKeyChange(() => { if (!lanKeyReady()) close(); }), []);
@@ -83,6 +92,7 @@ export default function TeamSheet({ currentUser, teams }) {
       setProcStatuses(s.processStatuses || []);
       setMasterStatuses(s.masterStatuses || []);
       setColors(s.statusColors || {});
+      setRules(typeof s.teamSheetRules === "string" ? s.teamSheetRules : "");
       if (isManager) setAssignUsers((await api.get("/api/assignable-users")).users);
       const mo = await api.get("/api/months");
       setMonths(mo.months); setActiveMonth(mo.activeMonth);
@@ -435,6 +445,31 @@ export default function TeamSheet({ currentUser, teams }) {
           </span>
         )}
       </div>
+      {(rules || isAdmin) && (
+        <div className="card" style={{ padding: "10px 14px", marginBottom: 12, borderLeft: "4px solid var(--amber, #f59e0b)" }}>
+          <div className="row" style={{ gap: 8 }}>
+            <b style={{ cursor: "pointer" }} onClick={toggleRule}>📜 Rule {ruleOpen ? "▾" : "▸"}</b>
+            {!ruleOpen && rules && <span className="muted" style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 600 }}>{rules.split(/\r?\n/)[0]}</span>}
+            <div className="spacer" />
+            {isAdmin && ruleDraft === null && <Button sm onClick={() => { setRuleDraft(rules); setRuleOpen(true); }}>✏️ Sửa rule</Button>}
+          </div>
+          {ruleOpen && (ruleDraft !== null ? (
+            <div style={{ marginTop: 8 }}>
+              <textarea className="input" rows={8} style={{ width: "100%", fontFamily: "inherit", resize: "vertical" }}
+                value={ruleDraft} onChange={(e) => setRuleDraft(e.target.value)} placeholder="Nhập rule cho mọi thành viên — mỗi dòng một ý…" autoFocus />
+              <div className="row" style={{ gap: 6, marginTop: 6 }}>
+                <Button sm variant="primary" onClick={saveRules}>💾 Lưu rule</Button>
+                <Button sm onClick={() => setRuleDraft(null)}>Hủy</Button>
+                <span className="muted" style={{ fontSize: 12 }}>Mọi thành viên sẽ thấy ở đầu Sheet Con.</span>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {rules || <span className="muted">Chưa có rule — bấm "Sửa rule" để nhập.</span>}
+            </div>
+          ))}
+        </div>
+      )}
       {err && <div style={{ color: "var(--red)", marginBottom: 10 }}>{err}</div>}
 
       {sumRes && (
