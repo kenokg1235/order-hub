@@ -92,6 +92,10 @@ export default function WorkSessions({ currentUser }) {
             <th>🌐 Site</th>
             <th style={{ textAlign: "right" }} title="Số lần note 'Đã xử lý' trong buổi — làm lại, note lại vẫn cộng thêm; bỏ trạng thái không trừ; chạm/sửa ô khác không tính">Số lần xử lý</th>
             {cols.map((s) => <th key={s} style={{ textAlign: "right" }}>{s}</th>)}
+            <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này, sau đó được đổi sang Ped / Có Tracking (kể cả đổi vào ngày sau)">🟢 Thành công</th>
+            <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này, sau đó bị bỏ trạng thái / phải làm lại (kể cả ngày sau)">🔴 Thất bại</th>
+            <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này chưa có kết quả (vẫn đang Đã xử lý)">⏳ Chờ KQ</th>
+            <th style={{ textAlign: "right" }} title="Thành công ÷ (Thành công + Thất bại)">Tỉ lệ TC</th>
             <th style={{ textAlign: "right" }}>✅ Đã Up</th>
           </tr></thead>
           <tbody>
@@ -100,6 +104,10 @@ export default function WorkSessions({ currentUser }) {
                 <td style={{ fontWeight: 600 }}>{r.site}</td>
                 <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb" }}>{r.total}</td>
                 {cols.map((s) => <td key={s} style={{ textAlign: "right" }}>{(r.status && r.status[s]) || 0}</td>)}
+                <td style={{ textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{r.success || 0}</td>
+                <td style={{ textAlign: "right", fontWeight: 700, color: "var(--red)" }}>{r.fail || 0}</td>
+                <td style={{ textAlign: "right" }} className="muted">{r.waiting || 0}</td>
+                <td style={{ textAlign: "right" }}>{(r.success || 0) + (r.fail || 0) ? Math.round((100 * (r.success || 0)) / ((r.success || 0) + (r.fail || 0))) + "%" : "—"}</td>
                 <td style={{ textAlign: "right", color: "#16a34a" }}>{r.up}</td>
               </tr>
             ))}

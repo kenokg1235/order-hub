@@ -2548,7 +2548,7 @@ function sessionStats(s, e, teams = null) {
   //  - mỗi cột trạng thái = số lần note trạng thái đó trong buổi. Bỏ trạng thái KHÔNG trừ.
   // Thao tác đã hoàn tác (undone) không tính. "up" = đơn Đã Up chốt trong buổi theo site.
   const siteMap = {};
-  const ensureSite = (name) => siteMap[name] || (siteMap[name] = { site: name, total: 0, status: {}, up: 0 });
+  const ensureSite = (name) => siteMap[name] || (siteMap[name] = { site: name, total: 0, status: {}, up: 0, success: 0, fail: 0, waiting: 0 });
   for (const r of db.prepare(`SELECT p.site AS site, a.new_value AS st, COUNT(*) c
       FROM audit_log a JOIN purchases p ON p.id=a.entity_id
       WHERE a.entity='purchase' AND a.field='processStatus' AND COALESCE(a.undone,0)=0 AND COALESCE(a.new_value,'')!=''
@@ -2558,6 +2558,22 @@ function sessionStats(s, e, teams = null) {
     const u = ensureSite(r.site);
     u.status[r.st] = r.c;
     if (r.st === PROCESSED_STATUS) u.total = r.c;
+  }
+  // KẾT QUẢ của từng lần note "Đã xử lý" — tính vào CHÍNH BUỔI làm đơn đó (dù kết quả có sau):
+  //  lần đổi trạng thái KẾ TIẾP của thẻ → Ped / Có Tracking = THÀNH CÔNG; bỏ trạng thái / khác (làm lại) = THẤT BẠI;
+  //  chưa đổi gì = CHỜ KẾT QUẢ.
+  const okSet = new Set(["ped", "có tracking"]);
+  for (const r of db.prepare(`SELECT p.site AS site,
+        (SELECT b.new_value FROM audit_log b WHERE b.order_id=a.order_id AND b.entity='purchase' AND b.entity_id=a.entity_id
+           AND b.field='processStatus' AND COALESCE(b.undone,0)=0 AND b.created_at>a.created_at ORDER BY b.created_at LIMIT 1) AS nxt
+      FROM audit_log a JOIN purchases p ON p.id=a.entity_id
+      WHERE a.entity='purchase' AND a.field='processStatus' AND COALESCE(a.undone,0)=0 AND a.new_value=?
+        AND a.created_at>=? AND a.created_at<=? AND COALESCE(p.site,'')!=''`
+      + (teams ? ` AND p.order_id IN (SELECT id FROM orders WHERE 1=1${tq})` : "")).all(PROCESSED_STATUS, s, end, ...tv)) {
+    const u = ensureSite(r.site);
+    if (r.nxt == null) u.waiting++;
+    else if (okSet.has(String(r.nxt).toLowerCase())) u.success++;
+    else u.fail++;
   }
   for (const r of db.prepare(`SELECT p.site AS site, COUNT(DISTINCT o.id) c FROM orders o JOIN purchases p ON p.order_id=o.id
       WHERE o.master_status='Đã Up' AND o.finalized_at>=? AND o.finalized_at<=? AND COALESCE(p.site,'')!=''${tqo} GROUP BY p.site`).all(s, end, ...tv))
@@ -2570,6 +2586,7 @@ function sessionStats(s, e, teams = null) {
 // Cache stats buổi ĐÃ kết thúc theo id|nhóm team (window cố định) — không tính lại mỗi lần poll.
 // Xóa toàn bộ cache của 1 buổi: lọc key bắt đầu bằng "id|".
 const _endedSessionStats = new Map();
+setInterval(() => _endedSessionStats.clear(), 3 * 60 * 1000);   // kết quả (thành công/thất bại) có thể đến sau → làm mới 3 phút/lần
 _endedSessionStats.delete = function (id) { for (const k of [...this.keys()]) if (k === id || k.startsWith(id + "|")) Map.prototype.delete.call(this, k); return true; };
 let _workSessionsCache = {};   // key nhóm team -> { at, payload }
 // Admin xem toàn công ty; Leader/Member chỉ xem số liệu của team mình (chỉ xem, không bấm bắt đầu/kết thúc).
