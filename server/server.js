@@ -2521,8 +2521,8 @@ function sessionStats(s, e, teams = null) {
   const cancel = db.prepare("SELECT COUNT(*) c FROM orders WHERE master_status='Đã Cancel' AND finalized_at>=? AND finalized_at<=?" + tq).get(s, end, ...tv).c;
   // Đơn được chuyển sang "Đã xử lý" trong buổi (theo audit_log — thời điểm & người đổi trạng thái).
   const processed = teams
-    ? db.prepare("SELECT COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND a.created_at>=? AND a.created_at<=?" + tqo).get(PROCESSED_STATUS, s, end, ...tv).c
-    : db.prepare("SELECT COUNT(DISTINCT order_id) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
+    ? db.prepare("SELECT COUNT(*) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND COALESCE(a.undone,0)=0 AND a.created_at>=? AND a.created_at<=?" + tqo).get(PROCESSED_STATUS, s, end, ...tv).c
+    : db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity='purchase' AND field='processStatus' AND new_value=? AND COALESCE(undone,0)=0 AND created_at>=? AND created_at<=?").get(PROCESSED_STATUS, s, end).c;
   const byUser = {};
   const ensure = (id, name) => byUser[id] || (byUser[id] = { name: name || "—", processed: 0, cards: 0, up: 0 });
   // Thẻ nhận: thẻ được cấp cho NV (Mua thẻ) có trạng thái HỢP LỆ (cardCountStatuses), tính theo ngày cấp trong buổi.
@@ -2537,23 +2537,27 @@ function sessionStats(s, e, teams = null) {
   }
   for (const u of Object.values(byUser)) { if (u._cards) { u.cards = u._cards.size; delete u._cards; } }
   // Số đơn chuyển "Đã xử lý": nhóm theo người nhận đơn (thành viên xử lý).
-  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(DISTINCT a.order_id) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=?" + tqo + " GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end, ...tv))
+  for (const r of db.prepare("SELECT o.claimed_by cb, o.claimed_name cn, COUNT(*) c FROM audit_log a JOIN orders o ON o.id=a.order_id WHERE a.entity='purchase' AND a.field='processStatus' AND a.new_value=? AND COALESCE(a.undone,0)=0 AND o.claimed_by!='' AND a.created_at>=? AND a.created_at<=?" + tqo + " GROUP BY o.claimed_by").all(PROCESSED_STATUS, s, end, ...tv))
     ensure(r.cb, r.cn).processed = r.c;
   // Đơn Đã Up (Lister/Admin chốt) — vẫn hiển thị tham khảo.
   for (const r of db.prepare("SELECT claimed_by cb, claimed_name cn, COUNT(*) c FROM orders WHERE master_status='Đã Up' AND claimed_by!='' AND finalized_at>=? AND finalized_at<=?" + tq + " GROUP BY claimed_by").all(s, end, ...tv))
     ensure(r.cb, r.cn).up = r.c;
 
-  // Thống kê theo SITE trong buổi: với các thẻ CÓ đổi trạng thái xử lý trong buổi → đếm theo
-  // trạng thái HIỆN TẠI + site; "up" = đơn Đã Up chốt trong buổi theo site.
+  // Thống kê theo SITE trong buổi — chỉ tính khi NV thật sự NOTE TRẠNG THÁI trong buổi (chạm/sửa ô khác không tính):
+  //  - "Số lần xử lý" (total) = số LẦN note "Đã xử lý" trong buổi — thẻ bỏ trạng thái rồi làm lại, note lại → cộng thêm 1;
+  //  - mỗi cột trạng thái = số lần note trạng thái đó trong buổi. Bỏ trạng thái KHÔNG trừ.
+  // Thao tác đã hoàn tác (undone) không tính. "up" = đơn Đã Up chốt trong buổi theo site.
   const siteMap = {};
   const ensureSite = (name) => siteMap[name] || (siteMap[name] = { site: name, total: 0, status: {}, up: 0 });
-  for (const r of db.prepare(`SELECT p.site AS site, p.process_status AS st FROM purchases p
-      WHERE COALESCE(p.site,'')!='' AND p.id IN (
-        SELECT DISTINCT entity_id FROM audit_log
-        WHERE entity='purchase' AND field IN ('site','processStatus') AND created_at>=? AND created_at<=?)`
-      + (teams ? ` AND p.order_id IN (SELECT id FROM orders WHERE 1=1${tq})` : "")).all(s, end, ...tv)) {
-    const u = ensureSite(r.site); u.total += 1;
-    if (r.st) u.status[r.st] = (u.status[r.st] || 0) + 1;
+  for (const r of db.prepare(`SELECT p.site AS site, a.new_value AS st, COUNT(*) c
+      FROM audit_log a JOIN purchases p ON p.id=a.entity_id
+      WHERE a.entity='purchase' AND a.field='processStatus' AND COALESCE(a.undone,0)=0 AND COALESCE(a.new_value,'')!=''
+        AND a.created_at>=? AND a.created_at<=? AND COALESCE(p.site,'')!=''`
+      + (teams ? ` AND p.order_id IN (SELECT id FROM orders WHERE 1=1${tq})` : "")
+      + " GROUP BY p.site, a.new_value").all(s, end, ...tv)) {
+    const u = ensureSite(r.site);
+    u.status[r.st] = r.c;
+    if (r.st === PROCESSED_STATUS) u.total = r.c;
   }
   for (const r of db.prepare(`SELECT p.site AS site, COUNT(DISTINCT o.id) c FROM orders o JOIN purchases p ON p.order_id=o.id
       WHERE o.master_status='Đã Up' AND o.finalized_at>=? AND o.finalized_at<=? AND COALESCE(p.site,'')!=''${tqo} GROUP BY p.site`).all(s, end, ...tv))

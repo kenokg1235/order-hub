@@ -40,7 +40,7 @@ export default function WorkSessions({ currentUser }) {
   const StatCards = ({ st }) => (
     <div className="row" style={{ gap: 12, flexWrap: "wrap", marginTop: 10 }}>
       <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
-        <div className="muted" style={{ fontSize: 12 }}>🛠️ Đơn đã xử lý</div>
+        <div className="muted" style={{ fontSize: 12 }} title="Mỗi lần note Đã xử lý = 1 lần (làm lại, note lại vẫn cộng thêm)">🛠️ Lần xử lý</div>
         <div style={{ fontSize: 26, fontWeight: 800, color: "#2563eb" }}>{st.processed ?? 0}</div>
       </div>
       <div className="card" style={{ padding: "10px 18px", minWidth: 130 }}>
@@ -61,7 +61,7 @@ export default function WorkSessions({ currentUser }) {
     <table className="tbl" style={{ marginTop: 10, minWidth: 380 }}>
       <thead><tr>
         <th>Nhân viên xử lý</th>
-        <th style={{ textAlign: "right" }}>🛠️ Đơn đã xử lý</th>
+        <th style={{ textAlign: "right" }} title="Mỗi lần note Đã xử lý = 1 lần (làm lại, note lại vẫn cộng thêm)">🛠️ Lần xử lý</th>
         <th style={{ textAlign: "right" }}>🎴 Thẻ nhận</th>
         <th style={{ textAlign: "right" }}>✅ Đã Up</th>
       </tr></thead>
@@ -90,7 +90,7 @@ export default function WorkSessions({ currentUser }) {
         <table className="tbl" style={{ minWidth: 420 }}>
           <thead><tr>
             <th>🌐 Site</th>
-            <th style={{ textAlign: "right" }}>Số lần xử lý</th>
+            <th style={{ textAlign: "right" }} title="Số lần note 'Đã xử lý' trong buổi — làm lại, note lại vẫn cộng thêm; bỏ trạng thái không trừ; chạm/sửa ô khác không tính">Số lần xử lý</th>
             {cols.map((s) => <th key={s} style={{ textAlign: "right" }}>{s}</th>)}
             <th style={{ textAlign: "right" }}>✅ Đã Up</th>
           </tr></thead>
