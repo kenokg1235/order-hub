@@ -10,7 +10,6 @@ export default function WorkSessions({ currentUser }) {
   const [sessions, setSessions] = useState([]);
   const [reset, setReset] = useState({ enabled: false, time: "" });   // tự động reset mỗi ngày
   const [savedReset, setSavedReset] = useState("");
-  const [procStatuses, setProcStatuses] = useState([]);   // cột trạng thái cho bảng theo site
   const [err, setErr] = useState("");
 
   async function load() {
@@ -18,7 +17,6 @@ export default function WorkSessions({ currentUser }) {
     try {
       const s = (await api.get("/api/settings")).settings;
       setReset({ enabled: !!s.wsAutoReset?.enabled, time: s.wsAutoReset?.time || "" });
-      setProcStatuses(s.processStatuses || []);
     } catch {}
   }
   async function saveReset(next) {
@@ -78,20 +76,16 @@ export default function WorkSessions({ currentUser }) {
     </table>
   ) : <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>Chưa có hoạt động trong buổi.</div>;
 
-  // Thống kê theo SITE: số lần xử lý + đếm theo từng trạng thái xử lý (gồm "ped"…) + Đã Up.
+  // Thống kê theo SITE: số lần xử lý + kết quả (thành công / thất bại / chờ) tính vào buổi làm + Đã Up.
   const BySite = ({ st }) => {
     const rows = st.bySite || [];
     if (!rows.length) return null;
-    // Cột trạng thái = các trạng thái đã cấu hình + mọi trạng thái lạ xuất hiện trong dữ liệu.
-    const extra = [...new Set(rows.flatMap((r) => Object.keys(r.status || {})))].filter((s) => !procStatuses.includes(s));
-    const cols = [...procStatuses, ...extra];
     return (
       <div style={{ overflowX: "auto", marginTop: 10 }}>
         <table className="tbl" style={{ minWidth: 420 }}>
           <thead><tr>
             <th>🌐 Site</th>
             <th style={{ textAlign: "right" }} title="Số lần note 'Đã xử lý' trong buổi — làm lại, note lại vẫn cộng thêm; bỏ trạng thái không trừ; chạm/sửa ô khác không tính">Số lần xử lý</th>
-            {cols.map((s) => <th key={s} style={{ textAlign: "right" }}>{s}</th>)}
             <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này, sau đó được đổi sang Ped / Có Tracking (kể cả đổi vào ngày sau)">🟢 Thành công</th>
             <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này, sau đó bị bỏ trạng thái / phải làm lại (kể cả ngày sau)">🔴 Thất bại</th>
             <th style={{ textAlign: "right" }} title="Lần Đã xử lý trong buổi này chưa có kết quả (vẫn đang Đã xử lý)">⏳ Chờ KQ</th>
@@ -103,7 +97,6 @@ export default function WorkSessions({ currentUser }) {
               <tr key={i}>
                 <td style={{ fontWeight: 600 }}>{r.site}</td>
                 <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb" }}>{r.total}</td>
-                {cols.map((s) => <td key={s} style={{ textAlign: "right" }}>{(r.status && r.status[s]) || 0}</td>)}
                 <td style={{ textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{r.success || 0}</td>
                 <td style={{ textAlign: "right", fontWeight: 700, color: "var(--red)" }}>{r.fail || 0}</td>
                 <td style={{ textAlign: "right" }} className="muted">{r.waiting || 0}</td>
